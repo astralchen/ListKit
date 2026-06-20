@@ -85,6 +85,29 @@ struct LiveRoomViewModelTests {
             #expect(headerLayout?.pinsToVisibleBounds == false)
         }
     }
+
+    @Test func listSectionOutputsUseBuilderDSL() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let viewModelFile = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Examples")
+            .appendingPathComponent("LiveRoomViewModel.swift")
+        let source = try String(contentsOf: viewModelFile)
+        let properties = [
+            "liveConsoleSections",
+            "studioControlSections",
+            "roomToolkitSections",
+            "collectionSections",
+            "liveActivitySections",
+            "peopleSections",
+            "toolkitSections"
+        ]
+
+        for property in properties {
+            #expect(source.contains("@ListSectionBuilder<LiveRoomSection>\n    var \(property): [ListSection<LiveRoomSection>] {"))
+        }
+    }
 }
 
 private extension ListSectionLayout {

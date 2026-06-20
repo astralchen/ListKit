@@ -59,43 +59,39 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         )
     }
 
+    @ListSectionBuilder<LiveRoomSection>
     var liveConsoleSections: [ListSection<LiveRoomSection>] {
-        [
-            makeConsoleHeaderSection(),
-            makeConsoleToolbarSection(),
-            makeStatusSection(),
-            makeMicSeatsSection(),
-            makeMessagesSection(),
-            makeGiftsSection(),
-            makeDiagnosticsSection()
-        ]
+        makeConsoleHeaderSection()
+        makeConsoleToolbarSection()
+        makeStatusSection()
+        makeMicSeatsSection()
+        makeMessagesSection()
+        makeGiftsSection()
+        makeDiagnosticsSection()
     }
 
+    @ListSectionBuilder<LiveRoomSection>
     var studioControlSections: [ListSection<LiveRoomSection>] {
-        [
-            makeStudioHeaderSection(),
-            makeStudioControlsSection(),
-            makeMessagesSection()
-        ]
+        makeStudioHeaderSection()
+        makeStudioControlsSection()
+        makeMessagesSection()
     }
 
+    @ListSectionBuilder<LiveRoomSection>
     var roomToolkitSections: [ListSection<LiveRoomSection>] {
-        [
-            makeRoomHeroSection(),
-            makeRoomMetricsSection(),
-            makeRoomActivityTitleSection(),
-            makeRoomActivitySection()
-        ]
+        makeRoomHeroSection()
+        makeRoomMetricsSection()
+        makeRoomActivityTitleSection()
+        makeRoomActivitySection()
     }
 
+    @ListSectionBuilder<LiveRoomSection>
     var collectionSections: [ListSection<LiveRoomSection>] {
-        [
-            makeStatusSection(),
-            makeMicSeatsSection(),
-            makeMessagesSection(),
-            makeGiftsSection(),
-            makeDiagnosticsSection()
-        ]
+        makeStatusSection()
+        makeMicSeatsSection()
+        makeMessagesSection()
+        makeGiftsSection()
+        makeDiagnosticsSection()
     }
 
     var tableSections: [TableSection<AdminSection>] {
@@ -104,24 +100,21 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         ]
     }
 
+    @ListSectionBuilder<LiveRoomSection>
     var liveActivitySections: [ListSection<LiveRoomSection>] {
-        [
-            makeRoomActivitySection()
-        ]
+        makeRoomActivitySection()
     }
 
+    @ListSectionBuilder<LiveRoomSection>
     var peopleSections: [ListSection<LiveRoomSection>] {
-        [
-            makeMicSeatsSection()
-        ]
+        makeMicSeatsSection()
     }
 
+    @ListSectionBuilder<LiveRoomSection>
     var toolkitSections: [ListSection<LiveRoomSection>] {
-        [
-            makeStatusSection(),
-            makeGiftsSection(),
-            makeDiagnosticsSection()
-        ]
+        makeStatusSection()
+        makeGiftsSection()
+        makeDiagnosticsSection()
     }
 
     var pendingScrollMessageID: String? {
