@@ -246,9 +246,13 @@ struct ListResolvedTransaction {
 
 /// apply 级刷新策略。
 public enum ListApplyRefreshStrategy: Equatable, Sendable {
+    /// 按 Row policy 自动选择 diffable 或可见刷新。
     case automatic
+    /// 不标记 snapshot refresh，只重配符合 Row policy 的可见节点。
     case visibleOnly
+    /// 只执行 `refreshID` 驱动的 diffable refresh，不额外重配可见节点。
     case diffableOnly
+    /// 忽略 Row policy，对所有新旧 snapshot 中都存在的 Row 执行 diffable reload。
     case forceReload
 }
 
@@ -328,9 +332,21 @@ public struct ListAnimationSummary: Equatable, Sendable {
 
 /// apply 后的摘要，DEBUG 日志和测试都复用这份数据。
 public struct ListApplySummary: Equatable, Sendable {
+    /// 新插入的 Section 数量。
+    public let insertedSectionCount: Int
+    /// 被删除的 Section 数量。
+    public let deletedSectionCount: Int
+    /// 保持 identity、但顺序发生变化的 Section 数量。
+    public let movedSectionCount: Int
+    /// 新旧 snapshot 中都存在的 Section 数量。
+    public let keptSectionCount: Int
+    /// 新插入的 Row 数量。
     public let insertedCount: Int
+    /// 被删除的 Row 数量。
     public let deletedCount: Int
+    /// 在同一 Section 内发生移动的 Row 数量。
     public let movedCount: Int
+    /// 新旧 snapshot 中都存在的 Row 数量。
     public let keptCount: Int
     public let refreshIDChangedCount: Int
     public let snapshotRefreshCount: Int
@@ -341,6 +357,10 @@ public struct ListApplySummary: Equatable, Sendable {
     public let animation: ListAnimationSummary
 
     public init(
+        insertedSectionCount: Int = 0,
+        deletedSectionCount: Int = 0,
+        movedSectionCount: Int = 0,
+        keptSectionCount: Int = 0,
         insertedCount: Int = 0,
         deletedCount: Int = 0,
         movedCount: Int = 0,
@@ -353,6 +373,10 @@ public struct ListApplySummary: Equatable, Sendable {
         diagnosticsIssues: [ListDiagnosticsIssue] = [],
         animation: ListAnimationSummary = ListAnimationSummary()
     ) {
+        self.insertedSectionCount = insertedSectionCount
+        self.deletedSectionCount = deletedSectionCount
+        self.movedSectionCount = movedSectionCount
+        self.keptSectionCount = keptSectionCount
         self.insertedCount = insertedCount
         self.deletedCount = deletedCount
         self.movedCount = movedCount
@@ -370,6 +394,10 @@ public struct ListApplySummary: Equatable, Sendable {
 extension ListApplySummary {
     func replacingAnimation(_ animation: ListAnimationSummary) -> ListApplySummary {
         ListApplySummary(
+            insertedSectionCount: insertedSectionCount,
+            deletedSectionCount: deletedSectionCount,
+            movedSectionCount: movedSectionCount,
+            keptSectionCount: keptSectionCount,
             insertedCount: insertedCount,
             deletedCount: deletedCount,
             movedCount: movedCount,

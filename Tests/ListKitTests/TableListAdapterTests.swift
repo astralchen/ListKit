@@ -135,6 +135,9 @@ final class TableListAdapterTests: XCTestCase {
                 .refreshID(1)
                 .refreshPolicy(.automaticVisible)
             }
+            TableSection(.empty) {
+                TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
+            }
         }
         tableView.layoutIfNeeded()
         _ = try XCTUnwrap(tableView.cellForRow(at: IndexPath(row: 0, section: 0)))
@@ -175,12 +178,523 @@ final class TableListAdapterTests: XCTestCase {
                 .refreshID(3)
                 .refreshPolicy(.automaticVisible)
             }
+            TableSection(.empty) {
+                TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
+            }
         }
         let supersededResult = await firstApply.value
 
         XCTAssertEqual(supersededResult.summary.animation.completionState, .superseded)
         XCTAssertEqual(latestResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(latestResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(tableView.numberOfSections, 2)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 1), .empty)
         XCTAssertEqual(adapter.lastApplySummary, latestResult.summary)
+    }
+
+    func testSerialTableApplyCompletesSectionDeletionBeforeReinsertion() async throws {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+        let host = UIViewController()
+        host.view.frame = tableView.bounds
+        host.view.addSubview(tableView)
+        let window = UIWindow(frame: tableView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            TableSection(.messages) {
+                TableRow(1, model: "A", cell: MessageTableCell.self) { cell, value, _ in
+                    cell.textValue = value
+                }
+                .height(.fixed(60))
+                .refreshID(1)
+                .refreshPolicy(.automaticVisible)
+            }
+            TableSection(.empty) {
+                TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+        tableView.layoutIfNeeded()
+        _ = try XCTUnwrap(tableView.cellForRow(at: IndexPath(row: 0, section: 0)))
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        let transitionStarted = expectation(description: "serial table transition started")
+        var didSignalTransition = false
+        let serialTransaction = ListTransaction(animation: .disabled)
+            .contentAnimation(.enabled)
+            .updatePolicy(.serial)
+        let deletionApply = Task { @MainActor in
+            await adapter.applyAndWait(transaction: serialTransaction) {
+                TableSection(.messages) {
+                    TableRow(1, model: "B", cell: MessageTableCell.self) { cell, value, _ in
+                        cell.textValue = value
+                        if !didSignalTransition {
+                            didSignalTransition = true
+                            transitionStarted.fulfill()
+                        }
+                    }
+                    .height(.fixed(60))
+                    .refreshID(2)
+                    .refreshPolicy(.automaticVisible)
+                    .contentTransition(.opacity(duration: 0.35))
+                }
+            }
+        }
+
+        await fulfillment(of: [transitionStarted], timeout: 2)
+        let reinsertionApply = Task { @MainActor in
+            await adapter.applyAndWait(
+                transaction: ListTransaction.disabled.updatePolicy(.serial)
+            ) {
+                TableSection(.messages) {
+                    TableRow(1, model: "C", cell: MessageTableCell.self) { cell, value, _ in
+                        cell.textValue = value
+                    }
+                    .height(.fixed(60))
+                    .refreshID(3)
+                    .refreshPolicy(.automaticVisible)
+                }
+                TableSection(.empty) {
+                    TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
+                }
+            }
+        }
+
+        let deletionResult = await deletionApply.value
+        let reinsertionResult = await reinsertionApply.value
+
+        XCTAssertEqual(deletionResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(deletionResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(reinsertionResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(tableView.numberOfSections, 2)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 1), .empty)
+    }
+
+    func testVisibleOnlyRefreshesTableRowWhenRefreshIDChanges() async throws {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+        let host = UIViewController()
+        host.view.frame = tableView.bounds
+        host.view.addSubview(tableView)
+        let window = UIWindow(frame: tableView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            TableSection(.messages) {
+                TableRow(1, model: "A", cell: MessageTableCell.self) { cell, value, _ in
+                    cell.textValue = value
+                }
+                .height(.fixed(60))
+                .refreshID(1)
+                .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+        tableView.layoutIfNeeded()
+        let cell = try XCTUnwrap(
+            tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? MessageTableCell
+        )
+
+        let result = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, refreshStrategy: .visibleOnly)
+        ) {
+            TableSection(.messages) {
+                TableRow(1, model: "B", cell: MessageTableCell.self) { cell, value, _ in
+                    cell.textValue = value
+                }
+                .height(.fixed(60))
+                .refreshID(2)
+                .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+
+        XCTAssertEqual(result.summary.refreshIDChangedCount, 1)
+        XCTAssertEqual(result.summary.snapshotRefreshCount, 0)
+        XCTAssertEqual(result.summary.visibleRefreshCount, 1)
+        XCTAssertEqual(cell.textValue, "B")
+    }
+
+    func testTableApplyDeletesEntireSectionAndClearsIdentityHistory() async throws {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            TableSection(.messages) {
+                TableRow(1, model: "Kept", cell: MessageTableCell.self) { _, _, _ in }
+                    .refreshID(1)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+            TableSection(.empty) {
+                TableRow(2, model: "Removed", cell: MessageTableCell.self) { _, _, _ in }
+                    .refreshID(1)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+        let removedIdentity = try XCTUnwrap(
+            adapter.itemIdentity(at: IndexPath(row: 0, section: 1))
+        )
+
+        let deletionResult = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(.messages) {
+                TableRow(1, model: "Kept", cell: MessageTableCell.self) { _, _, _ in }
+                    .refreshID(1)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+
+        XCTAssertEqual(deletionResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(deletionResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(deletionResult.summary.keptSectionCount, 1)
+        XCTAssertEqual(deletionResult.summary.deletedCount, 1)
+        XCTAssertEqual(deletionResult.summary.keptCount, 1)
+        XCTAssertEqual(deletionResult.summary.refreshIDChangedCount, 0)
+        XCTAssertEqual(tableView.numberOfSections, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), .messages)
+        XCTAssertNil(adapter.sectionIdentifier(at: 1))
+        XCTAssertNil(adapter.sectionIndex(for: .empty))
+        XCTAssertEqual(adapter.rowCount(in: .empty), 0)
+        XCTAssertTrue(adapter.indexPaths(forRowID: 2, in: .empty).isEmpty)
+        XCTAssertFalse(adapter.contains(removedIdentity))
+
+        let reinsertionResult = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(.messages) {
+                TableRow(1, model: "Kept", cell: MessageTableCell.self) { _, _, _ in }
+                    .refreshID(1)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+            TableSection(.empty) {
+                TableRow(2, model: "Reinserted", cell: MessageTableCell.self) { _, _, _ in }
+                    .refreshID(2)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+
+        XCTAssertEqual(reinsertionResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(reinsertionResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.summary.keptSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.summary.insertedCount, 1)
+        XCTAssertEqual(reinsertionResult.summary.refreshIDChangedCount, 0)
+        XCTAssertEqual(tableView.numberOfSections, 2)
+        XCTAssertEqual(adapter.sectionIndex(for: .empty), 1)
+        XCTAssertEqual(
+            adapter.indexPaths(forRowID: 2, in: .empty),
+            [IndexPath(row: 0, section: 1)]
+        )
+    }
+
+    func testTableEmptySectionChangesDriveSnapshotAnimationSummary() async {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            TableSection(0) {}
+            TableSection(1) {}
+        }
+
+        let reorderResult = await adapter.applyAndWait(
+            transaction: ListTransaction(animation: .enabled)
+        ) {
+            TableSection(1) {}
+            TableSection(0) {}
+        }
+
+        XCTAssertEqual(reorderResult.summary.movedSectionCount, 1)
+        XCTAssertEqual(reorderResult.summary.movedCount, 0)
+        XCTAssertTrue(reorderResult.summary.animation.snapshotAnimated)
+        XCTAssertEqual(reorderResult.summary.animation.animatedSectionCount, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 1), 0)
+
+        let deleteLeadingResult = await adapter.applyAndWait(
+            transaction: ListTransaction(animation: .enabled)
+        ) {
+            TableSection(0) {}
+        }
+
+        XCTAssertEqual(deleteLeadingResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(deleteLeadingResult.summary.deletedCount, 0)
+        XCTAssertTrue(deleteLeadingResult.summary.animation.snapshotAnimated)
+        XCTAssertEqual(deleteLeadingResult.summary.animation.animatedSectionCount, 1)
+        XCTAssertEqual(tableView.numberOfSections, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 0)
+
+        let noSections: [TableSection<Int>] = []
+        let deleteAllResult = await adapter.applyAndWait(
+            options: .init(
+                transaction: ListTransaction(animation: .enabled),
+                applicationMode: .reloadData
+            )
+        ) {
+            noSections
+        }
+
+        XCTAssertEqual(deleteAllResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(deleteAllResult.summary.deletedCount, 0)
+        XCTAssertFalse(deleteAllResult.summary.animation.snapshotAnimated)
+        XCTAssertEqual(deleteAllResult.summary.animation.animatedSectionCount, 0)
+        XCTAssertEqual(tableView.numberOfSections, 0)
+    }
+
+    func testTableDeletesLeadingAndMiddleSectionsTogether() async {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            TableSection(0) {
+                TableRow("zero", model: "Zero", cell: MessageTableCell.self) { _, _, _ in }
+            }
+            TableSection(1) {
+                TableRow("one", model: "One", cell: MessageTableCell.self) { _, _, _ in }
+            }
+            TableSection(2) {
+                TableRow("two", model: "Two", cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+
+        let result = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(2) {
+                TableRow("two", model: "Two", cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertEqual(result.summary.deletedSectionCount, 2)
+        XCTAssertEqual(result.summary.keptSectionCount, 1)
+        XCTAssertEqual(result.summary.deletedCount, 2)
+        XCTAssertEqual(result.summary.keptCount, 1)
+        XCTAssertEqual(tableView.numberOfSections, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 2)
+        XCTAssertEqual(adapter.indexPaths(forRowID: "two", in: 2), [IndexPath(row: 0, section: 0)])
+        XCTAssertTrue(adapter.indexPaths(forRowID: "zero").isEmpty)
+        XCTAssertTrue(adapter.indexPaths(forRowID: "one").isEmpty)
+    }
+
+    func testTablePreservesSelectionAndFocusIdentityWhenLeadingSectionIsDeleted() async throws {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+        let host = UIViewController()
+        host.view.frame = tableView.bounds
+        host.view.addSubview(tableView)
+        let window = UIWindow(frame: tableView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            TableSection(0) {
+                TableRow("removed", model: "Removed", cell: MessageTableCell.self) { _, _, _ in }
+            }
+            .selectionMode(.single)
+            TableSection(1) {
+                TableRow("selected", model: "Selected", cell: MessageTableCell.self) { _, _, _ in }
+                    .focusable()
+            }
+            .selectionMode(.single)
+        }
+        tableView.layoutIfNeeded()
+        tableView.selectRow(at: IndexPath(row: 0, section: 1), animated: false, scrollPosition: .none)
+        let selectedIdentity = try XCTUnwrap(adapter.itemIdentity(at: IndexPath(row: 0, section: 1)))
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(1) {
+                TableRow("selected", model: "Selected", cell: MessageTableCell.self) { _, _, _ in }
+                    .focusable()
+            }
+            .selectionMode(.single)
+        }
+
+        let shiftedIndexPath = try XCTUnwrap(tableView.indexPathsForSelectedRows?.first)
+        XCTAssertEqual(shiftedIndexPath, IndexPath(row: 0, section: 0))
+        XCTAssertEqual(adapter.itemIdentity(at: shiftedIndexPath), selectedIdentity)
+        XCTAssertTrue(adapter.tableView(tableView, canFocusRowAt: shiftedIndexPath))
+
+        let noSections: [TableSection<Int>] = []
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            noSections
+        }
+
+        XCTAssertTrue(tableView.indexPathsForSelectedRows?.isEmpty ?? true)
+        XCTAssertFalse(tableView.allowsSelection)
+    }
+
+    func testTableSectionDeletionPreservesOrReleasesVisibleAnchor() async throws {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 220),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+        let host = UIViewController()
+        host.view.frame = tableView.bounds
+        host.view.addSubview(tableView)
+        let window = UIWindow(frame: tableView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        func section(_ id: Int, rows: Range<Int>) -> TableSection<Int> {
+            TableSection(id) {
+                TableForEach(rows, id: \.self) { row in
+                    TableRow("\(id)-\(row)", model: row, cell: MessageTableCell.self) { _, _, _ in }
+                        .height(.fixed(44))
+                }
+            }
+        }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            section(0, rows: 0..<3)
+            section(1, rows: 0..<6)
+            TableSection(2) {
+                TableRow("anchor", model: 0, cell: MessageTableCell.self) { _, _, _ in }
+                    .height(.fixed(44))
+                TableForEach(1..<6, id: \.self) { row in
+                    TableRow("anchor-trailing-\(row)", model: row, cell: MessageTableCell.self) { _, _, _ in }
+                        .height(.fixed(44))
+                }
+            }
+        }
+        tableView.layoutIfNeeded()
+        let initialAnchorPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 2).first)
+        let initialRect = tableView.rectForRow(at: initialAnchorPath)
+        tableView.setContentOffset(CGPoint(x: 0, y: initialRect.minY - 80), animated: false)
+        tableView.layoutIfNeeded()
+        let initialViewportY = initialRect.minY - tableView.contentOffset.y
+
+        let preserveResult = await adapter.applyAndWait(
+            transaction: ListTransaction.disabled.scrollBehavior(
+                .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 2))
+            )
+        ) {
+            section(1, rows: 0..<6)
+            TableSection(2) {
+                TableRow("anchor", model: 0, cell: MessageTableCell.self) { _, _, _ in }
+                    .height(.fixed(44))
+                TableForEach(1..<6, id: \.self) { row in
+                    TableRow("anchor-trailing-\(row)", model: row, cell: MessageTableCell.self) { _, _, _ in }
+                        .height(.fixed(44))
+                }
+            }
+        }
+        tableView.layoutIfNeeded()
+        let shiftedAnchorPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 2).first)
+        let shiftedRect = tableView.rectForRow(at: shiftedAnchorPath)
+
+        XCTAssertEqual(shiftedRect.minY - tableView.contentOffset.y, initialViewportY, accuracy: 0.5)
+        XCTAssertEqual(preserveResult.summary.animation.anchorCompensation, 0, accuracy: 0.5)
+        XCTAssertEqual(tableView.contentInset.bottom, 0, accuracy: 0.5)
+
+        let removeAnchorResult = await adapter.applyAndWait(
+            transaction: ListTransaction.disabled.scrollBehavior(
+                .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 2))
+            )
+        ) {
+            section(1, rows: 0..<6)
+        }
+
+        XCTAssertEqual(removeAnchorResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(removeAnchorResult.summary.animation.anchorCompensation, 0, accuracy: 0.5)
+        XCTAssertEqual(tableView.contentInset.bottom, 0, accuracy: 0.5)
+        XCTAssertTrue(adapter.indexPaths(forRowID: "anchor", in: 2).isEmpty)
+    }
+
+    func testTableDeletesAndReinsertsSectionWithHeaderFooter() async {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 260),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+
+        func decoratedSection(version: Int) -> TableSection<Section> {
+            TableSection(.empty) {
+                TableRow(2, model: "Decorated", cell: MessageTableCell.self) { _, _, _ in }
+                    .height(.fixed(44))
+            } header: {
+                TableHeader(MessageHeaderView.self, id: "header") { view, _ in
+                    view.title = "Header \(version)"
+                }
+                .height(.fixed(32))
+                .refreshID(version)
+                .refreshPolicy(.whenRefreshIDChanges)
+            } footer: {
+                TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
+                    view.title = "Footer \(version)"
+                }
+                .height(.fixed(28))
+                .refreshID(version)
+                .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            TableSection(.messages) {
+                TableRow(1, model: "Stable", cell: MessageTableCell.self) { _, _, _ in }
+            }
+            decoratedSection(version: 1)
+        }
+
+        let deleteResult = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(.messages) {
+                TableRow(1, model: "Stable", cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertEqual(deleteResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(deleteResult.summary.deletedCount, 1)
+        XCTAssertEqual(tableView.numberOfSections, 1)
+
+        let reinsertResult = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(.messages) {
+                TableRow(1, model: "Stable", cell: MessageTableCell.self) { _, _, _ in }
+            }
+            decoratedSection(version: 2)
+        }
+        tableView.reloadData()
+        tableView.layoutIfNeeded()
+
+        XCTAssertEqual(reinsertResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(reinsertResult.summary.insertedCount, 1)
+        XCTAssertEqual(reinsertResult.summary.supplementaryRefreshIDChangedCount, 0)
+        XCTAssertEqual((tableView.headerView(forSection: 1) as? MessageHeaderView)?.title, "Header 2")
+        XCTAssertEqual((tableView.footerView(forSection: 1) as? MessageHeaderView)?.title, "Footer 2")
     }
 
     func testTableAdapterDiagnosticsAndRefreshSummary() {
@@ -328,6 +842,42 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(endedMessageID, 1)
         XCTAssertEqual(cancelledMessageID, 1)
         XCTAssertEqual(tableDelegate.didEndDisplayingCount, 1)
+    }
+
+    func testTableLifecycleUsesCapturedRowWhenDeletedSectionIndexPathIsReused() {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+        var endedRowID: String?
+        var cancelledRowID: String?
+
+        adapter.apply(transaction: .disabled) {
+            TableSection(0) {
+                TableRow("old", model: "Old", cell: MessageTableCell.self) { _, _, _ in }
+                    .onEndDisplay { _, _, _ in endedRowID = "old" }
+                    .onCancelPrefetch { _, _ in cancelledRowID = "old" }
+            }
+            TableSection(1) {
+                TableRow("new", model: "New", cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+
+        let reusedIndexPath = IndexPath(row: 0, section: 0)
+        let oldCell = MessageTableCell()
+        adapter.tableView(tableView, willDisplay: oldCell, forRowAt: reusedIndexPath)
+        adapter.tableView(tableView, prefetchRowsAt: [reusedIndexPath])
+
+        adapter.apply(transaction: .disabled) {
+            TableSection(1) {
+                TableRow("new", model: "New", cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+
+        adapter.tableView(tableView, didEndDisplaying: oldCell, forRowAt: reusedIndexPath)
+        adapter.tableView(tableView, cancelPrefetchingForRowsAt: [reusedIndexPath])
+
+        XCTAssertEqual(endedRowID, "old")
+        XCTAssertEqual(cancelledRowID, "old")
+        XCTAssertEqual(adapter.rowIdentifier(at: reusedIndexPath, as: String.self), "new")
     }
 
     func testTableSelectionModeIsEnforcedPerSection() {

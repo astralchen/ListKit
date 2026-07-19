@@ -4,13 +4,13 @@ import UIKit
 
 /// Row 刷新策略。
 public enum RowRefreshPolicy: Equatable, Sendable {
-    /// 默认策略。identity 不变时只重配可见 cell。
+    /// 默认策略。identity 不变时只重配可见 cell；提供 `refreshID` 后仅在标识变化时重配。
     case automaticVisible
     /// `refreshID` 变化时触发 diffable reconfigure/reload。
     case whenRefreshIDChanges
     /// identity 不变时不主动刷新。
     case never
-    /// 每次 apply 后都重配可见 cell。
+    /// 忽略 `refreshID`，每次 apply 后都重配可见 cell。
     case alwaysVisible
 }
 

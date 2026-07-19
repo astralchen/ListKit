@@ -22,6 +22,32 @@ struct LiveRoomViewModelTests {
         #expect(viewModel.tableSections.compactMap(\.indexTitle).isEmpty)
     }
 
+    @Test func applyDiagnosticsExposeSectionAndRowChangesSeparately() {
+        let viewModel = LiveRoomViewModel()
+
+        viewModel.recordCollectionApply(
+            ListApplySummary(
+                insertedSectionCount: 2,
+                deletedSectionCount: 1,
+                movedSectionCount: 1,
+                keptSectionCount: 3,
+                insertedCount: 4,
+                deletedCount: 2,
+                movedCount: 1,
+                keptCount: 8
+            )
+        )
+
+        #expect(viewModel.diagnostics.insertedSectionCount == 2)
+        #expect(viewModel.diagnostics.deletedSectionCount == 1)
+        #expect(viewModel.diagnostics.movedSectionCount == 1)
+        #expect(viewModel.diagnostics.keptSectionCount == 3)
+        #expect(viewModel.diagnostics.insertedCount == 4)
+        #expect(viewModel.diagnostics.deletedCount == 2)
+        #expect(viewModel.diagnostics.summaryText.contains("S +2 -1 ↕1"))
+        #expect(viewModel.diagnostics.summaryText.contains("R +4 -2 ↕1"))
+    }
+
     @Test func designScreensInstallNativeListViewsAsRootViews() {
         let liveConsole = LiveConsoleDesignViewController()
         let studioControl = StudioControlDesignViewController()
@@ -159,7 +185,7 @@ struct LiveRoomViewModelTests {
         #expect(viewModel.pendingScrollMessageID == nil)
         #expect(
             viewModel.roomToolkitSections.first { $0.id == .roomActivityTitle }?.rows.first?.refreshID
-                == initialTitleRefreshID
+                != initialTitleRefreshID
         )
 
         viewModel.setRoomActivityFilter(.gifts)

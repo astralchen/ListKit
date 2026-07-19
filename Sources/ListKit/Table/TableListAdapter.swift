@@ -202,6 +202,7 @@ where SectionID: Hashable & Sendable {
             visibleAnchor = nil
             cancelTemporaryAnchorReservation()
         }
+        let selectedItemIdentities = captureSelectedItemIdentities()
 
         applyGeneration += 1
         let generation = applyGeneration
@@ -249,6 +250,7 @@ where SectionID: Hashable & Sendable {
                 completeAsSuperseded()
                 return
             }
+            self.restoreSelection(for: selectedItemIdentities)
             self.reconcileSelection()
             let metrics = TableApplyAnimationMetrics()
             let animationCoordinator = ListAnimationCompletionCoordinator {
@@ -263,10 +265,7 @@ where SectionID: Hashable & Sendable {
                 )
                 let snapshotAnimated = options.applicationMode == .differences
                     && resolvedTransaction.snapshotAnimation
-                    && (applyPlan.initialSummary.insertedCount > 0
-                        || applyPlan.initialSummary.deletedCount > 0
-                        || applyPlan.initialSummary.movedCount > 0
-                        || applyPlan.initialSummary.snapshotRefreshCount > 0)
+                    && applyPlan.hasSnapshotChanges
                 let completedSummary = applyPlan.completedSummary(
                     visibleRefreshCount: metrics.visibleRefreshCount,
                     visibleSupplementaryRefreshCount: metrics.visibleSupplementaryRefreshCount,
@@ -294,6 +293,7 @@ where SectionID: Hashable & Sendable {
             if applyPlan.shouldRunVisibleRefresh {
                 let refresh = self.refreshVisibleRowsIfNeeded(
                     applyPlan: applyPlan,
+                    strategy: options.refreshStrategy,
                     animatingContent: resolvedTransaction.contentAnimation,
                     coordinator: animationCoordinator
                 )
@@ -1114,6 +1114,7 @@ where SectionID: Hashable & Sendable {
 
     private func refreshVisibleRowsIfNeeded(
         applyPlan: ListApplyPlan,
+        strategy: ListApplyRefreshStrategy,
         animatingContent: Bool,
         coordinator: ListAnimationCompletionCoordinator
     ) -> TableVisibleRefreshResult {
@@ -1126,7 +1127,11 @@ where SectionID: Hashable & Sendable {
                 let row = row(at: indexPath),
                 let rowSnapshot = applyPlan.newRowsByIdentity[row.identity],
                 let oldRowSnapshot = applyPlan.oldRowsByIdentity[row.identity],
-                ListApplyPlanner.shouldRefreshVisibleRow(rowSnapshot),
+                ListApplyPlanner.shouldRefreshVisibleRow(
+                    rowSnapshot,
+                    oldRow: oldRowSnapshot,
+                    strategy: strategy
+                ),
                 let cell = tableView.cellForRow(at: indexPath)
             else { continue }
 
@@ -1237,6 +1242,21 @@ where SectionID: Hashable & Sendable {
         tableView.allowsMultipleSelection = selectableSections.contains { $0.selectionMode == .multiple }
             || selectableSections.count > 1
             || selectableSections.contains { $0.allowsMultipleSelectionInteraction }
+    }
+
+    private func captureSelectedItemIdentities() -> [AnyListIdentity] {
+        guard let tableView else { return [] }
+        return (tableView.indexPathsForSelectedRows ?? []).compactMap {
+            dataSource.itemIdentifier(for: $0)
+        }
+    }
+
+    private func restoreSelection(for identities: [AnyListIdentity]) {
+        guard let tableView else { return }
+        for identity in identities {
+            guard let indexPath = dataSource.indexPath(for: identity) else { continue }
+            tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+        }
     }
 
     private func reconcileSelection() {

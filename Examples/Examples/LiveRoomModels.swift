@@ -134,6 +134,10 @@ struct RoomStatusViewModel: Hashable, Sendable {
 struct ApplyDiagnostics: Hashable, Sendable {
     var collectionApplyCount: Int = 0
     var tableApplyCount: Int = 0
+    var insertedSectionCount: Int = 0
+    var deletedSectionCount: Int = 0
+    var movedSectionCount: Int = 0
+    var keptSectionCount: Int = 0
     var insertedCount: Int = 0
     var deletedCount: Int = 0
     var movedCount: Int = 0
@@ -151,6 +155,10 @@ struct ApplyDiagnostics: Hashable, Sendable {
         var hasher = Hasher()
         hasher.combine(collectionApplyCount)
         hasher.combine(tableApplyCount)
+        hasher.combine(insertedSectionCount)
+        hasher.combine(deletedSectionCount)
+        hasher.combine(movedSectionCount)
+        hasher.combine(keptSectionCount)
         hasher.combine(insertedCount)
         hasher.combine(deletedCount)
         hasher.combine(movedCount)
@@ -167,7 +175,7 @@ struct ApplyDiagnostics: Hashable, Sendable {
     }
 
     var summaryText: String {
-        "apply c\(collectionApplyCount)/t\(tableApplyCount)  ins \(insertedCount)  del \(deletedCount)  move \(movedCount)  kept \(keptCount)"
+        "c\(collectionApplyCount)/t\(tableApplyCount)  S +\(insertedSectionCount) -\(deletedSectionCount) ↕\(movedSectionCount)  R +\(insertedCount) -\(deletedCount) ↕\(movedCount)"
     }
 
     var refreshText: String {

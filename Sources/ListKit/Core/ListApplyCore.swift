@@ -29,12 +29,26 @@ struct ListApplyPlan {
     let oldSupplementariesByIdentity: [AnyListIdentity: ListNodeSnapshot]
     let newSupplementariesByIdentity: [AnyListIdentity: ListNodeSnapshot]
 
+    var hasSnapshotChanges: Bool {
+        initialSummary.insertedSectionCount > 0
+            || initialSummary.deletedSectionCount > 0
+            || initialSummary.movedSectionCount > 0
+            || initialSummary.insertedCount > 0
+            || initialSummary.deletedCount > 0
+            || initialSummary.movedCount > 0
+            || initialSummary.snapshotRefreshCount > 0
+    }
+
     func completedSummary(
         visibleRefreshCount: Int,
         visibleSupplementaryRefreshCount: Int,
         animation: ListAnimationSummary = ListAnimationSummary(completionState: .completed)
     ) -> ListApplySummary {
         ListApplySummary(
+            insertedSectionCount: initialSummary.insertedSectionCount,
+            deletedSectionCount: initialSummary.deletedSectionCount,
+            movedSectionCount: initialSummary.movedSectionCount,
+            keptSectionCount: initialSummary.keptSectionCount,
             insertedCount: initialSummary.insertedCount,
             deletedCount: initialSummary.deletedCount,
             movedCount: initialSummary.movedCount,
@@ -61,8 +75,8 @@ enum ListApplyPlanner {
         let newRows = newSections.flatMap(\.rows)
         let oldSupplementaries = oldSections.flatMap(\.supplementaries)
         let newSupplementaries = newSections.flatMap(\.supplementaries)
-        let movedCount = inferredMoveCount(old: oldRows, new: newRows)
-        let changedSectionCount = changedSectionCount(old: oldSections, new: newSections)
+        let movedCount = inferredRowMoveCount(old: oldSections, new: newSections)
+        let sectionChanges = sectionChanges(old: oldSections, new: newSections)
         let oldRowsByIdentity = lookup(from: oldRows)
         let newRowsByIdentity = lookup(from: newRows)
         let oldSupplementariesByIdentity = lookup(from: oldSupplementaries)
@@ -88,14 +102,15 @@ enum ListApplyPlanner {
             visibleRefreshCount: 0,
             visibleSupplementaryRefreshCount: 0,
             diagnosticsIssues: diagnosticsIssues,
-            movedCount: movedCount
+            movedCount: movedCount,
+            sectionChanges: sectionChanges
         )
 
         return ListApplyPlan(
             shouldApplyDiffable: shouldApplyDiffable,
             snapshotRefreshItems: snapshotRefreshItems,
             shouldRunVisibleRefresh: shouldRunVisibleRefresh(strategy: options.refreshStrategy),
-            changedSectionCount: changedSectionCount,
+            changedSectionCount: sectionChanges.changedCount,
             initialSummary: initialSummary,
             oldRowsByIdentity: oldRowsByIdentity,
             newRowsByIdentity: newRowsByIdentity,
@@ -104,11 +119,19 @@ enum ListApplyPlanner {
         )
     }
 
-    static func shouldRefreshVisibleRow(_ row: ListNodeSnapshot) -> Bool {
+    static func shouldRefreshVisibleRow(
+        _ row: ListNodeSnapshot,
+        oldRow: ListNodeSnapshot,
+        strategy: ListApplyRefreshStrategy
+    ) -> Bool {
         switch row.refreshPolicy {
-        case .automaticVisible, .alwaysVisible:
+        case .automaticVisible:
+            return row.refreshID == nil || oldRow.refreshID != row.refreshID
+        case .alwaysVisible:
             return true
-        case .whenRefreshIDChanges, .never:
+        case .whenRefreshIDChanges:
+            return strategy == .visibleOnly && oldRow.refreshID != row.refreshID
+        case .never:
             return false
         }
     }
@@ -118,7 +141,10 @@ enum ListApplyPlanner {
         oldSupplementary: ListNodeSnapshot
     ) -> Bool {
         switch supplementary.refreshPolicy {
-        case .automaticVisible, .alwaysVisible:
+        case .automaticVisible:
+            return supplementary.refreshID == nil
+                || oldSupplementary.refreshID != supplementary.refreshID
+        case .alwaysVisible:
             return true
         case .whenRefreshIDChanges:
             return oldSupplementary.refreshID != supplementary.refreshID
@@ -188,7 +214,8 @@ enum ListApplyPlanner {
         visibleRefreshCount: Int,
         visibleSupplementaryRefreshCount: Int,
         diagnosticsIssues: [ListDiagnosticsIssue],
-        movedCount: Int
+        movedCount: Int,
+        sectionChanges: ListSectionChanges
     ) -> ListApplySummary {
         let oldIDs = Set(oldRowsByIdentity.keys)
         let newIDs = Set(newRowsByIdentity.keys)
@@ -207,6 +234,10 @@ enum ListApplyPlanner {
         }
 
         return ListApplySummary(
+            insertedSectionCount: sectionChanges.insertedCount,
+            deletedSectionCount: sectionChanges.deletedCount,
+            movedSectionCount: sectionChanges.movedCount,
+            keptSectionCount: sectionChanges.keptCount,
             insertedCount: newIDs.subtracting(oldIDs).count,
             deletedCount: oldIDs.subtracting(newIDs).count,
             movedCount: movedCount,
@@ -220,29 +251,55 @@ enum ListApplyPlanner {
         )
     }
 
-    private static func inferredMoveCount(
-        old: [ListNodeSnapshot],
-        new: [ListNodeSnapshot]
-    ) -> Int {
-        new.map(\.identity)
-            .difference(from: old.map(\.identity))
+    private static func inferredMovedIdentities<ID>(old: [ID], new: [ID]) -> Set<ID>
+    where ID: Hashable {
+        new.difference(from: old)
             .inferringMoves()
-            .reduce(into: 0) { count, change in
-                guard case .insert(_, _, associatedWith: .some) = change else { return }
-                count += 1
+            .reduce(into: Set<ID>()) { identities, change in
+                guard case .insert(_, let identity, associatedWith: .some) = change else { return }
+                identities.insert(identity)
             }
     }
 
-    private static func changedSectionCount(
+    private static func inferredRowMoveCount(
         old: [ListSectionSnapshot],
         new: [ListSectionSnapshot]
     ) -> Int {
+        let oldRowsBySection = old.reduce(into: [AnyListID: [AnyListIdentity]]()) { result, section in
+            result[section.sectionID] = section.rows.map(\.identity)
+        }
+        let newRowsBySection = new.reduce(into: [AnyListID: [AnyListIdentity]]()) { result, section in
+            result[section.sectionID] = section.rows.map(\.identity)
+        }
+        return Set(oldRowsBySection.keys).intersection(newRowsBySection.keys).reduce(into: 0) { count, sectionID in
+            count += inferredMovedIdentities(
+                old: oldRowsBySection[sectionID] ?? [],
+                new: newRowsBySection[sectionID] ?? []
+            ).count
+        }
+    }
+
+    private static func sectionChanges(
+        old: [ListSectionSnapshot],
+        new: [ListSectionSnapshot]
+    ) -> ListSectionChanges {
+        let oldIDs = old.map(\.sectionID)
+        let newIDs = new.map(\.sectionID)
+        let oldIDSet = Set(oldIDs)
+        let newIDSet = Set(newIDs)
+        let movedIDs = inferredMovedIdentities(old: oldIDs, new: newIDs)
         let oldFingerprints = sectionFingerprints(from: old)
         let newFingerprints = sectionFingerprints(from: new)
-        return Set(oldFingerprints.keys).union(newFingerprints.keys).reduce(into: 0) { count, sectionID in
-            guard oldFingerprints[sectionID] != newFingerprints[sectionID] else { return }
-            count += 1
+        let contentChangedIDs = Set(oldFingerprints.keys).union(newFingerprints.keys).filter { sectionID in
+            oldFingerprints[sectionID] != newFingerprints[sectionID]
         }
+        return ListSectionChanges(
+            insertedCount: newIDSet.subtracting(oldIDSet).count,
+            deletedCount: oldIDSet.subtracting(newIDSet).count,
+            movedCount: movedIDs.count,
+            keptCount: oldIDSet.intersection(newIDSet).count,
+            changedCount: contentChangedIDs.union(movedIDs).count
+        )
     }
 
     /// Diagnostics may intentionally stop an apply containing duplicate section IDs.
@@ -270,6 +327,14 @@ private struct ListSectionChangeFingerprint: Equatable {
         rows = section.rows.map(ListNodeChangeFingerprint.init)
         supplementaries = section.supplementaries.map(ListNodeChangeFingerprint.init)
     }
+}
+
+private struct ListSectionChanges {
+    let insertedCount: Int
+    let deletedCount: Int
+    let movedCount: Int
+    let keptCount: Int
+    let changedCount: Int
 }
 
 private struct ListNodeChangeFingerprint: Equatable {
@@ -365,7 +430,7 @@ enum ListApplyLogger {
         #if DEBUG
         guard options.diagnostics.logsApplySummary else { return }
         print(
-            "\(prefix): inserted=\(summary.insertedCount), deleted=\(summary.deletedCount), moved=\(summary.movedCount), kept=\(summary.keptCount), refreshIDChanged=\(summary.refreshIDChangedCount), snapshotRefresh=\(summary.snapshotRefreshCount), visibleRefresh=\(summary.visibleRefreshCount), supplementaryRefreshIDChanged=\(summary.supplementaryRefreshIDChangedCount), visibleSupplementaryRefresh=\(summary.visibleSupplementaryRefreshCount), animation=\(summary.animation.completionState), snapshotAnimated=\(summary.animation.snapshotAnimated), outlineAnimated=\(summary.animation.outlineAnimatedSectionCount), contentTransitions=\(summary.animation.contentTransitionCount), layoutAnimated=\(summary.animation.layoutAnimated), scrollAnimated=\(summary.animation.scrollAnimated), anchorCompensation=\(summary.animation.anchorCompensation), reduceMotion=\(summary.animation.reduceMotionApplied), diagnostics=\(summary.diagnosticsIssues.count)"
+            "\(prefix): sectionInserted=\(summary.insertedSectionCount), sectionDeleted=\(summary.deletedSectionCount), sectionMoved=\(summary.movedSectionCount), sectionKept=\(summary.keptSectionCount), inserted=\(summary.insertedCount), deleted=\(summary.deletedCount), moved=\(summary.movedCount), kept=\(summary.keptCount), refreshIDChanged=\(summary.refreshIDChangedCount), snapshotRefresh=\(summary.snapshotRefreshCount), visibleRefresh=\(summary.visibleRefreshCount), supplementaryRefreshIDChanged=\(summary.supplementaryRefreshIDChangedCount), visibleSupplementaryRefresh=\(summary.visibleSupplementaryRefreshCount), animation=\(summary.animation.completionState), snapshotAnimated=\(summary.animation.snapshotAnimated), outlineAnimated=\(summary.animation.outlineAnimatedSectionCount), contentTransitions=\(summary.animation.contentTransitionCount), layoutAnimated=\(summary.animation.layoutAnimated), scrollAnimated=\(summary.animation.scrollAnimated), anchorCompensation=\(summary.animation.anchorCompensation), reduceMotion=\(summary.animation.reduceMotionApplied), diagnostics=\(summary.diagnosticsIssues.count)"
         )
         #endif
     }

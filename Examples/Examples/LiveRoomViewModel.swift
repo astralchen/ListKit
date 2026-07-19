@@ -81,6 +81,10 @@ final class LiveRoomViewModel {
         state.messages.count
     }
 
+    var diagnostics: ApplyDiagnostics {
+        state.diagnostics
+    }
+
     var viewerCount: Int {
         state.viewerCount
     }
@@ -259,6 +263,10 @@ final class LiveRoomViewModel {
     }
 
     private func recordApply(_ summary: ListApplySummary) {
+        state.diagnostics.insertedSectionCount = summary.insertedSectionCount
+        state.diagnostics.deletedSectionCount = summary.deletedSectionCount
+        state.diagnostics.movedSectionCount = summary.movedSectionCount
+        state.diagnostics.keptSectionCount = summary.keptSectionCount
         state.diagnostics.insertedCount = summary.insertedCount
         state.diagnostics.deletedCount = summary.deletedCount
         state.diagnostics.movedCount = summary.movedCount
@@ -565,8 +573,8 @@ final class LiveRoomViewModel {
                     context.send(LiveRoomCollectionEvent.roomActivityFilterChanged(filter))
                 }
             }
-            .refreshID(LiveRoomRowID.roomActivityTitle)
-            .refreshPolicy(.whenRefreshIDChanges)
+            .refreshID(model)
+            .refreshPolicy(.automaticVisible)
         } layout: {
             ListLayout(
                 itemHeight: .absolute(42),

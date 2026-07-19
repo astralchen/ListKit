@@ -75,6 +75,9 @@ final class ListKitCoreTests: XCTestCase {
                 .refreshID(1)
                 .refreshPolicy(.automaticVisible)
             }
+            ListSection(1) {
+                Row("side", model: "Side", cell: NormalUserCell.self) { _, _, _ in }
+            }
         }
         collectionView.layoutIfNeeded()
         _ = try XCTUnwrap(collectionView.cellForItem(at: IndexPath(item: 0, section: 0)))
@@ -113,12 +116,536 @@ final class ListKitCoreTests: XCTestCase {
                 .refreshID(3)
                 .refreshPolicy(.automaticVisible)
             }
+            ListSection(1) {
+                Row("side", model: "Side", cell: NormalUserCell.self) { _, _, _ in }
+            }
         }
         let supersededResult = await firstApply.value
 
         XCTAssertEqual(supersededResult.summary.animation.completionState, .superseded)
         XCTAssertEqual(latestResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(latestResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(collectionView.numberOfSections, 2)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 1), 1)
         XCTAssertEqual(adapter.lastApplySummary, latestResult.summary)
+    }
+
+    func testSerialCollectionApplyCompletesSectionDeletionBeforeReinsertion() async throws {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 320, height: 60)
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: layout
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let host = UIViewController()
+        host.view.frame = collectionView.bounds
+        host.view.addSubview(collectionView)
+        let window = UIWindow(frame: collectionView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                Row("row", model: "A", cell: NormalUserCell.self) { cell, value, _ in
+                    cell.name = value
+                }
+                .refreshID(1)
+                .refreshPolicy(.automaticVisible)
+            }
+            ListSection(1) {
+                Row("side", model: "Side", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+        collectionView.layoutIfNeeded()
+        _ = try XCTUnwrap(collectionView.cellForItem(at: IndexPath(item: 0, section: 0)))
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        let transitionStarted = expectation(description: "serial collection transition started")
+        var didSignalTransition = false
+        let serialTransaction = ListTransaction(animation: .disabled)
+            .contentAnimation(.enabled)
+            .updatePolicy(.serial)
+        let deletionApply = Task { @MainActor in
+            await adapter.applyAndWait(transaction: serialTransaction) {
+                ListSection(0) {
+                    Row("row", model: "B", cell: NormalUserCell.self) { cell, value, _ in
+                        cell.name = value
+                        if !didSignalTransition {
+                            didSignalTransition = true
+                            transitionStarted.fulfill()
+                        }
+                    }
+                    .refreshID(2)
+                    .refreshPolicy(.automaticVisible)
+                    .contentTransition(.opacity(duration: 0.35))
+                }
+            }
+        }
+
+        await fulfillment(of: [transitionStarted], timeout: 2)
+        let reinsertionApply = Task { @MainActor in
+            await adapter.applyAndWait(
+                transaction: ListTransaction.disabled.updatePolicy(.serial)
+            ) {
+                ListSection(0) {
+                    Row("row", model: "C", cell: NormalUserCell.self) { cell, value, _ in
+                        cell.name = value
+                    }
+                    .refreshID(3)
+                    .refreshPolicy(.automaticVisible)
+                }
+                ListSection(1) {
+                    Row("side", model: "Side", cell: NormalUserCell.self) { _, _, _ in }
+                }
+            }
+        }
+
+        let deletionResult = await deletionApply.value
+        let reinsertionResult = await reinsertionApply.value
+
+        XCTAssertEqual(deletionResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(deletionResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(reinsertionResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(collectionView.numberOfSections, 2)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 1), 1)
+    }
+
+    func testVisibleOnlyRefreshesCollectionRowWhenRefreshIDChanges() async throws {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 320, height: 60)
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: layout
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let host = UIViewController()
+        host.view.frame = collectionView.bounds
+        host.view.addSubview(collectionView)
+        let window = UIWindow(frame: collectionView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                Row("row", model: "A", cell: NormalUserCell.self) { cell, value, _ in
+                    cell.name = value
+                }
+                .refreshID(1)
+                .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+        collectionView.layoutIfNeeded()
+        let cell = try XCTUnwrap(
+            collectionView.cellForItem(at: IndexPath(item: 0, section: 0)) as? NormalUserCell
+        )
+
+        let result = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, refreshStrategy: .visibleOnly)
+        ) {
+            ListSection(0) {
+                Row("row", model: "B", cell: NormalUserCell.self) { cell, value, _ in
+                    cell.name = value
+                }
+                .refreshID(2)
+                .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+
+        XCTAssertEqual(result.summary.refreshIDChangedCount, 1)
+        XCTAssertEqual(result.summary.snapshotRefreshCount, 0)
+        XCTAssertEqual(result.summary.visibleRefreshCount, 1)
+        XCTAssertEqual(cell.name, "B")
+    }
+
+    func testCollectionApplyDeletesEntireSectionAndClearsIdentityHistory() async throws {
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: UICollectionViewFlowLayout()
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(10) {
+                Row("kept", model: "Kept", cell: NormalUserCell.self) { _, _, _ in }
+                    .refreshID(1)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+            ListSection(20) {
+                Row("removed", model: "Removed", cell: NormalUserCell.self) { _, _, _ in }
+                    .refreshID(1)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+        let removedIdentity = try XCTUnwrap(
+            adapter.itemIdentity(at: IndexPath(item: 0, section: 1))
+        )
+
+        let deletionResult = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(10) {
+                Row("kept", model: "Kept", cell: NormalUserCell.self) { _, _, _ in }
+                    .refreshID(1)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+
+        XCTAssertEqual(deletionResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(deletionResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(deletionResult.summary.keptSectionCount, 1)
+        XCTAssertEqual(deletionResult.summary.deletedCount, 1)
+        XCTAssertEqual(deletionResult.summary.keptCount, 1)
+        XCTAssertEqual(deletionResult.summary.refreshIDChangedCount, 0)
+        XCTAssertEqual(collectionView.numberOfSections, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 10)
+        XCTAssertNil(adapter.sectionIdentifier(at: 1))
+        XCTAssertNil(adapter.sectionIndex(for: 20))
+        XCTAssertEqual(adapter.itemCount(in: 20), 0)
+        XCTAssertTrue(adapter.indexPaths(forRowID: "removed", in: 20).isEmpty)
+        XCTAssertFalse(adapter.contains(removedIdentity))
+
+        let reinsertionResult = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(10) {
+                Row("kept", model: "Kept", cell: NormalUserCell.self) { _, _, _ in }
+                    .refreshID(1)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+            ListSection(20) {
+                Row("removed", model: "Reinserted", cell: NormalUserCell.self) { _, _, _ in }
+                    .refreshID(2)
+                    .refreshPolicy(.whenRefreshIDChanges)
+            }
+        }
+
+        XCTAssertEqual(reinsertionResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(reinsertionResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.summary.keptSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.summary.insertedCount, 1)
+        XCTAssertEqual(reinsertionResult.summary.refreshIDChangedCount, 0)
+        XCTAssertEqual(collectionView.numberOfSections, 2)
+        XCTAssertEqual(adapter.sectionIndex(for: 20), 1)
+        XCTAssertEqual(
+            adapter.indexPaths(forRowID: "removed", in: 20),
+            [IndexPath(item: 0, section: 1)]
+        )
+    }
+
+    func testCollectionEmptySectionChangesDriveSnapshotAnimationSummary() async {
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: UICollectionViewFlowLayout()
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {}
+            ListSection(1) {}
+        }
+
+        let reorderResult = await adapter.applyAndWait(
+            transaction: ListTransaction(animation: .enabled)
+        ) {
+            ListSection(1) {}
+            ListSection(0) {}
+        }
+
+        XCTAssertEqual(reorderResult.summary.movedSectionCount, 1)
+        XCTAssertEqual(reorderResult.summary.movedCount, 0)
+        XCTAssertTrue(reorderResult.summary.animation.snapshotAnimated)
+        XCTAssertEqual(reorderResult.summary.animation.animatedSectionCount, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 1), 0)
+
+        let deleteLeadingResult = await adapter.applyAndWait(
+            transaction: ListTransaction(animation: .enabled)
+        ) {
+            ListSection(0) {}
+        }
+
+        XCTAssertEqual(deleteLeadingResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(deleteLeadingResult.summary.deletedCount, 0)
+        XCTAssertTrue(deleteLeadingResult.summary.animation.snapshotAnimated)
+        XCTAssertEqual(deleteLeadingResult.summary.animation.animatedSectionCount, 1)
+        XCTAssertTrue(deleteLeadingResult.summary.animation.layoutInvalidated)
+        XCTAssertEqual(collectionView.numberOfSections, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 0)
+
+        let noSections: [ListSection<Int>] = []
+        let deleteAllResult = await adapter.applyAndWait(
+            options: .init(
+                transaction: ListTransaction(animation: .enabled),
+                applicationMode: .reloadData
+            )
+        ) {
+            noSections
+        }
+
+        XCTAssertEqual(deleteAllResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(deleteAllResult.summary.deletedCount, 0)
+        XCTAssertFalse(deleteAllResult.summary.animation.snapshotAnimated)
+        XCTAssertEqual(deleteAllResult.summary.animation.animatedSectionCount, 0)
+        XCTAssertEqual(collectionView.numberOfSections, 0)
+    }
+
+    func testCollectionDeletesLeadingAndMiddleSectionsTogether() async {
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: UICollectionViewFlowLayout()
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                Row("zero", model: "Zero", cell: NormalUserCell.self) { _, _, _ in }
+            }
+            ListSection(1) {
+                Row("one", model: "One", cell: NormalUserCell.self) { _, _, _ in }
+            }
+            ListSection(2) {
+                Row("two", model: "Two", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        let result = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(2) {
+                Row("two", model: "Two", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertEqual(result.summary.deletedSectionCount, 2)
+        XCTAssertEqual(result.summary.keptSectionCount, 1)
+        XCTAssertEqual(result.summary.deletedCount, 2)
+        XCTAssertEqual(result.summary.keptCount, 1)
+        XCTAssertEqual(collectionView.numberOfSections, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 2)
+        XCTAssertEqual(adapter.indexPaths(forRowID: "two", in: 2), [IndexPath(item: 0, section: 0)])
+        XCTAssertTrue(adapter.indexPaths(forRowID: "zero").isEmpty)
+        XCTAssertTrue(adapter.indexPaths(forRowID: "one").isEmpty)
+    }
+
+    func testCollectionPreservesSelectionAndFocusIdentityWhenLeadingSectionIsDeleted() async throws {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 300, height: 44)
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: layout
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let host = UIViewController()
+        host.view.frame = collectionView.bounds
+        host.view.addSubview(collectionView)
+        let window = UIWindow(frame: collectionView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                Row("removed", model: "Removed", cell: NormalUserCell.self) { _, _, _ in }
+            }
+            .selectionMode(.single)
+            ListSection(1) {
+                Row("selected", model: "Selected", cell: NormalUserCell.self) { _, _, _ in }
+                    .focusable()
+            }
+            .selectionMode(.single)
+        }
+        collectionView.layoutIfNeeded()
+        collectionView.selectItem(at: IndexPath(item: 0, section: 1), animated: false, scrollPosition: [])
+        let selectedIdentity = try XCTUnwrap(adapter.itemIdentity(at: IndexPath(item: 0, section: 1)))
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(1) {
+                Row("selected", model: "Selected", cell: NormalUserCell.self) { _, _, _ in }
+                    .focusable()
+            }
+            .selectionMode(.single)
+        }
+
+        let shiftedIndexPath = try XCTUnwrap(collectionView.indexPathsForSelectedItems?.first)
+        XCTAssertEqual(shiftedIndexPath, IndexPath(item: 0, section: 0))
+        XCTAssertEqual(adapter.itemIdentity(at: shiftedIndexPath), selectedIdentity)
+        XCTAssertTrue(adapter.collectionView(collectionView, canFocusItemAt: shiftedIndexPath))
+
+        let noSections: [ListSection<Int>] = []
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            noSections
+        }
+
+        XCTAssertTrue(collectionView.indexPathsForSelectedItems?.isEmpty ?? true)
+        XCTAssertFalse(collectionView.allowsSelection)
+    }
+
+    func testCollectionSectionDeletionPreservesOrReleasesVisibleAnchor() async throws {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 300, height: 44)
+        layout.minimumLineSpacing = 0
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 220),
+            collectionViewLayout: layout
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        func section(_ id: Int, rows: Range<Int>) -> ListSection<Int> {
+            ListSection(id) {
+                ForEach(rows, id: \.self) { row in
+                    Row("\(id)-\(row)", model: row, cell: NormalUserCell.self) { _, _, _ in }
+                }
+            }
+        }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            section(0, rows: 0..<3)
+            section(1, rows: 0..<6)
+            ListSection(2) {
+                Row("anchor", model: 0, cell: NormalUserCell.self) { _, _, _ in }
+                ForEach(1..<6, id: \.self) { row in
+                    Row("anchor-trailing-\(row)", model: row, cell: NormalUserCell.self) { _, _, _ in }
+                }
+            }
+        }
+        collectionView.layoutIfNeeded()
+        let initialAnchorPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 2).first)
+        let initialAttributes = try XCTUnwrap(layout.layoutAttributesForItem(at: initialAnchorPath))
+        collectionView.setContentOffset(
+            CGPoint(x: 0, y: initialAttributes.frame.minY - 80),
+            animated: false
+        )
+        collectionView.layoutIfNeeded()
+        let initialViewportY = initialAttributes.frame.minY - collectionView.contentOffset.y
+
+        let preserveResult = await adapter.applyAndWait(
+            transaction: ListTransaction.disabled.scrollBehavior(
+                .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 2))
+            )
+        ) {
+            section(1, rows: 0..<6)
+            ListSection(2) {
+                Row("anchor", model: 0, cell: NormalUserCell.self) { _, _, _ in }
+                ForEach(1..<6, id: \.self) { row in
+                    Row("anchor-trailing-\(row)", model: row, cell: NormalUserCell.self) { _, _, _ in }
+                }
+            }
+        }
+        collectionView.layoutIfNeeded()
+        let shiftedAnchorPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 2).first)
+        let shiftedAttributes = try XCTUnwrap(layout.layoutAttributesForItem(at: shiftedAnchorPath))
+
+        XCTAssertEqual(
+            shiftedAttributes.frame.minY - collectionView.contentOffset.y,
+            initialViewportY,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(preserveResult.summary.animation.anchorCompensation, 0, accuracy: 0.5)
+        XCTAssertEqual(collectionView.contentInset.bottom, 0, accuracy: 0.5)
+
+        let removeAnchorResult = await adapter.applyAndWait(
+            transaction: ListTransaction.disabled.scrollBehavior(
+                .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 2))
+            )
+        ) {
+            section(1, rows: 0..<6)
+        }
+
+        XCTAssertEqual(removeAnchorResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(removeAnchorResult.summary.animation.anchorCompensation, 0, accuracy: 0.5)
+        XCTAssertEqual(collectionView.contentInset.bottom, 0, accuracy: 0.5)
+        XCTAssertTrue(adapter.indexPaths(forRowID: "anchor", in: 2).isEmpty)
+    }
+
+    func testCollectionDeletesAndReinsertsOutlineSectionWithSupplementary() async {
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: UICollectionViewFlowLayout()
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        func outlineSection(headerVersion: Int) -> ListSection<Int> {
+            let header: ListSectionSupplementary<Int> = SectionSupplementary(
+                UICollectionView.elementKindSectionHeader,
+                HeaderView.self,
+                id: "outline-header"
+            ) { view, _ in
+                view.title = "Header \(headerVersion)"
+            }
+            .refreshID(headerVersion)
+            .refreshPolicy(.whenRefreshIDChanges)
+
+            return ListSection(1) {
+                DisclosureGroup(
+                    Row("parent", model: "Parent", cell: UICollectionViewListCell.self) { _, _, _ in }
+                        .outlineDisclosure(),
+                    isExpanded: true
+                ) {
+                    Row("child", model: "Child", cell: UICollectionViewListCell.self) { _, _, _ in }
+                }
+            } supplementaries: {
+                header
+            }
+            .boundarySupplementaryLayout(
+                kind: UICollectionView.elementKindSectionHeader,
+                height: .absolute(32)
+            )
+        }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                Row("stable", model: "Stable", cell: NormalUserCell.self) { _, _, _ in }
+            }
+            outlineSection(headerVersion: 1)
+        }
+
+        let deleteResult = await adapter.applyAndWait(
+            transaction: ListTransaction(animation: .enabled)
+        ) {
+            ListSection(0) {
+                Row("stable", model: "Stable", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertEqual(deleteResult.summary.deletedSectionCount, 1)
+        XCTAssertEqual(deleteResult.summary.deletedCount, 2)
+        XCTAssertEqual(deleteResult.summary.animation.outlineAnimatedSectionCount, 0)
+        XCTAssertTrue(deleteResult.summary.animation.layoutInvalidated)
+        XCTAssertEqual(collectionView.numberOfSections, 1)
+
+        let reinsertResult = await adapter.applyAndWait(
+            transaction: ListTransaction(animation: .enabled)
+        ) {
+            ListSection(0) {
+                Row("stable", model: "Stable", cell: NormalUserCell.self) { _, _, _ in }
+            }
+            outlineSection(headerVersion: 2)
+        }
+
+        XCTAssertEqual(reinsertResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(reinsertResult.summary.insertedCount, 2)
+        XCTAssertEqual(reinsertResult.summary.supplementaryRefreshIDChangedCount, 0)
+        XCTAssertEqual(reinsertResult.summary.animation.outlineAnimatedSectionCount, 1)
+        XCTAssertTrue(reinsertResult.summary.animation.layoutInvalidated)
+        XCTAssertEqual(adapter.indexPaths(forRowID: "parent", in: 1), [IndexPath(item: 0, section: 1)])
+        XCTAssertEqual(adapter.indexPaths(forRowID: "child", in: 1), [IndexPath(item: 1, section: 1)])
     }
 
     func testApplyPlannerReportsMovesAndChangedSections() {
@@ -132,7 +659,77 @@ final class ListKitCoreTests: XCTestCase {
         )
 
         XCTAssertEqual(plan.initialSummary.movedCount, 1)
+        XCTAssertEqual(plan.initialSummary.movedSectionCount, 0)
+        XCTAssertEqual(plan.initialSummary.keptSectionCount, 1)
         XCTAssertEqual(plan.changedSectionCount, 1)
+    }
+
+    func testApplyPlannerTracksEmptySectionInsertionDeletionAndReordering() {
+        let insertionAndDeletion = ListApplyPlanner.makePlan(
+            old: [
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: [])
+            ],
+            new: [
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
+                ListSectionSnapshot(sectionID: AnyListID(2), rows: [], supplementaries: [])
+            ],
+            options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
+            diagnosticsIssues: []
+        )
+
+        XCTAssertEqual(insertionAndDeletion.initialSummary.insertedSectionCount, 1)
+        XCTAssertEqual(insertionAndDeletion.initialSummary.deletedSectionCount, 1)
+        XCTAssertEqual(insertionAndDeletion.initialSummary.movedSectionCount, 0)
+        XCTAssertEqual(insertionAndDeletion.initialSummary.keptSectionCount, 1)
+        XCTAssertEqual(insertionAndDeletion.initialSummary.insertedCount, 0)
+        XCTAssertEqual(insertionAndDeletion.initialSummary.deletedCount, 0)
+        XCTAssertEqual(insertionAndDeletion.changedSectionCount, 2)
+        XCTAssertTrue(insertionAndDeletion.hasSnapshotChanges)
+
+        let reordering = ListApplyPlanner.makePlan(
+            old: [
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: [])
+            ],
+            new: [
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: []),
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: [])
+            ],
+            options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
+            diagnosticsIssues: []
+        )
+
+        XCTAssertEqual(reordering.initialSummary.insertedSectionCount, 0)
+        XCTAssertEqual(reordering.initialSummary.deletedSectionCount, 0)
+        XCTAssertEqual(reordering.initialSummary.movedSectionCount, 1)
+        XCTAssertEqual(reordering.initialSummary.keptSectionCount, 2)
+        XCTAssertEqual(reordering.initialSummary.movedCount, 0)
+        XCTAssertEqual(reordering.changedSectionCount, 1)
+        XCTAssertTrue(reordering.hasSnapshotChanges)
+    }
+
+    func testApplyPlannerTreatsRowRehomedToAnotherSectionAsDeleteAndInsert() {
+        let oldRow = makeTestListNode("row", refreshID: 1, sectionID: 0)
+        let rehomedRow = makeTestListNode("row", refreshID: 1, sectionID: 1)
+        let plan = ListApplyPlanner.makePlan(
+            old: [
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [oldRow], supplementaries: []),
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: [])
+            ],
+            new: [
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [rehomedRow], supplementaries: [])
+            ],
+            options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
+            diagnosticsIssues: []
+        )
+
+        XCTAssertEqual(plan.initialSummary.insertedCount, 1)
+        XCTAssertEqual(plan.initialSummary.deletedCount, 1)
+        XCTAssertEqual(plan.initialSummary.movedCount, 0)
+        XCTAssertEqual(plan.initialSummary.movedSectionCount, 0)
+        XCTAssertEqual(plan.changedSectionCount, 2)
     }
 
     func testApplyWithoutScrollBehaviorDoesNotCreateAnchorInset() async {
@@ -710,6 +1307,70 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(collectionView.numberOfSections, 0)
     }
 
+    func testCollectionDiagnosticsRejectionPreservesLastValidSnapshot() {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        adapter.apply(options: .init(transaction: .disabled, applicationMode: .reloadData)) {
+            ListSection(9) {
+                Row("valid", model: "Valid", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        let result = adapter.apply(
+            options: ListApplyOptions(
+                transaction: .disabled,
+                diagnostics: .init(mode: .warning, logsApplySummary: false)
+            )
+        ) {
+            ListSection(1) {
+                Row("invalid-a", model: "A", cell: NormalUserCell.self) { _, _, _ in }
+            }
+            ListSection(1) {
+                Row("invalid-b", model: "B", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertTrue(result.summary.diagnosticsIssues.contains { $0.kind == .duplicateSection })
+        XCTAssertEqual(collectionView.numberOfSections, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 9)
+        XCTAssertEqual(adapter.rowIdentifier(at: IndexPath(item: 0, section: 0), as: String.self), "valid")
+        XCTAssertTrue(adapter.indexPaths(forRowID: "invalid-a").isEmpty)
+        XCTAssertTrue(adapter.indexPaths(forRowID: "invalid-b").isEmpty)
+    }
+
+    func testTableDiagnosticsRejectionPreservesLastValidSnapshot() {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+
+        adapter.apply(options: .init(transaction: .disabled, applicationMode: .reloadData)) {
+            TableSection(9) {
+                TableRow("valid", model: "Valid", cell: UITableViewCell.self) { _, _, _ in }
+            }
+        }
+
+        let result = adapter.apply(
+            options: ListApplyOptions(
+                transaction: .disabled,
+                diagnostics: .init(mode: .warning, logsApplySummary: false)
+            )
+        ) {
+            TableSection(1) {
+                TableRow("invalid-a", model: "A", cell: UITableViewCell.self) { _, _, _ in }
+            }
+            TableSection(1) {
+                TableRow("invalid-b", model: "B", cell: UITableViewCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertTrue(result.summary.diagnosticsIssues.contains { $0.kind == .duplicateSection })
+        XCTAssertEqual(tableView.numberOfSections, 1)
+        XCTAssertEqual(adapter.sectionIdentifier(at: 0), 9)
+        XCTAssertEqual(adapter.rowIdentifier(at: IndexPath(row: 0, section: 0), as: String.self), "valid")
+        XCTAssertTrue(adapter.indexPaths(forRowID: "invalid-a").isEmpty)
+        XCTAssertTrue(adapter.indexPaths(forRowID: "invalid-b").isEmpty)
+    }
+
     func testApplyOptionsExposeSummaryAndAvoidDuplicateDiffableCrash() {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
@@ -854,6 +1515,42 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(endedUserID, 1)
         XCTAssertEqual(cancelledUserID, 1)
         XCTAssertEqual(displayDelegate.didEndDisplayingCount, 1)
+    }
+
+    func testCollectionLifecycleUsesCapturedRowWhenDeletedSectionIndexPathIsReused() {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        var endedRowID: String?
+        var cancelledRowID: String?
+
+        adapter.apply(transaction: .disabled) {
+            ListSection(0) {
+                Row("old", model: "Old", cell: NormalUserCell.self) { _, _, _ in }
+                    .onEndDisplay { _, _ in endedRowID = "old" }
+                    .onCancelPrefetch { _, _ in cancelledRowID = "old" }
+            }
+            ListSection(1) {
+                Row("new", model: "New", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        let reusedIndexPath = IndexPath(item: 0, section: 0)
+        let oldCell = NormalUserCell()
+        adapter.collectionView(collectionView, willDisplay: oldCell, forItemAt: reusedIndexPath)
+        adapter.collectionView(collectionView, prefetchItemsAt: [reusedIndexPath])
+
+        adapter.apply(transaction: .disabled) {
+            ListSection(1) {
+                Row("new", model: "New", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        adapter.collectionView(collectionView, didEndDisplaying: oldCell, forItemAt: reusedIndexPath)
+        adapter.collectionView(collectionView, cancelPrefetchingForItemsAt: [reusedIndexPath])
+
+        XCTAssertEqual(endedRowID, "old")
+        XCTAssertEqual(cancelledRowID, "old")
+        XCTAssertEqual(adapter.rowIdentifier(at: reusedIndexPath, as: String.self), "new")
     }
 
     func testCollectionSelectionModeIsEnforcedPerSection() {
@@ -2026,6 +2723,86 @@ final class ListKitCoreTests: XCTestCase {
         )
     }
 
+    func testVisibleRefreshPolicyUsesRefreshIDAndApplyStrategy() {
+        let oldVersion = makeTestListNode("row", refreshID: 1)
+        let stableAutomatic = makeTestListNode("row", refreshID: 1)
+        let changedAutomatic = makeTestListNode("row", refreshID: 2)
+        let unversionedOld = makeTestListNode("row", refreshID: nil)
+        let unversionedNew = makeTestListNode("row", refreshID: nil)
+        let changedDiffable = makeTestListNode(
+            "row",
+            refreshID: 2,
+            policy: .whenRefreshIDChanges
+        )
+        let stableAlways = makeTestListNode("row", refreshID: 1, policy: .alwaysVisible)
+
+        XCTAssertFalse(
+            ListApplyPlanner.shouldRefreshVisibleRow(
+                stableAutomatic,
+                oldRow: oldVersion,
+                strategy: .automatic
+            )
+        )
+        XCTAssertTrue(
+            ListApplyPlanner.shouldRefreshVisibleRow(
+                changedAutomatic,
+                oldRow: oldVersion,
+                strategy: .automatic
+            )
+        )
+        XCTAssertTrue(
+            ListApplyPlanner.shouldRefreshVisibleRow(
+                unversionedNew,
+                oldRow: unversionedOld,
+                strategy: .automatic
+            )
+        )
+        XCTAssertFalse(
+            ListApplyPlanner.shouldRefreshVisibleRow(
+                changedDiffable,
+                oldRow: oldVersion,
+                strategy: .automatic
+            )
+        )
+        XCTAssertTrue(
+            ListApplyPlanner.shouldRefreshVisibleRow(
+                changedDiffable,
+                oldRow: oldVersion,
+                strategy: .visibleOnly
+            )
+        )
+        XCTAssertTrue(
+            ListApplyPlanner.shouldRefreshVisibleRow(
+                stableAlways,
+                oldRow: oldVersion,
+                strategy: .automatic
+            )
+        )
+
+        let stableSupplementary = makeTestListNode(
+            "header",
+            refreshID: 1,
+            role: .supplementary
+        )
+        let changedSupplementary = makeTestListNode(
+            "header",
+            refreshID: 2,
+            role: .supplementary
+        )
+        XCTAssertFalse(
+            ListApplyPlanner.shouldRefreshVisibleSupplementary(
+                stableSupplementary,
+                oldSupplementary: stableSupplementary
+            )
+        )
+        XCTAssertTrue(
+            ListApplyPlanner.shouldRefreshVisibleSupplementary(
+                changedSupplementary,
+                oldSupplementary: stableSupplementary
+            )
+        )
+    }
+
     func testApplyPlannerForceReloadOnlyTargetsKeptRows() {
         let oldRows = [
             makeTestListNode("kept", refreshID: 1),
@@ -2231,12 +3008,13 @@ private final class InvalidationTrackingCompositionalLayout: UICollectionViewCom
 private func makeTestListNode(
     _ id: String,
     refreshID: Int?,
+    sectionID: Int = 0,
     policy: RowRefreshPolicy = .automaticVisible,
     role: ListNodeRole = .row
 ) -> ListNodeSnapshot {
     ListNodeSnapshot(
         identity: AnyListIdentity(
-            sectionID: AnyListID(0),
+            sectionID: AnyListID(sectionID),
             rowID: AnyListID(id),
             presentationID: role == .row ? ObjectIdentifier(NormalUserCell.self) : ObjectIdentifier(HeaderView.self),
             variant: role == .row ? nil : AnyListID("supplementary")
