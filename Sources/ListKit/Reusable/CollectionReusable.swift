@@ -2,34 +2,38 @@ import UIKit
 
 // MARK: - Reusable
 
-/// 可复用视图标记协议，默认用类型名作为 reuseIdentifier。
+/// 可复用视图标记协议，默认用模块限定类型名作为 reuseIdentifier。
 public protocol ReusableView: AnyObject {
     static var listReuseIdentifier: String { get }
+    static var listNibName: String { get }
 }
 
 public extension ReusableView {
-    static var listReuseIdentifier: String { String(describing: Self.self) }
+    static var listReuseIdentifier: String { String(reflecting: Self.self) }
+    static var listNibName: String { String(describing: Self.self) }
 }
 
 extension UICollectionReusableView: ReusableView {}
 
-private struct ListReusableMetadata {
+struct ListReusableMetadata {
     let identifier: String
+    let nibName: String
     let bundle: Bundle
 
     @MainActor func makeNib() -> UINib? {
-        guard bundle.url(forResource: identifier, withExtension: "nib") != nil else {
+        guard bundle.url(forResource: nibName, withExtension: "nib") != nil else {
             return nil
         }
-        return UINib(nibName: identifier, bundle: bundle)
+        return UINib(nibName: nibName, bundle: bundle)
     }
 }
 
-private func listReusableMetadata<View>(for viewType: View.Type) -> ListReusableMetadata
+func listReusableMetadata<View>(for viewType: View.Type) -> ListReusableMetadata
     where View: UIView & ReusableView
 {
     ListReusableMetadata(
         identifier: View.listReuseIdentifier,
+        nibName: View.listNibName,
         bundle: Bundle(for: viewType)
     )
 }
@@ -184,12 +188,12 @@ public extension UICollectionView {
         "UICollectionView.elementKindSectionFooterBottomPadding"
     }
 
-    /// 使用 supplementary view 类型名生成 element kind。
+    /// 使用 supplementary view 的模块限定类型名生成 element kind。
     ///
     /// - Parameter viewType: supplementary view 类型。
     /// - Returns: 使用类型名生成的 element kind。
     static func elementKind<View>(for viewType: View.Type) -> String where View: UICollectionReusableView {
-        String(describing: viewType)
+        String(reflecting: viewType)
     }
 
     /// ListKit 注册和 dequeue 命名空间。

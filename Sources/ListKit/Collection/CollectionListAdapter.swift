@@ -297,18 +297,22 @@ where SectionID: Hashable & Sendable {
         lastApplySummary = summary
         ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
 
+        let completeAsSuperseded = {
+            let supersededSummary = summary.replacingAnimation(
+                ListAnimationSummary(
+                    completionState: .superseded,
+                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                )
+            )
+            ListApplyLogger.logApplySummary(supersededSummary, options: options)
+            completion?(supersededSummary)
+        }
+
         isApplyingSnapshot = true
         let finishApply = { [weak self] in
             guard let self else { return }
             guard self.applyGeneration == generation else {
-                let supersededSummary = summary.replacingAnimation(
-                    ListAnimationSummary(
-                        completionState: .superseded,
-                        reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                    )
-                )
-                ListApplyLogger.logApplySummary(supersededSummary, options: options)
-                completion?(supersededSummary)
+                completeAsSuperseded()
                 return
             }
             self.isApplyingSnapshot = false
@@ -317,9 +321,17 @@ where SectionID: Hashable & Sendable {
                 invalidating: shouldInvalidateLayout,
                 animated: resolvedTransaction.layoutAnimation
             ) { layoutAnimated in
+                guard self.applyGeneration == generation else {
+                    completeAsSuperseded()
+                    return
+                }
                 let metrics = CollectionApplyAnimationMetrics()
                 metrics.layoutAnimated = layoutAnimated
                 let animationCoordinator = ListAnimationCompletionCoordinator {
+                    guard self.applyGeneration == generation else {
+                        completeAsSuperseded()
+                        return
+                    }
                     let snapshotAnimated = options.applicationMode == .differences
                         && resolvedTransaction.snapshotAnimation
                         && (applyPlan.initialSummary.insertedCount > 0
@@ -349,6 +361,7 @@ where SectionID: Hashable & Sendable {
                     completion?(completedSummary)
                 }
 
+                self.rebindVisibleSupplementaryTapHandlers()
                 if applyPlan.shouldRunVisibleRefresh {
                     let refresh = self.refreshVisibleRowsIfNeeded(
                         applyPlan: applyPlan,
@@ -1743,10 +1756,22 @@ where SectionID: Hashable & Sendable {
         _ target: VisibleSupplementaryTarget,
         supplementary: AnySupplementary
     ) -> Int {
-        guard let configureVisibleView = supplementary.configureVisibleView else { return 0 }
         let context = context(for: target.indexPath, identity: supplementary.identity)
+        guard let configureVisibleView = supplementary.configureVisibleView else { return 0 }
         configureVisibleView(target.view, context)
         return 1
+    }
+
+    private func rebindVisibleSupplementaryTapHandlers() {
+        for target in visibleSupplementaryTargets() {
+            guard let supplementary = supplementary(kind: target.kind, at: target.indexPath) else { continue }
+            let context = context(for: target.indexPath, identity: supplementary.identity)
+            ListTapHandlerInstaller.install(
+                on: target.view,
+                context: context,
+                handler: supplementary.tapHandler
+            )
+        }
     }
 
     private func visibleSupplementaryTargets(

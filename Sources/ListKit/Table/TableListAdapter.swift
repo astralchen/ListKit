@@ -227,27 +227,35 @@ where SectionID: Hashable & Sendable {
         lastApplySummary = summary
         ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
 
+        let completeAsSuperseded = {
+            let supersededSummary = summary.replacingAnimation(
+                ListAnimationSummary(
+                    completionState: .superseded,
+                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                )
+            )
+            ListApplyLogger.logApplySummary(
+                supersededSummary,
+                options: options,
+                prefix: "ListKit table apply summary"
+            )
+            completion?(supersededSummary)
+        }
+
         // Normalize UIKit's diffable completion onto a fresh main-actor turn.
         let didApplyBox = TableMainActorCallbackBox { [weak self] in
             guard let self else { return }
             guard self.applyGeneration == generation else {
-                let supersededSummary = summary.replacingAnimation(
-                    ListAnimationSummary(
-                        completionState: .superseded,
-                        reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                    )
-                )
-                ListApplyLogger.logApplySummary(
-                    supersededSummary,
-                    options: options,
-                    prefix: "ListKit table apply summary"
-                )
-                completion?(supersededSummary)
+                completeAsSuperseded()
                 return
             }
             self.reconcileSelection()
             let metrics = TableApplyAnimationMetrics()
             let animationCoordinator = ListAnimationCompletionCoordinator {
+                guard self.applyGeneration == generation else {
+                    completeAsSuperseded()
+                    return
+                }
                 let scrollOutcome = self.performScrollBehavior(
                     resolvedTransaction.scrollBehavior,
                     visibleAnchor: visibleAnchor,

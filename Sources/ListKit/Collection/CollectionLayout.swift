@@ -209,7 +209,7 @@ public struct ListBackgroundDecoration: Hashable, @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - viewType: 背景 decoration view 类型。
-    ///   - kind: decoration view kind。
+    ///   - kind: decoration view kind。使用默认值时会自动加入模块限定 view 类型，避免注册冲突。
     ///   - contentInsets: 背景相对 section 内容的 inset。
     ///   - zIndex: 背景层级。
     /// - Note: typed 入口会记录 view 类型，adapter 在 `apply` 或 `makeCompositionalLayout()` 时自动注册。
@@ -219,12 +219,15 @@ public struct ListBackgroundDecoration: Hashable, @unchecked Sendable {
         contentInsets: ListLayoutInsets = .zero,
         zIndex: Int = -1
     ) where View: UICollectionReusableView {
-        self.kind = kind
+        let resolvedKind = kind == Self.defaultKind
+            ? "\(Self.defaultKind).\(String(reflecting: viewType))"
+            : kind
+        self.kind = resolvedKind
         self.contentInsets = contentInsets
         self.zIndex = zIndex
         self.registrationKey = ObjectIdentifier(viewType)
         self.registerProvider = { layout in
-            layout.registerDecorationView(viewType, forKind: kind)
+            layout.registerDecorationView(viewType, forKind: resolvedKind)
         }
     }
 

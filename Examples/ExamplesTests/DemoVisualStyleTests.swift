@@ -89,8 +89,12 @@ struct DemoVisualStyleTests {
         #expect(live.navigationItem.largeTitleDisplayMode == .always)
         #expect(live.navigationItem.rightBarButtonItem?.accessibilityIdentifier == "live-console-header-menu")
         if #available(iOS 26.0, *) {
+            #expect(live.navigationItem.prompt == nil)
             #expect(live.navigationItem.subtitle == "LIVE")
             #expect(live.navigationItem.largeSubtitle?.contains("mic seats") == true)
+        } else {
+            #expect(live.navigationItem.prompt?.contains("LIVE") == true)
+            #expect(live.navigationItem.prompt?.contains("mic seats") == true)
         }
     }
 

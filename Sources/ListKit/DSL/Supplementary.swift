@@ -111,9 +111,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 register: supplementary.register,
                 viewProvider: { collectionView, indexPath, context in
                     let view = supplementary.viewProvider(collectionView, indexPath, context)
-                    ListTapHandlerInstaller.install(on: view) {
-                        handler(context)
-                    }
+                    ListTapHandlerInstaller.install(on: view, context: context, handler: handler)
                     return view
                 },
                 configureVisibleView: supplementary.configureVisibleView,
@@ -474,11 +472,11 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
             viewProvider: { collectionView, indexPath, context in
                 let view = collectionView.lk.dequeue(viewType, ofKind: kind, for: indexPath)
                 configure(view, context)
-                if let supplementaryTapHandler {
-                    ListTapHandlerInstaller.install(on: view) {
-                        supplementaryTapHandler(context)
-                    }
-                }
+                ListTapHandlerInstaller.install(
+                    on: view,
+                    context: context,
+                    handler: supplementaryTapHandler
+                )
                 return view
             },
             configureVisibleView: { view, context in
@@ -603,11 +601,11 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
             register: registerProvider,
             viewProvider: { collectionView, indexPath, context in
                 let view = viewProvider(collectionView, indexPath, context)
-                if let supplementaryTapHandler {
-                    ListTapHandlerInstaller.install(on: view) {
-                        supplementaryTapHandler(context)
-                    }
-                }
+                ListTapHandlerInstaller.install(
+                    on: view,
+                    context: context,
+                    handler: supplementaryTapHandler
+                )
                 return view
             },
             configureVisibleView: nil,
@@ -643,15 +641,35 @@ private final class ListTapGestureRecognizer: UITapGestureRecognizer {}
 /// `TapProxy` 通过 associated object 持有，避免 UIKit gesture target 被提前释放。
 @MainActor
 enum ListTapHandlerInstaller {
-    static func install(on view: UICollectionReusableView, handler: @escaping @MainActor () -> Void) {
-        let proxy = TapProxy(handler: handler)
-        view.isUserInteractionEnabled = true
+    static func install(
+        on view: UICollectionReusableView,
+        handler: (@MainActor () -> Void)?
+    ) {
         view.gestureRecognizers?.forEach { recognizer in
             if recognizer is ListTapGestureRecognizer {
                 view.removeGestureRecognizer(recognizer)
             }
         }
+        objc_setAssociatedObject(view, &tapProxyKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        guard let handler else { return }
+        let proxy = TapProxy(handler: handler)
+        view.isUserInteractionEnabled = true
         view.addGestureRecognizer(ListTapGestureRecognizer(target: proxy, action: #selector(TapProxy.invoke)))
         objc_setAssociatedObject(view, &tapProxyKey, proxy, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    static func install(
+        on view: UICollectionReusableView,
+        context: ListContext,
+        handler: (@MainActor (ListContext) -> Void)?
+    ) {
+        guard let handler else {
+            install(on: view, handler: nil)
+            return
+        }
+        install(on: view) {
+            handler(context)
+        }
     }
 }

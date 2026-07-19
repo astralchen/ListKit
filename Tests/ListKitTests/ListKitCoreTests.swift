@@ -49,6 +49,78 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(row.outlineAnimation, .disabled)
     }
 
+    func testCoalesceLatestSupersedesApplyDuringContentTransition() async throws {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 320, height: 60)
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: layout
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let host = UIViewController()
+        host.view.frame = collectionView.bounds
+        host.view.addSubview(collectionView)
+        let window = UIWindow(frame: collectionView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                Row("row", model: "A", cell: NormalUserCell.self) { cell, value, _ in
+                    cell.name = value
+                }
+                .refreshID(1)
+                .refreshPolicy(.automaticVisible)
+            }
+        }
+        collectionView.layoutIfNeeded()
+        _ = try XCTUnwrap(collectionView.cellForItem(at: IndexPath(item: 0, section: 0)))
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        let transitionStarted = expectation(description: "first content transition started")
+        var didSignalTransition = false
+        let firstApply = Task { @MainActor in
+            await adapter.applyAndWait(
+                transaction: ListTransaction(animation: .disabled).contentAnimation(.enabled)
+            ) {
+                ListSection(0) {
+                    Row("row", model: "B", cell: NormalUserCell.self) { cell, value, _ in
+                        cell.name = value
+                        if !didSignalTransition {
+                            didSignalTransition = true
+                            transitionStarted.fulfill()
+                        }
+                    }
+                    .refreshID(2)
+                    .refreshPolicy(.automaticVisible)
+                    .contentTransition(.opacity(duration: 0.35))
+                }
+            }
+        }
+
+        await fulfillment(of: [transitionStarted], timeout: 2)
+        let latestResult = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(0) {
+                Row("row", model: "C", cell: NormalUserCell.self) { cell, value, _ in
+                    cell.name = value
+                }
+                .refreshID(3)
+                .refreshPolicy(.automaticVisible)
+            }
+        }
+        let supersededResult = await firstApply.value
+
+        XCTAssertEqual(supersededResult.summary.animation.completionState, .superseded)
+        XCTAssertEqual(latestResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(adapter.lastApplySummary, latestResult.summary)
+    }
+
     func testApplyPlannerReportsMovesAndChangedSections() {
         let first = makeTestListNode("first", refreshID: 1)
         let second = makeTestListNode("second", refreshID: 1)
@@ -348,7 +420,10 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionReusableHelpersExposeCellKitMigrationUtilities() {
-        XCTAssertEqual(UICollectionView.elementKind(for: HeaderView.self), "HeaderView")
+        XCTAssertEqual(
+            UICollectionView.elementKind(for: HeaderView.self),
+            String(reflecting: HeaderView.self)
+        )
         XCTAssertEqual(
             UICollectionView.elementKindSectionBackgroundDecoration,
             "UICollectionView.ElementKindSectionBackgroundDecoration"
@@ -370,6 +445,19 @@ final class ListKitCoreTests: XCTestCase {
         ))
         layout.separatorInsets = .init(top: 0, leading: 12, bottom: 0, trailing: 12)
         XCTAssertEqual(layout.separatorInsets.leading, 12)
+    }
+
+    func testDefaultReusableNamesAreQualifiedWhileNibNamesStayShort() {
+        XCTAssertNotEqual(
+            ReuseFeatureA.SharedCell.listReuseIdentifier,
+            ReuseFeatureB.SharedCell.listReuseIdentifier
+        )
+        XCTAssertNotEqual(
+            UICollectionView.elementKind(for: ReuseFeatureA.SharedSupplementary.self),
+            UICollectionView.elementKind(for: ReuseFeatureB.SharedSupplementary.self)
+        )
+        XCTAssertEqual(ReuseFeatureA.SharedCell.listNibName, "SharedCell")
+        XCTAssertEqual(ReuseFeatureB.SharedCell.listNibName, "SharedCell")
     }
 
     func testCollectionReusableNamespaceCreatesCellRegistrationWithClassFallback() {
@@ -572,6 +660,10 @@ final class ListKitCoreTests: XCTestCase {
         ListTapHandlerInstaller.install(on: view) {}
         XCTAssertEqual(view.gestureRecognizers?.count, 2)
         XCTAssertTrue(view.gestureRecognizers?.contains(externalTap) == true)
+
+        ListTapHandlerInstaller.install(on: view, handler: nil)
+        XCTAssertEqual(view.gestureRecognizers?.count, 1)
+        XCTAssertTrue(view.gestureRecognizers?.contains(externalTap) == true)
     }
 
     func testDiagnosticsReportsDuplicateIdentities() {
@@ -593,6 +685,29 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(issues.contains { $0.kind == .duplicateSection })
         XCTAssertTrue(issues.contains { $0.kind == .duplicateRow })
         XCTAssertTrue(issues.contains { $0.kind == .duplicateSupplementary })
+    }
+
+    func testDiagnosticsWarningSkipsDuplicateSectionsWithoutTrapping() {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        let result = adapter.apply(
+            options: ListApplyOptions(
+                transaction: .disabled,
+                diagnostics: .init(mode: .warning, logsApplySummary: false)
+            )
+        ) {
+            ListSection(0) {
+                Row("first", model: "A", cell: NormalUserCell.self) { _, _, _ in }
+            }
+            ListSection(0) {
+                Row("second", model: "B", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertTrue(result.summary.diagnosticsIssues.contains { $0.kind == .duplicateSection })
+        XCTAssertEqual(result.summary.animation.completionState, .completed)
+        XCTAssertEqual(collectionView.numberOfSections, 0)
     }
 
     func testApplyOptionsExposeSummaryAndAvoidDuplicateDiffableCrash() {
@@ -1278,7 +1393,8 @@ final class ListKitCoreTests: XCTestCase {
         let clearedSection = decoratedSection.backgroundDecoration(nil as HeaderView.Type?)
         let decorationItem = decoratedSection.makeCompositionalLayoutSection().decorationItems.first
 
-        XCTAssertEqual(decorationItem?.elementKind, UICollectionView.elementKindSectionBackgroundDecoration)
+        XCTAssertEqual(decorationItem?.elementKind, decoratedSection.backgroundDecorationItem?.kind)
+        XCTAssertNotEqual(decorationItem?.elementKind, UICollectionView.elementKindSectionBackgroundDecoration)
         XCTAssertEqual(decorationItem?.contentInsets.top, 1)
         XCTAssertEqual(decorationItem?.contentInsets.leading, 2)
         XCTAssertEqual(decorationItem?.contentInsets.bottom, 3)
@@ -1309,13 +1425,23 @@ final class ListKitCoreTests: XCTestCase {
         }
 
         let decorationItem = decoratedSection.makeCompositionalLayoutSection().decorationItems.first
-        XCTAssertEqual(decorationItem?.elementKind, UICollectionView.elementKindSectionBackgroundDecoration)
+        XCTAssertEqual(decorationItem?.elementKind, decoratedSection.backgroundDecorationItem?.kind)
+        XCTAssertNotEqual(decorationItem?.elementKind, UICollectionView.elementKindSectionBackgroundDecoration)
         XCTAssertEqual(decorationItem?.contentInsets.top, 4)
         XCTAssertEqual(decorationItem?.contentInsets.leading, 5)
         XCTAssertEqual(decorationItem?.contentInsets.bottom, 6)
         XCTAssertEqual(decorationItem?.contentInsets.trailing, 7)
         XCTAssertEqual(decorationItem?.zIndex, -3)
         XCTAssertTrue(hiddenSection.makeCompositionalLayoutSection().decorationItems.isEmpty)
+    }
+
+    func testTypedBackgroundDecorationsUseViewSpecificDefaultKinds() {
+        let headerBackground = ListBackgroundDecoration(view: HeaderView.self)
+        let badgeBackground = ListBackgroundDecoration(view: BadgeView.self)
+
+        XCTAssertNotEqual(headerBackground.kind, badgeBackground.kind)
+        XCTAssertTrue(headerBackground.kind.hasPrefix(ListBackgroundDecoration.defaultKind))
+        XCTAssertTrue(badgeBackground.kind.hasPrefix(ListBackgroundDecoration.defaultKind))
     }
 
     func testBackgroundDecorationAppendsToCustomLayoutDecorationItems() {
@@ -1707,6 +1833,59 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(Set(badgesAfterApply.map(\.value)), ["one-0", "one-1"])
     }
 
+    func testAdapterClearsTapHandlerFromVisibleSupplementaryWithoutRefreshingIt() {
+        let kind = "badge"
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 160),
+            collectionViewLayout: UICollectionViewFlowLayout()
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        func applyBadge(hasTapHandler: Bool) {
+            var supplementary: ListSectionSupplementary<Int> = SectionSupplementary(
+                kind,
+                BadgeView.self,
+                id: "badge"
+            ) { _, _ in }
+                .refreshPolicy(.never)
+                .itemSupplementaryLayout(
+                    anchor: .topTrailing,
+                    width: .absolute(20),
+                    height: .absolute(20)
+                )
+            if hasTapHandler {
+                supplementary = supplementary.onTap { _ in }
+            }
+
+            let applyCompleted = expectation(description: "tap handler apply \(hasTapHandler)")
+            adapter.apply(transaction: .disabled, completion: { _ in
+                applyCompleted.fulfill()
+            }) {
+                ListSection(0) {
+                    Row("first", model: "First", cell: NormalUserCell.self) { _, _, _ in }
+                } layout: {
+                    GridLayout(columns: 1, itemHeight: .absolute(80))
+                } supplementaries: {
+                    supplementary
+                }
+            }
+            wait(for: [applyCompleted], timeout: 1)
+        }
+
+        applyBadge(hasTapHandler: true)
+        collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
+        collectionView.reloadData()
+        collectionView.layoutIfNeeded()
+        let visibleBadge = visibleBadgeViews(in: collectionView, kind: kind).first
+        XCTAssertEqual(visibleBadge?.gestureRecognizers?.count, 1)
+
+        applyBadge(hasTapHandler: false)
+        collectionView.layoutIfNeeded()
+
+        XCTAssertTrue(visibleBadge === visibleBadgeViews(in: collectionView, kind: kind).first)
+        XCTAssertTrue(visibleBadge?.gestureRecognizers?.isEmpty == true)
+    }
+
     func testReconfigureVisibleSupplementariesTargetsKindSectionAndRowID() {
         let kind = "badge"
         let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 240, height: 160), collectionViewLayout: UICollectionViewFlowLayout())
@@ -1959,6 +2138,16 @@ private final class HeaderView: UICollectionReusableView {
 private final class BadgeView: UICollectionReusableView {
     var value: String?
     var configuredIndexPath: IndexPath?
+}
+
+private enum ReuseFeatureA {
+    final class SharedCell: UICollectionViewCell {}
+    final class SharedSupplementary: UICollectionReusableView {}
+}
+
+private enum ReuseFeatureB {
+    final class SharedCell: UICollectionViewCell {}
+    final class SharedSupplementary: UICollectionReusableView {}
 }
 
 private final class EventCell: UICollectionViewCell {

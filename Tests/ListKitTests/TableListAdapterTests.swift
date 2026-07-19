@@ -110,6 +110,79 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(tableView.contentInset.bottom, 0)
     }
 
+    func testCoalesceLatestSupersedesTableApplyDuringContentTransition() async throws {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+        let host = UIViewController()
+        host.view.frame = tableView.bounds
+        host.view.addSubview(tableView)
+        let window = UIWindow(frame: tableView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            TableSection(.messages) {
+                TableRow(1, model: "A", cell: MessageTableCell.self) { cell, value, _ in
+                    cell.textValue = value
+                }
+                .height(.fixed(60))
+                .refreshID(1)
+                .refreshPolicy(.automaticVisible)
+            }
+        }
+        tableView.layoutIfNeeded()
+        _ = try XCTUnwrap(tableView.cellForRow(at: IndexPath(row: 0, section: 0)))
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        let transitionStarted = expectation(description: "first table content transition started")
+        var didSignalTransition = false
+        let firstApply = Task { @MainActor in
+            await adapter.applyAndWait(
+                transaction: ListTransaction(animation: .disabled).contentAnimation(.enabled)
+            ) {
+                TableSection(.messages) {
+                    TableRow(1, model: "B", cell: MessageTableCell.self) { cell, value, _ in
+                        cell.textValue = value
+                        if !didSignalTransition {
+                            didSignalTransition = true
+                            transitionStarted.fulfill()
+                        }
+                    }
+                    .height(.fixed(60))
+                    .refreshID(2)
+                    .refreshPolicy(.automaticVisible)
+                    .contentTransition(.opacity(duration: 0.35))
+                }
+            }
+        }
+
+        await fulfillment(of: [transitionStarted], timeout: 2)
+        let latestResult = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(.messages) {
+                TableRow(1, model: "C", cell: MessageTableCell.self) { cell, value, _ in
+                    cell.textValue = value
+                }
+                .height(.fixed(60))
+                .refreshID(3)
+                .refreshPolicy(.automaticVisible)
+            }
+        }
+        let supersededResult = await firstApply.value
+
+        XCTAssertEqual(supersededResult.summary.animation.completionState, .superseded)
+        XCTAssertEqual(latestResult.summary.animation.completionState, .completed)
+        XCTAssertEqual(adapter.lastApplySummary, latestResult.summary)
+    }
+
     func testTableAdapterDiagnosticsAndRefreshSummary() {
         let tableView = UITableView(frame: .zero, style: .plain)
         let adapter = TableListAdapter<Section>(tableView: tableView)

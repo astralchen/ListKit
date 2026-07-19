@@ -61,8 +61,11 @@ class LiveRoomDesignScreenViewController: UIViewController {
         navigationItem.title = title
         navigationItem.largeTitleDisplayMode = .always
         if #available(iOS 26.0, *) {
+            navigationItem.prompt = nil
             navigationItem.subtitle = inlineSubtitle
             navigationItem.largeSubtitle = largeSubtitle
+        } else {
+            navigationItem.prompt = "\(inlineSubtitle) · \(largeSubtitle)"
         }
     }
 }

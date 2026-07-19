@@ -13,12 +13,11 @@ public struct ListKitTableViewNamespace {
     ///
     /// - Parameter cellType: 要注册的 cell 类型。
     @MainActor public func register<Cell>(_ cellType: Cell.Type) where Cell: UITableViewCell {
-        let identifier = Cell.listReuseIdentifier
-        let bundle = Bundle(for: cellType)
-        if bundle.url(forResource: identifier, withExtension: "nib") != nil {
-            tableView.register(UINib(nibName: identifier, bundle: bundle), forCellReuseIdentifier: identifier)
+        let metadata = listReusableMetadata(for: cellType)
+        if let nib = metadata.makeNib() {
+            tableView.register(nib, forCellReuseIdentifier: metadata.identifier)
         } else {
-            tableView.register(cellType, forCellReuseIdentifier: identifier)
+            tableView.register(cellType, forCellReuseIdentifier: metadata.identifier)
         }
     }
 
@@ -26,12 +25,11 @@ public struct ListKitTableViewNamespace {
     ///
     /// - Parameter viewType: 要注册的 header/footer view 类型。
     @MainActor public func registerHeaderFooter<View>(_ viewType: View.Type) where View: UITableViewHeaderFooterView {
-        let identifier = View.listReuseIdentifier
-        let bundle = Bundle(for: viewType)
-        if bundle.url(forResource: identifier, withExtension: "nib") != nil {
-            tableView.register(UINib(nibName: identifier, bundle: bundle), forHeaderFooterViewReuseIdentifier: identifier)
+        let metadata = listReusableMetadata(for: viewType)
+        if let nib = metadata.makeNib() {
+            tableView.register(nib, forHeaderFooterViewReuseIdentifier: metadata.identifier)
         } else {
-            tableView.register(viewType, forHeaderFooterViewReuseIdentifier: identifier)
+            tableView.register(viewType, forHeaderFooterViewReuseIdentifier: metadata.identifier)
         }
     }
 

@@ -237,15 +237,21 @@ enum ListApplyPlanner {
         old: [ListSectionSnapshot],
         new: [ListSectionSnapshot]
     ) -> Int {
-        let oldFingerprints = Dictionary(uniqueKeysWithValues: old.map { section in
-            (section.sectionID, ListSectionChangeFingerprint(section: section))
-        })
-        let newFingerprints = Dictionary(uniqueKeysWithValues: new.map { section in
-            (section.sectionID, ListSectionChangeFingerprint(section: section))
-        })
+        let oldFingerprints = sectionFingerprints(from: old)
+        let newFingerprints = sectionFingerprints(from: new)
         return Set(oldFingerprints.keys).union(newFingerprints.keys).reduce(into: 0) { count, sectionID in
             guard oldFingerprints[sectionID] != newFingerprints[sectionID] else { return }
             count += 1
+        }
+    }
+
+    /// Diagnostics may intentionally stop an apply containing duplicate section IDs.
+    /// Build the summary without trapping first so `.warning` can report and skip it.
+    private static func sectionFingerprints(
+        from sections: [ListSectionSnapshot]
+    ) -> [AnyListID: ListSectionChangeFingerprint] {
+        sections.reduce(into: [:]) { fingerprints, section in
+            fingerprints[section.sectionID] = ListSectionChangeFingerprint(section: section)
         }
     }
 
