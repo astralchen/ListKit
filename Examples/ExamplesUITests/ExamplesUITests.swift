@@ -32,7 +32,7 @@ final class ExamplesUITests: XCTestCase {
 
         roomToolkitTab.tap()
         XCTAssertTrue(app.collectionViews["room-toolkit-screen"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.otherElements["room-toolkit-hero"].exists)
+        XCTAssertTrue(app.otherElements["room-metric-strip"].exists)
         XCTAssertTrue(app.staticTexts["SwiftUI-style API guide"].exists)
 
         adminTableTab.tap()
@@ -55,15 +55,15 @@ final class ExamplesUITests: XCTestCase {
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5))
         tabBar.buttons["Room Toolkit"].tap()
 
-        let hero = app.otherElements["room-toolkit-hero"]
+        let metricStrip = app.otherElements["room-metric-strip"]
         let capability = app.staticTexts["Stable row context"]
-        XCTAssertTrue(hero.waitForExistence(timeout: 3))
+        XCTAssertTrue(metricStrip.waitForExistence(timeout: 3))
         XCTAssertTrue(capability.waitForExistence(timeout: 3))
-        let heroMinY = hero.frame.minY
+        let metricStripMinY = metricStrip.frame.minY
 
         capability.tap()
 
-        XCTAssertEqual(hero.frame.minY, heroMinY, accuracy: 1)
+        XCTAssertEqual(metricStrip.frame.minY, metricStripMinY, accuracy: 1)
         XCTAssertTrue(capability.isHittable)
     }
 

@@ -1,10 +1,7 @@
 import Foundation
 
 enum LiveRoomSection: Hashable, Sendable {
-    case consoleHeader
-    case studioHeader
     case studioControls
-    case roomHero
     case roomMetrics
     case apiGuide
     case roomActivityTitle
@@ -22,10 +19,7 @@ enum AdminSection: Hashable, Sendable {
 }
 
 enum LiveRoomRowID: Hashable, Sendable {
-    case consoleHeader
-    case studioHeader
     case studioControls
-    case roomHero
     case roomMetrics
     case apiGuideRoot
     case apiAsyncApply
@@ -59,10 +53,10 @@ struct LiveRoomMenuItem: Hashable, Sendable {
     var role: LiveRoomMenuRole = .standard
 }
 
-struct LiveConsoleHeaderViewModel: Hashable, Sendable {
+struct ScreenNavigationViewModel: Hashable, Sendable {
     var title: String
-    var subtitle: String
-    var badge: String
+    var inlineSubtitle: String
+    var largeSubtitle: String
     var menuItems: [LiveRoomMenuItem]
 }
 
@@ -115,15 +109,6 @@ struct RoomActivityTitleViewModel: Hashable, Sendable {
     var buttonTitle: String
     var symbolName: String
     var selectedFilter: RoomActivityFilter
-}
-
-struct LiveRoomTitleViewModel: Hashable, Sendable {
-    var title: String
-    var subtitle: String
-    var viewerText: String
-    var heatText: String
-    var liveEventCount: Int
-    var menuItems: [LiveRoomMenuItem]
 }
 
 struct LiveRoomToolbarViewModel: Hashable, Sendable {

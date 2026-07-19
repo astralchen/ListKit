@@ -23,6 +23,7 @@ class LiveRoomDesignScreenViewController: UIViewController {
             "Design screens must install a UICollectionView or UITableView as their root view."
         )
         view.backgroundColor = .systemGroupedBackground
+        configureNavigation()
         buildContent()
         render(
             transaction: .disabled,
@@ -32,6 +33,10 @@ class LiveRoomDesignScreenViewController: UIViewController {
 
     func buildContent() {
         preconditionFailure("Subclasses must build their screen content.")
+    }
+
+    func configureNavigation() {
+        preconditionFailure("Subclasses must configure their navigation item.")
     }
 
     func render(
@@ -45,6 +50,19 @@ class LiveRoomDesignScreenViewController: UIViewController {
         renderTask?.cancel()
         renderTask = Task { @MainActor in
             await operation()
+        }
+    }
+
+    final func applyNavigationText(
+        title: String,
+        inlineSubtitle: String,
+        largeSubtitle: String
+    ) {
+        navigationItem.title = title
+        navigationItem.largeTitleDisplayMode = .always
+        if #available(iOS 26.0, *) {
+            navigationItem.subtitle = inlineSubtitle
+            navigationItem.largeSubtitle = largeSubtitle
         }
     }
 }

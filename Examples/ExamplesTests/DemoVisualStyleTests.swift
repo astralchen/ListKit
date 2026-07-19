@@ -53,70 +53,45 @@ struct DemoVisualStyleTests {
     }
 
     @Test func headerMoreButtonsExposeConfiguredMenus() {
-        let standard = LiveRoomMenuItem(
-            action: .refreshStatus,
-            title: "Refresh Status",
-            symbolName: "arrow.clockwise"
-        )
-        let selected = LiveRoomMenuItem(
-            action: .selectStudioMode(0),
-            title: "Room Mode",
-            symbolName: "person.3",
-            isSelected: true
-        )
-        let destructive = LiveRoomMenuItem(
-            action: .resetDemo,
-            title: "Reset Demo",
-            symbolName: "arrow.counterclockwise",
-            role: .destructive
-        )
+        let live = LiveConsoleDesignViewController()
+        let studio = StudioControlDesignViewController()
+        let room = RoomToolkitDesignViewController()
+        [live, studio, room].forEach { $0.loadViewIfNeeded() }
 
-        let liveCell = LiveConsoleHeaderCell(frame: CGRect(x: 0, y: 0, width: 390, height: 86))
-        liveCell.configure(
-            LiveConsoleHeaderViewModel(
-                title: "Live Console",
-                subtitle: "Demo",
-                badge: "LIVE",
-                menuItems: [standard, destructive]
-            ),
-            onMenuAction: { _ in }
-        )
+        let liveMenu = live.navigationItem.rightBarButtonItem?.menu
+        let studioMenu = studio.navigationItem.rightBarButtonItem?.menu
+        let roomMenu = room.navigationItem.rightBarButtonItem?.menu
 
-        let studioCell = StudioControlHeaderCell(frame: CGRect(x: 0, y: 0, width: 390, height: 86))
-        studioCell.configure(
-            LiveConsoleHeaderViewModel(
-                title: "Studio Control",
-                subtitle: "Demo",
-                badge: "OPS",
-                menuItems: [selected, destructive]
-            ),
-            onMenuAction: { _ in }
-        )
-
-        let roomCell = RoomHeroCell(frame: CGRect(x: 0, y: 0, width: 390, height: 104))
-        roomCell.configure(
-            LiveRoomTitleViewModel(
-                title: "Room Toolkit",
-                subtitle: "Demo",
-                viewerText: "1248",
-                heatText: "8932",
-                liveEventCount: 4,
-                menuItems: [standard, destructive]
-            ),
-            onMenuAction: { _ in }
-        )
-
-        let liveMenu = descendants(of: UIButton.self, in: liveCell)
-            .first { $0.accessibilityIdentifier == "live-console-header-menu" }?.menu
-        let studioMenu = descendants(of: UIButton.self, in: studioCell)
-            .first { $0.accessibilityIdentifier == "studio-control-header-menu" }?.menu
-        let roomMenu = descendants(of: UIButton.self, in: roomCell)
-            .first { $0.accessibilityIdentifier == "room-toolkit-header-menu" }?.menu
-
-        #expect(menuActionTitles(in: liveMenu) == ["Refresh Status", "Reset Demo"])
-        #expect(menuActionTitles(in: studioMenu) == ["Room Mode", "Reset Demo"])
-        #expect(menuActionTitles(in: roomMenu) == ["Refresh Status", "Reset Demo"])
+        #expect(menuActionTitles(in: liveMenu) == [
+            "Add Message", "Send Selected Gift", "Refresh Status", "Reset Demo"
+        ])
+        #expect(menuActionTitles(in: studioMenu) == [
+            "Room Mode", "Gift Mode", "Log Mode", "Refresh Status", "Reset Demo"
+        ])
+        #expect(menuActionTitles(in: roomMenu) == [
+            "Refresh Status", "Add System Event", "Reset Demo"
+        ])
         #expect(menuActions(in: studioMenu).first?.state == .on)
+    }
+
+    @Test func tabsOwnNavigationControllersWithNativeLargeTitles() throws {
+        let tabs = LiveRoomDemoViewController()
+        tabs.loadViewIfNeeded()
+
+        let navigationControllers = try #require(tabs.viewControllers as? [UINavigationController])
+        #expect(navigationControllers.count == 4)
+        #expect(navigationControllers.allSatisfy { $0.navigationBar.prefersLargeTitles })
+
+        let live = try #require(navigationControllers.first?.topViewController)
+        live.loadViewIfNeeded()
+        #expect(live is LiveConsoleDesignViewController)
+        #expect(live.navigationItem.title == "Live Console")
+        #expect(live.navigationItem.largeTitleDisplayMode == .always)
+        #expect(live.navigationItem.rightBarButtonItem?.accessibilityIdentifier == "live-console-header-menu")
+        if #available(iOS 26.0, *) {
+            #expect(live.navigationItem.subtitle == "LIVE")
+            #expect(live.navigationItem.largeSubtitle?.contains("mic seats") == true)
+        }
     }
 
     @Test func liveRoomStatusMetricsFitPhoneWidth() {
@@ -140,15 +115,18 @@ struct DemoVisualStyleTests {
         #expect(truncatedLabels(in: cell.contentView).isEmpty)
     }
 
-    @Test func roomToolkitRootViewIsCollectionView() {
+    @Test func roomToolkitRootViewIsCollectionView() throws {
         let viewController = LiveRoomDemoViewController()
 
         viewController.loadViewIfNeeded()
-        let roomToolkitController = viewController.viewControllers?[2]
-        roomToolkitController?.loadViewIfNeeded()
+        let navigationController = try #require(
+            viewController.viewControllers?[2] as? UINavigationController
+        )
+        let roomToolkitController = try #require(navigationController.topViewController)
+        roomToolkitController.loadViewIfNeeded()
 
-        #expect(roomToolkitController?.view is UICollectionView)
-        #expect(roomToolkitController?.view.accessibilityIdentifier == "room-toolkit-screen")
+        #expect(roomToolkitController.view is UICollectionView)
+        #expect(roomToolkitController.view.accessibilityIdentifier == "room-toolkit-screen")
     }
 
     @Test func liveMessageCellsLeaveSectionBackgroundVisible() {
@@ -180,7 +158,45 @@ struct DemoVisualStyleTests {
         #expect(descendantBounds.maxX <= bounds.maxX + 0.5)
     }
 
-    @Test func sectionHeadersUseCardContentInsets() {
+    @Test func giftMessageUsesAlignedMetadataAndCompactAccessory() throws {
+        let cell = LiveMessageCell(frame: CGRect(x: 0, y: 0, width: 390, height: 140))
+        cell.configure(
+            LiveMessage(
+                id: "gift-layout",
+                sender: "Sophie",
+                text: "Sent a Rocket",
+                tone: "gift",
+                version: 0
+            )
+        )
+
+        cell.setNeedsLayout()
+        cell.layoutIfNeeded()
+        cell.contentView.layoutIfNeeded()
+
+        let labels = descendants(of: UILabel.self, in: cell.contentView)
+        let senderLabel = try #require(labels.first { $0.text == "Sophie" })
+        let timeLabel = try #require(labels.first { $0.text == "2m ago" })
+        let countLabel = try #require(labels.first { $0.text == "x 10" })
+        let badgeLabel = try #require(labels.first { $0.text == "Top Gifter" })
+        let giftImage = try #require(
+            descendants(of: UIImageView.self, in: cell.contentView)
+                .first { $0.accessibilityIdentifier == "live-message-gift-image" }
+        )
+        let senderFrame = senderLabel.convert(senderLabel.bounds, to: cell.contentView)
+        let timeFrame = timeLabel.convert(timeLabel.bounds, to: cell.contentView)
+        let countFrame = countLabel.convert(countLabel.bounds, to: cell.contentView)
+        let giftFrame = giftImage.convert(giftImage.bounds, to: cell.contentView)
+
+        #expect(abs(senderFrame.maxY - timeFrame.maxY) < 3)
+        #expect(abs(senderFrame.maxY - countFrame.maxY) < 3)
+        #expect(giftFrame.minY > senderFrame.minY)
+        #expect(giftFrame.width <= 64.5)
+        #expect(badgeLabel.bounds.width < 110)
+        #expect(truncatedLabels(in: cell.contentView).isEmpty)
+    }
+
+    @Test func sectionHeaderTextUsesCompactInnerInsets() {
         let header = SectionHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 36))
 
         header.configure(title: "Live activity", detail: "4 messages")
@@ -189,8 +205,8 @@ struct DemoVisualStyleTests {
 
         let descendantBounds = descendantUnionBounds(in: header)
 
-        #expect(descendantBounds.minX >= 32)
-        #expect(descendantBounds.maxX <= header.bounds.maxX - 32)
+        #expect(abs(descendantBounds.minX - 8) < 0.5)
+        #expect(descendantBounds.maxX <= header.bounds.maxX - 8)
     }
 
     @Test func roomMetricsAlignIconsAndTitlesBelowThem() {
@@ -203,7 +219,7 @@ struct DemoVisualStyleTests {
         let iconContainers = descendants(of: UIView.self, in: strip).filter {
             $0.accessibilityIdentifier == "room-metric-icon-container"
         }
-        let titleValues = Set(["LIVE", "Excellent", "Host", "Mic On", "5"])
+        let titleValues = Set(["LIVE", "1248", "8932", "Host", "7"])
         let titles = descendants(of: UILabel.self, in: strip).filter {
             titleValues.contains($0.text?.trimmingCharacters(in: .whitespaces) ?? "")
         }

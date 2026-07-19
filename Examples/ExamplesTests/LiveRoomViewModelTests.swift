@@ -8,10 +8,10 @@ struct LiveRoomViewModelTests {
     @Test func builderOutputsContainExpectedCollectionAndTableSections() {
         let viewModel = LiveRoomViewModel()
 
-        #expect(viewModel.liveConsoleSections.map(\.id) == [.consoleHeader, .consoleToolbar, .status, .micSeats, .messages, .gifts, .diagnostics])
+        #expect(viewModel.liveConsoleSections.map(\.id) == [.consoleToolbar, .status, .micSeats, .messages, .gifts, .diagnostics])
         #expect(viewModel.tableSections.map(\.id) == [.moderation])
-        #expect(viewModel.roomToolkitSections.map(\.id) == [.roomHero, .roomMetrics, .apiGuide, .roomActivityTitle, .roomActivity])
-        #expect(viewModel.studioControlSections.map(\.id) == [.studioHeader, .studioControls, .messages])
+        #expect(viewModel.roomToolkitSections.map(\.id) == [.roomMetrics, .apiGuide, .roomActivityTitle, .roomActivity])
+        #expect(viewModel.studioControlSections.map(\.id) == [.studioControls, .messages])
         #expect(viewModel.messageCount == 4)
         #expect(viewModel.pendingModerationCount == 7)
     }
@@ -225,6 +225,23 @@ struct LiveRoomViewModelTests {
         let statusSection = viewModel.liveConsoleSections.first { $0.id == .status }
 
         #expect(statusSection?.backgroundDecorationItem == nil)
+    }
+
+    @Test func consoleCardsUseCompactSystemSpacing() throws {
+        let viewModel = LiveRoomViewModel()
+        let toolbarSection = try #require(
+            viewModel.liveConsoleSections.first { $0.id == .consoleToolbar }
+        )
+        let statusSection = try #require(
+            viewModel.liveConsoleSections.first { $0.id == .status }
+        )
+        let toolbarLayout = try #require(toolbarSection.sectionLayout)
+        let statusLayout = try #require(statusSection.sectionLayout)
+
+        let spacing = toolbarLayout.contentInsets.bottom
+            + statusLayout.contentInsets.top
+
+        #expect(spacing == 16)
     }
 
     @Test func contentSectionHeadersDoNotPinOverRows() {

@@ -4,16 +4,32 @@ import ListKit
 @MainActor
 class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewController {
     private let sectionsKeyPath: KeyPath<LiveRoomViewModel, [ListSection<LiveRoomSection>]>
+    private let navigationKeyPath: KeyPath<LiveRoomViewModel, ScreenNavigationViewModel>
+    private let navigationMenuIdentifier: String
     private let collectionView: UICollectionView
 
     private lazy var collectionAdapter = CollectionListAdapter<LiveRoomSection>(collectionView: collectionView)
+    private lazy var navigationMenuItem: UIBarButtonItem = {
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis"),
+            primaryAction: nil,
+            menu: nil
+        )
+        item.accessibilityLabel = "More Actions"
+        item.accessibilityIdentifier = navigationMenuIdentifier
+        return item
+    }()
 
     init(
         collectionIdentifier: String,
-        sections: KeyPath<LiveRoomViewModel, [ListSection<LiveRoomSection>]>
+        sections: KeyPath<LiveRoomViewModel, [ListSection<LiveRoomSection>]>,
+        navigation: KeyPath<LiveRoomViewModel, ScreenNavigationViewModel>,
+        navigationMenuIdentifier: String
     ) {
         self.collectionView = Self.makeCollectionView(identifier: collectionIdentifier)
         self.sectionsKeyPath = sections
+        self.navigationKeyPath = navigation
+        self.navigationMenuIdentifier = navigationMenuIdentifier
         super.init()
     }
 
@@ -23,6 +39,19 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
 
     override func loadView() {
         view = collectionView
+    }
+
+    override func configureNavigation() {
+        let model = viewModel[keyPath: navigationKeyPath]
+        applyNavigationText(
+            title: model.title,
+            inlineSubtitle: model.inlineSubtitle,
+            largeSubtitle: model.largeSubtitle
+        )
+        navigationMenuItem.menu = LiveRoomActionMenu.make(items: model.menuItems) { [weak self] action in
+            self?.performNavigationAction(action)
+        }
+        navigationItem.rightBarButtonItem = navigationMenuItem
     }
 
     override func buildContent() {
@@ -39,6 +68,7 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
         transaction: ListTransaction = .automatic,
         applicationMode: ListSnapshotApplicationMode = .differences
     ) {
+        configureNavigation()
         let sections = viewModel[keyPath: sectionsKeyPath]
         scheduleRender { [weak self, weak collectionAdapter] in
             guard let self, let collectionAdapter else { return }
@@ -93,16 +123,6 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
                             )
                         )
                     )
-            case .headerMenuAction(let action):
-                self.viewModel.performMenuAction(action)
-                switch action {
-                case .addMessage, .sendSelectedGift, .addSystemEvent:
-                    transaction = self.transactionScrollingToPendingMessage(transaction)
-                case .resetDemo:
-                    transaction = .disabled
-                case .refreshStatus, .selectStudioMode:
-                    break
-                }
             case .activateCapability(let title):
                 guard context.section(as: LiveRoomSection.self) == .apiGuide,
                       context.item(as: LiveRoomRowID.self) != nil else { return }
@@ -120,6 +140,20 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
                 self?.viewModel.recordPrefetch(itemCount: contexts.count, cancelled: true)
                 collectionAdapter?.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
             }
+    }
+
+    private func performNavigationAction(_ action: LiveRoomMenuAction) {
+        viewModel.performMenuAction(action)
+        var transaction = ListTransaction.automatic
+        switch action {
+        case .addMessage, .sendSelectedGift, .addSystemEvent:
+            transaction = transactionScrollingToPendingMessage(transaction)
+        case .resetDemo:
+            transaction = .disabled
+        case .refreshStatus, .selectStudioMode:
+            break
+        }
+        render(transaction: transaction)
     }
 
     private func transactionScrollingToPendingMessage(
@@ -163,7 +197,9 @@ final class LiveConsoleDesignViewController: LiveRoomCollectionDesignScreenViewC
     init() {
         super.init(
             collectionIdentifier: "live-console-collection",
-            sections: \.liveConsoleSections
+            sections: \.liveConsoleSections,
+            navigation: \.liveConsoleNavigation,
+            navigationMenuIdentifier: "live-console-header-menu"
         )
     }
 
@@ -177,7 +213,9 @@ final class StudioControlDesignViewController: LiveRoomCollectionDesignScreenVie
     init() {
         super.init(
             collectionIdentifier: "studio-control-collection",
-            sections: \.studioControlSections
+            sections: \.studioControlSections,
+            navigation: \.studioControlNavigation,
+            navigationMenuIdentifier: "studio-control-header-menu"
         )
     }
 
@@ -191,7 +229,9 @@ final class RoomToolkitDesignViewController: LiveRoomCollectionDesignScreenViewC
     init() {
         super.init(
             collectionIdentifier: "room-toolkit-screen",
-            sections: \.roomToolkitSections
+            sections: \.roomToolkitSections,
+            navigation: \.roomToolkitNavigation,
+            navigationMenuIdentifier: "room-toolkit-header-menu"
         )
     }
 

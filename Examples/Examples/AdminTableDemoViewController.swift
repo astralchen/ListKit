@@ -17,7 +17,6 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
     }()
     private lazy var tableAdapter = TableListAdapter<AdminSection>(tableView: tableView)
     private let tableSummaryDetailLabel = UILabel()
-    private let reorderButton = UIButton(type: .system)
 
     override func loadView() {
         view = tableView
@@ -26,6 +25,16 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateTableHeaderLayout()
+    }
+
+    override func configureNavigation() {
+        applyNavigationText(
+            title: "Admin Table",
+            inlineSubtitle: "\(viewModel.pendingModerationCount) active",
+            largeSubtitle: "Selection, swipe actions, context menus, and reordering"
+        )
+        editButtonItem.accessibilityIdentifier = "admin-table-reorder"
+        navigationItem.rightBarButtonItem = editButtonItem
     }
 
     override func buildContent() {
@@ -39,6 +48,7 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
         transaction: ListTransaction = .automatic,
         applicationMode: ListSnapshotApplicationMode = .differences
     ) {
+        configureNavigation()
         tableSummaryDetailLabel.text = tableSummaryText
         scheduleRender { [weak self, weak tableAdapter] in
             guard let self, let tableAdapter else { return }
@@ -63,58 +73,19 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
         header.backgroundColor = .clear
         header.accessibilityIdentifier = "admin-table-header"
 
-        let screenHeader = makeScreenHeader()
         let summary = makeTableSummary()
-        summary.heightAnchor.constraint(greaterThanOrEqualToConstant: 94).isActive = true
-
-        let stack = UIStackView(arrangedSubviews: [screenHeader, summary])
-        stack.axis = .vertical
-        stack.alignment = .fill
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(stack)
+        summary.translatesAutoresizingMaskIntoConstraints = false
+        summary.heightAnchor.constraint(greaterThanOrEqualToConstant: 82).isActive = true
+        header.addSubview(summary)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: header.topAnchor, constant: 18),
-            stack.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -14)
+            summary.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 20),
+            summary.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20),
+            summary.topAnchor.constraint(equalTo: header.topAnchor, constant: 12),
+            summary.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -12)
         ])
 
         return header
-    }
-
-    private func makeScreenHeader() -> UIView {
-        let titleLabel = UILabel()
-        titleLabel.font = UIFont.systemFont(ofSize: 30, weight: .bold)
-        titleLabel.textColor = .label
-        titleLabel.text = "Admin Table"
-        titleLabel.adjustsFontForContentSizeCategory = true
-
-        let subtitleLabel = UILabel()
-        subtitleLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        subtitleLabel.textColor = .secondaryLabel
-        subtitleLabel.text = "Selection, swipe, context menus, and reordering."
-        subtitleLabel.numberOfLines = 2
-        subtitleLabel.adjustsFontForContentSizeCategory = true
-
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-        textStack.axis = .vertical
-        textStack.spacing = 4
-
-        let badgeLabel = CapsuleLabel()
-        badgeLabel.font = UIFont.systemFont(ofSize: 13, weight: .bold)
-        badgeLabel.textColor = .white
-        badgeLabel.textAlignment = .center
-        badgeLabel.text = "  TABLE  "
-        badgeLabel.backgroundColor = .systemIndigo
-        badgeLabel.setContentHuggingPriority(.required, for: .horizontal)
-
-        let row = UIStackView(arrangedSubviews: [textStack, badgeLabel])
-        row.axis = .horizontal
-        row.alignment = .center
-        row.spacing = 10
-        return row
     }
 
     private func updateTableHeaderLayout() {
@@ -155,28 +126,17 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
         tableSummaryDetailLabel.adjustsFontForContentSizeCategory = true
         tableSummaryDetailLabel.numberOfLines = 2
 
-        reorderButton.setTitle("Reorder", for: .normal)
-        reorderButton.setImage(UIImage(systemName: "arrow.up.arrow.down"), for: .normal)
-        reorderButton.titleLabel?.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        reorderButton.accessibilityIdentifier = "admin-table-reorder"
-        reorderButton.addTarget(self, action: #selector(toggleTableEditing), for: .touchUpInside)
-
         let textStack = UIStackView(arrangedSubviews: [title, tableSummaryDetailLabel])
         textStack.axis = .vertical
         textStack.spacing = 6
-
-        let stack = UIStackView(arrangedSubviews: [textStack, reorderButton])
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(textStack)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 14),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14)
+            textStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            textStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            textStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 14),
+            textStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14)
         ])
 
         return container
@@ -204,8 +164,8 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
             }
     }
 
-    @objc private func toggleTableEditing() {
-        tableView.setEditing(!tableView.isEditing, animated: true)
-        reorderButton.setTitle(tableView.isEditing ? "Done" : "Reorder", for: .normal)
+    override func setEditing(_ editing: Bool, animated: Bool) {
+        super.setEditing(editing, animated: animated)
+        tableView.setEditing(editing, animated: animated)
     }
 }

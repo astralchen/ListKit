@@ -1,6 +1,13 @@
 import UIKit
 
 final class CapsuleLabel: UILabel {
+    var contentInsets: UIEdgeInsets = .zero {
+        didSet {
+            invalidateIntrinsicContentSize()
+            setNeedsDisplay()
+        }
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         layer.masksToBounds = true
@@ -17,10 +24,37 @@ final class CapsuleLabel: UILabel {
         super.layoutSubviews()
         layer.cornerRadius = bounds.height / 2
     }
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: contentInsets))
+    }
+
+    override var intrinsicContentSize: CGSize {
+        inset(super.intrinsicContentSize)
+    }
+
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        let availableSize = CGSize(
+            width: max(0, size.width - contentInsets.left - contentInsets.right),
+            height: max(0, size.height - contentInsets.top - contentInsets.bottom)
+        )
+        return inset(super.sizeThatFits(availableSize))
+    }
+
+    private func inset(_ size: CGSize) -> CGSize {
+        CGSize(
+            width: size.width == UIView.noIntrinsicMetric
+                ? size.width
+                : size.width + contentInsets.left + contentInsets.right,
+            height: size.height == UIView.noIntrinsicMetric
+                ? size.height
+                : size.height + contentInsets.top + contentInsets.bottom
+        )
+    }
 }
 
 @MainActor
-private enum LiveRoomActionMenu {
+enum LiveRoomActionMenu {
     static func make(
         items: [LiveRoomMenuItem],
         onAction: @escaping @MainActor (LiveRoomMenuAction) -> Void
@@ -49,107 +83,6 @@ private enum LiveRoomActionMenu {
             )
         }
         return UIMenu(title: "Actions", children: children)
-    }
-}
-
-class LiveConsoleHeaderCell: UICollectionViewCell {
-    private let titleLabel = UILabel()
-    private let subtitleLabel = UILabel()
-    private let badgeLabel = CapsuleLabel()
-    private let menuButton = UIButton(type: .system)
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        contentView.backgroundColor = .clear
-
-        titleLabel.font = UIFont.systemFont(ofSize: 30, weight: .bold)
-        titleLabel.textColor = .label
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.lineBreakMode = .byTruncatingTail
-
-        subtitleLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        subtitleLabel.textColor = .secondaryLabel
-        subtitleLabel.adjustsFontForContentSizeCategory = true
-        subtitleLabel.numberOfLines = 2
-
-        badgeLabel.font = UIFont.systemFont(ofSize: 13, weight: .bold)
-        badgeLabel.textColor = .white
-        badgeLabel.textAlignment = .center
-        badgeLabel.backgroundColor = .systemIndigo
-        badgeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        menuButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
-        menuButton.tintColor = .label
-        menuButton.backgroundColor = UIColor.tertiarySystemFill
-        menuButton.layer.cornerRadius = 22
-        menuButton.translatesAutoresizingMaskIntoConstraints = false
-        menuButton.showsMenuAsPrimaryAction = true
-        menuButton.accessibilityLabel = "More Actions"
-        menuButton.accessibilityIdentifier = "live-console-header-menu"
-
-        let titleRow = UIStackView(arrangedSubviews: [titleLabel, badgeLabel])
-        titleRow.axis = .horizontal
-        titleRow.alignment = .center
-        titleRow.spacing = 10
-
-        let textStack = UIStackView(arrangedSubviews: [titleRow, subtitleLabel])
-        textStack.axis = .vertical
-        textStack.spacing = 5
-
-        let row = UIStackView(arrangedSubviews: [textStack, menuButton])
-        row.axis = .horizontal
-        row.alignment = .center
-        row.spacing = 12
-        row.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(row)
-
-        NSLayoutConstraint.activate([
-            badgeLabel.widthAnchor.constraint(equalToConstant: 64),
-            badgeLabel.heightAnchor.constraint(equalToConstant: 24),
-            menuButton.widthAnchor.constraint(equalToConstant: 44),
-            menuButton.heightAnchor.constraint(equalToConstant: 44),
-            row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            row.topAnchor.constraint(equalTo: contentView.topAnchor),
-            row.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        ])
-
-        accessibilityIdentifier = "live-console-header"
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        menuButton.menu = nil
-    }
-
-    func setMenuAccessibilityIdentifier(_ identifier: String) {
-        menuButton.accessibilityIdentifier = identifier
-    }
-
-    func configure(
-        _ model: LiveConsoleHeaderViewModel,
-        onMenuAction: @escaping @MainActor (LiveRoomMenuAction) -> Void
-    ) {
-        titleLabel.text = model.title
-        subtitleLabel.text = model.subtitle
-        badgeLabel.text = "  \(model.badge)  "
-        menuButton.menu = LiveRoomActionMenu.make(items: model.menuItems, onAction: onMenuAction)
-    }
-}
-
-final class StudioControlHeaderCell: LiveConsoleHeaderCell {
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        accessibilityIdentifier = "studio-control-header"
-        setMenuAccessibilityIdentifier("studio-control-header-menu")
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
     }
 }
 
@@ -418,148 +351,12 @@ private final class StudioMetricView: UIView {
     }
 }
 
-final class RoomHeroView: UIView {
-    private let avatarView = UIImageView()
-    private let titleLabel = UILabel()
-    private let badgeLabel = CapsuleLabel()
-    private let subtitleLabel = UILabel()
-    private let statsLabel = UILabel()
-    private let menuButton = UIButton(type: .system)
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .clear
-
-        avatarView.image = UIImage(systemName: "house.lodge.circle.fill")
-        avatarView.tintColor = .systemGreen
-        avatarView.contentMode = .scaleAspectFill
-        avatarView.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.12)
-        avatarView.layer.cornerRadius = 30
-        avatarView.layer.masksToBounds = true
-        avatarView.translatesAutoresizingMaskIntoConstraints = false
-
-        titleLabel.font = UIFont.systemFont(ofSize: 26, weight: .bold)
-        titleLabel.textColor = .label
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.adjustsFontSizeToFitWidth = true
-        titleLabel.minimumScaleFactor = 0.82
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-
-        badgeLabel.font = UIFont.systemFont(ofSize: 14, weight: .bold)
-        badgeLabel.textColor = .white
-        badgeLabel.text = " LIVE  ● "
-        badgeLabel.backgroundColor = .systemIndigo
-        badgeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        subtitleLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        subtitleLabel.textColor = .secondaryLabel
-        subtitleLabel.adjustsFontForContentSizeCategory = true
-
-        statsLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        statsLabel.textColor = .secondaryLabel
-        statsLabel.adjustsFontForContentSizeCategory = true
-        statsLabel.adjustsFontSizeToFitWidth = true
-        statsLabel.minimumScaleFactor = 0.86
-
-        menuButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
-        menuButton.tintColor = .label
-        menuButton.backgroundColor = UIColor.tertiarySystemFill
-        menuButton.layer.cornerRadius = 22
-        menuButton.translatesAutoresizingMaskIntoConstraints = false
-        menuButton.showsMenuAsPrimaryAction = true
-        menuButton.accessibilityLabel = "More Actions"
-        menuButton.accessibilityIdentifier = "room-toolkit-header-menu"
-
-        let titleStack = UIStackView(arrangedSubviews: [titleLabel, badgeLabel])
-        titleStack.axis = .horizontal
-        titleStack.alignment = .center
-        titleStack.spacing = 8
-
-        let textStack = UIStackView(arrangedSubviews: [titleStack, subtitleLabel, statsLabel])
-        textStack.axis = .vertical
-        textStack.spacing = 4
-
-        let stack = UIStackView(arrangedSubviews: [avatarView, textStack, menuButton])
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 14
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            avatarView.widthAnchor.constraint(equalToConstant: 60),
-            avatarView.heightAnchor.constraint(equalToConstant: 60),
-            menuButton.widthAnchor.constraint(equalToConstant: 44),
-            menuButton.heightAnchor.constraint(equalToConstant: 44),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 18),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
-        ])
-
-        accessibilityIdentifier = "room-toolkit-hero"
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func configure(
-        _ model: LiveRoomTitleViewModel,
-        onMenuAction: @escaping @MainActor (LiveRoomMenuAction) -> Void
-    ) {
-        titleLabel.text = model.title
-        subtitleLabel.text = model.subtitle
-        statsLabel.text = "\(model.viewerText)    \(model.heatText) heat    \(model.liveEventCount) live events"
-        menuButton.menu = LiveRoomActionMenu.make(items: model.menuItems, onAction: onMenuAction)
-    }
-
-    func clearMenu() {
-        menuButton.menu = nil
-    }
-}
-
-final class RoomHeroCell: UICollectionViewCell {
-    private let heroView = RoomHeroView()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        contentView.backgroundColor = .clear
-        heroView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(heroView)
-
-        NSLayoutConstraint.activate([
-            heroView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            heroView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            heroView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            heroView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        heroView.clearMenu()
-    }
-
-    func configure(
-        _ model: LiveRoomTitleViewModel,
-        onMenuAction: @escaping @MainActor (LiveRoomMenuAction) -> Void
-    ) {
-        heroView.configure(model, onMenuAction: onMenuAction)
-    }
-}
-
 final class RoomMetricStripView: UIView {
     private let liveMetric = StripMetricView(accent: .systemRed)
-    private let qualityMetric = StripMetricView(accent: .systemGreen)
+    private let audienceMetric = StripMetricView(accent: .systemBlue)
+    private let heatMetric = StripMetricView(accent: .systemOrange)
     private let hostMetric = StripMetricView(accent: .systemGreen)
-    private let micMetric = StripMetricView(accent: .systemBlue)
-    private let stageMetric = StripMetricView(accent: .label)
+    private let adminMetric = StripMetricView(accent: .systemIndigo)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -572,7 +369,9 @@ final class RoomMetricStripView: UIView {
         layer.shadowRadius = 12
         layer.shadowOffset = CGSize(width: 0, height: 4)
 
-        let stack = UIStackView(arrangedSubviews: [liveMetric, qualityMetric, hostMetric, micMetric, stageMetric])
+        let stack = UIStackView(
+            arrangedSubviews: [liveMetric, audienceMetric, heatMetric, hostMetric, adminMetric]
+        )
         stack.axis = .horizontal
         stack.alignment = .fill
         stack.distribution = .fillEqually
@@ -587,10 +386,10 @@ final class RoomMetricStripView: UIView {
         ])
 
         liveMetric.configure(symbolName: "livephoto", title: "LIVE", detail: "12:34", usesBadge: true)
-        qualityMetric.configure(symbolName: "chart.bar.fill", title: "Excellent", detail: "", usesBadge: false)
+        audienceMetric.configure(symbolName: "person.2.fill", title: "1248", detail: "Audience", usesBadge: false)
+        heatMetric.configure(symbolName: "bolt.fill", title: "8932", detail: "Heat", usesBadge: false)
         hostMetric.configure(symbolName: "person.crop.circle.fill", title: "Host", detail: "Alex", usesBadge: false)
-        micMetric.configure(symbolName: "mic.fill", title: "Mic On", detail: "", usesBadge: false)
-        stageMetric.configure(symbolName: "person.2.fill", title: "5", detail: "On Stage", usesBadge: false)
+        adminMetric.configure(symbolName: "shield.fill", title: "7", detail: "Admin", usesBadge: false)
         accessibilityIdentifier = "room-metric-strip"
     }
 
@@ -600,10 +399,25 @@ final class RoomMetricStripView: UIView {
 
     func configure(_ model: RoomStatusViewModel) {
         liveMetric.configure(symbolName: "livephoto", title: model.mode, detail: "12:34", usesBadge: true)
-        qualityMetric.configure(symbolName: "chart.bar.fill", title: "Excellent", detail: "", usesBadge: false)
+        audienceMetric.configure(
+            symbolName: "person.2.fill",
+            title: model.viewerText,
+            detail: "Audience",
+            usesBadge: false
+        )
+        heatMetric.configure(
+            symbolName: "bolt.fill",
+            title: model.heatText,
+            detail: "Heat",
+            usesBadge: false
+        )
         hostMetric.configure(symbolName: "person.crop.circle.fill", title: "Host", detail: model.hostName, usesBadge: false)
-        micMetric.configure(symbolName: "mic.fill", title: "Mic On", detail: "", usesBadge: false)
-        stageMetric.configure(symbolName: "person.2.fill", title: "5", detail: "On Stage", usesBadge: false)
+        adminMetric.configure(
+            symbolName: "shield.fill",
+            title: "\(model.pendingModerationCount)",
+            detail: "Admin",
+            usesBadge: false
+        )
     }
 }
 
@@ -776,8 +590,8 @@ final class SectionHeaderView: UICollectionReusableView {
         addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -32),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
@@ -958,7 +772,7 @@ final class LiveMessageCell: UICollectionViewCell {
     private let replyLabel = UILabel()
     private let likeLabel = UILabel()
     private let giftImageView = UIImageView()
-    private let giftBadgeLabel = UILabel()
+    private let giftBadgeLabel = CapsuleLabel()
     private var giftImageWidthConstraint: NSLayoutConstraint!
     private var giftImageHeightConstraint: NSLayoutConstraint!
 
@@ -986,11 +800,13 @@ final class LiveMessageCell: UICollectionViewCell {
         senderLabel.adjustsFontForContentSizeCategory = true
         senderLabel.textColor = .label
         senderLabel.lineBreakMode = .byTruncatingTail
+        senderLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
         timeLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
         timeLabel.adjustsFontForContentSizeCategory = true
         timeLabel.textColor = .tertiaryLabel
         timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
 
         messageLabel.font = UIFont.preferredFont(forTextStyle: .body)
         messageLabel.adjustsFontForContentSizeCategory = true
@@ -1007,48 +823,72 @@ final class LiveMessageCell: UICollectionViewCell {
         likeLabel.adjustsFontForContentSizeCategory = true
         likeLabel.textColor = .systemRed
         likeLabel.textAlignment = .right
+        likeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        likeLabel.setContentHuggingPriority(.required, for: .horizontal)
 
         giftImageView.image = UIImage(systemName: "paperplane.circle.fill")
         giftImageView.tintColor = .systemRed
         giftImageView.contentMode = .scaleAspectFit
         giftImageView.translatesAutoresizingMaskIntoConstraints = false
+        giftImageView.isHidden = true
+        giftImageView.accessibilityIdentifier = "live-message-gift-image"
 
-        giftBadgeLabel.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
+        giftBadgeLabel.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
+            for: UIFont.systemFont(ofSize: 13, weight: .semibold)
+        )
+        giftBadgeLabel.adjustsFontForContentSizeCategory = true
         giftBadgeLabel.textColor = .systemPink
         giftBadgeLabel.text = "Top Gifter"
         giftBadgeLabel.textAlignment = .center
         giftBadgeLabel.backgroundColor = UIColor.systemPink.withAlphaComponent(0.12)
-        giftBadgeLabel.layer.cornerRadius = 10
-        giftBadgeLabel.layer.masksToBounds = true
+        giftBadgeLabel.contentInsets = UIEdgeInsets(top: 2, left: 10, bottom: 2, right: 10)
+        giftBadgeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        giftBadgeLabel.setContentHuggingPriority(.required, for: .horizontal)
+        giftBadgeLabel.isHidden = true
 
-        let nameStack = UIStackView(arrangedSubviews: [senderLabel, timeLabel])
-        nameStack.axis = .horizontal
-        nameStack.alignment = .firstBaseline
-        nameStack.spacing = 8
+        let metadataRow = UIStackView(arrangedSubviews: [senderLabel, timeLabel, UIView(), likeLabel])
+        metadataRow.axis = .horizontal
+        metadataRow.alignment = .firstBaseline
+        metadataRow.spacing = 8
 
-        let textStack = UIStackView(arrangedSubviews: [nameStack, messageLabel, giftBadgeLabel, replyLabel])
-        textStack.axis = .vertical
-        textStack.spacing = 6
-        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let footerRow = UIStackView(arrangedSubviews: [replyLabel, giftBadgeLabel, UIView()])
+        footerRow.axis = .horizontal
+        footerRow.alignment = .center
+        footerRow.spacing = 8
+
+        let messageColumn = UIStackView(arrangedSubviews: [messageLabel, footerRow])
+        messageColumn.axis = .vertical
+        messageColumn.spacing = 6
+        messageColumn.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let contentRow = UIStackView(arrangedSubviews: [messageColumn, giftImageView])
+        contentRow.axis = .horizontal
+        contentRow.alignment = .top
+        contentRow.spacing = 12
+
+        let bodyStack = UIStackView(arrangedSubviews: [metadataRow, contentRow])
+        bodyStack.axis = .vertical
+        bodyStack.spacing = 6
+        bodyStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        bodyStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         let avatarContainer = UIView()
         avatarContainer.addSubview(avatarLabel)
         avatarContainer.addSubview(onlineDot)
 
-        let stack = UIStackView(arrangedSubviews: [avatarContainer, textStack, giftImageView, likeLabel])
+        let stack = UIStackView(arrangedSubviews: [avatarContainer, bodyStack])
         stack.axis = .horizontal
         stack.alignment = .top
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
 
-        giftImageWidthConstraint = giftImageView.widthAnchor.constraint(equalToConstant: 86)
+        giftImageWidthConstraint = giftImageView.widthAnchor.constraint(equalToConstant: 64)
         giftImageWidthConstraint.priority = .defaultHigh
-        giftImageHeightConstraint = giftImageView.heightAnchor.constraint(equalToConstant: 76)
+        giftImageHeightConstraint = giftImageView.heightAnchor.constraint(equalToConstant: 64)
 
         NSLayoutConstraint.activate([
-            avatarContainer.widthAnchor.constraint(equalToConstant: 48),
+            avatarContainer.widthAnchor.constraint(equalToConstant: 44),
             avatarContainer.heightAnchor.constraint(equalToConstant: 48),
             avatarLabel.widthAnchor.constraint(equalToConstant: 44),
             avatarLabel.heightAnchor.constraint(equalToConstant: 44),
@@ -1058,18 +898,24 @@ final class LiveMessageCell: UICollectionViewCell {
             onlineDot.heightAnchor.constraint(equalToConstant: 12),
             onlineDot.trailingAnchor.constraint(equalTo: avatarLabel.trailingAnchor),
             onlineDot.bottomAnchor.constraint(equalTo: avatarLabel.bottomAnchor),
-            giftImageWidthConstraint,
-            giftImageHeightConstraint,
-            likeLabel.widthAnchor.constraint(equalToConstant: 44),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14)
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
         ])
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        giftImageWidthConstraint.isActive = false
+        giftImageHeightConstraint.isActive = false
+        giftImageView.isHidden = true
+        giftBadgeLabel.isHidden = true
+        replyLabel.isHidden = false
     }
 
     func configure(_ model: LiveMessage) {
@@ -1078,7 +924,7 @@ final class LiveMessageCell: UICollectionViewCell {
         senderLabel.text = model.sender
         timeLabel.text = timeText(for: model.id)
         messageLabel.text = model.text
-        messageLabel.numberOfLines = model.tone == "gift" ? 2 : 0
+        messageLabel.numberOfLines = 0
         likeLabel.text = model.tone == "hot" ? "12" : (model.tone == "gift" ? "x 10" : "7")
         likeLabel.textColor = model.tone == "gift" ? .systemPurple : (model.tone == "hot" ? .systemRed : .secondaryLabel)
         let isGift = model.tone == "gift"

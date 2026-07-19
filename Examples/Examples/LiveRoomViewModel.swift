@@ -7,7 +7,6 @@ enum LiveRoomCollectionEvent: ListEvent {
     case sendGift(String)
     case studioModeChanged(Int)
     case roomActivityFilterChanged(RoomActivityFilter)
-    case headerMenuAction(LiveRoomMenuAction)
     case activateCapability(String)
 }
 
@@ -28,20 +27,6 @@ final class LiveRoomViewModel {
         self.state = state
     }
 
-    private var titleViewModel: LiveRoomTitleViewModel {
-        LiveRoomTitleViewModel(
-            title: state.roomName,
-            subtitle: "Live UI experiments with ListKit",
-            viewerText: "\(state.viewerCount)",
-            heatText: NumberFormatter.localizedString(
-                from: NSNumber(value: state.heat),
-                number: .decimal
-            ),
-            liveEventCount: 28 + state.messages.count,
-            menuItems: roomToolkitMenuItems
-        )
-    }
-
     private var toolbarViewModel: LiveRoomToolbarViewModel {
         LiveRoomToolbarViewModel(
             messageButtonTitle: "Add Message",
@@ -52,7 +37,6 @@ final class LiveRoomViewModel {
 
     @ListSectionBuilder<LiveRoomSection>
     var liveConsoleSections: [ListSection<LiveRoomSection>] {
-        makeConsoleHeaderSection()
         makeConsoleToolbarSection()
         makeStatusSection()
         makeMicSeatsSection()
@@ -63,14 +47,12 @@ final class LiveRoomViewModel {
 
     @ListSectionBuilder<LiveRoomSection>
     var studioControlSections: [ListSection<LiveRoomSection>] {
-        makeStudioHeaderSection()
         makeStudioControlsSection()
         makeMessagesSection()
     }
 
     @ListSectionBuilder<LiveRoomSection>
     var roomToolkitSections: [ListSection<LiveRoomSection>] {
-        makeRoomHeroSection()
         makeRoomMetricsSection()
         makeAPIGuideSection()
         makeRoomActivityTitleSection()
@@ -305,21 +287,30 @@ final class LiveRoomViewModel {
         state.gifts.first { $0.id == state.selectedGiftID }
     }
 
-    private var consoleHeaderViewModel: LiveConsoleHeaderViewModel {
-        LiveConsoleHeaderViewModel(
+    var liveConsoleNavigation: ScreenNavigationViewModel {
+        ScreenNavigationViewModel(
             title: "Live Console",
-            subtitle: "Collection adapter demo with room status, mic seats, activity, gifts, and diagnostics.",
-            badge: "LIVE",
+            inlineSubtitle: state.mode,
+            largeSubtitle: "Room status, mic seats, activity, gifts, and diagnostics",
             menuItems: liveConsoleMenuItems
         )
     }
 
-    private var studioHeaderViewModel: LiveConsoleHeaderViewModel {
-        LiveConsoleHeaderViewModel(
+    var studioControlNavigation: ScreenNavigationViewModel {
+        ScreenNavigationViewModel(
             title: "Studio Control",
-            subtitle: "Operational density with segmented modes, filters, collection sections, and admin actions.",
-            badge: "OPS",
+            inlineSubtitle: ["Room Mode", "Gift Mode", "Log Mode"][selectedStudioModeIndex],
+            largeSubtitle: "Segmented modes, filters, collection sections, and admin actions",
             menuItems: studioControlMenuItems
+        )
+    }
+
+    var roomToolkitNavigation: ScreenNavigationViewModel {
+        ScreenNavigationViewModel(
+            title: state.roomName,
+            inlineSubtitle: state.mode,
+            largeSubtitle: "Live UI experiments with ListKit",
+            menuItems: roomToolkitMenuItems
         )
     }
 
@@ -418,42 +409,6 @@ final class LiveRoomViewModel {
         )
     }
 
-    private func makeConsoleHeaderSection() -> ListSection<LiveRoomSection> {
-        let model = consoleHeaderViewModel
-        return ListSection(.consoleHeader) {
-            Row(LiveRoomRowID.consoleHeader, model: model, cell: LiveConsoleHeaderCell.self) { cell, model, context in
-                cell.configure(model) { action in
-                    context.send(LiveRoomCollectionEvent.headerMenuAction(action))
-                }
-            }
-            .refreshID(model)
-            .refreshPolicy(.whenRefreshIDChanges)
-        } layout: {
-            ListLayout(
-                itemHeight: .absolute(86),
-                contentInsets: ListLayoutInsets(top: 18, leading: 16, bottom: 6, trailing: 16)
-            )
-        }
-    }
-
-    private func makeStudioHeaderSection() -> ListSection<LiveRoomSection> {
-        let model = studioHeaderViewModel
-        return ListSection(.studioHeader) {
-            Row(LiveRoomRowID.studioHeader, model: model, cell: StudioControlHeaderCell.self) { cell, model, context in
-                cell.configure(model) { action in
-                    context.send(LiveRoomCollectionEvent.headerMenuAction(action))
-                }
-            }
-            .refreshID(model)
-            .refreshPolicy(.whenRefreshIDChanges)
-        } layout: {
-            ListLayout(
-                itemHeight: .absolute(86),
-                contentInsets: ListLayoutInsets(top: 18, leading: 16, bottom: 6, trailing: 16)
-            )
-        }
-    }
-
     private func makeStudioControlsSection() -> ListSection<LiveRoomSection> {
         let model = studioControlPanelViewModel
         return ListSection(.studioControls) {
@@ -468,25 +423,7 @@ final class LiveRoomViewModel {
         } layout: {
             ListLayout(
                 itemHeight: .absolute(274),
-                contentInsets: ListLayoutInsets(top: 4, leading: 16, bottom: 10, trailing: 16)
-            )
-        }
-    }
-
-    private func makeRoomHeroSection() -> ListSection<LiveRoomSection> {
-        let model = titleViewModel
-        return ListSection(.roomHero) {
-            Row(LiveRoomRowID.roomHero, model: model, cell: RoomHeroCell.self) { cell, model, context in
-                cell.configure(model) { action in
-                    context.send(LiveRoomCollectionEvent.headerMenuAction(action))
-                }
-            }
-            .refreshID(model)
-            .refreshPolicy(.whenRefreshIDChanges)
-        } layout: {
-            ListLayout(
-                itemHeight: .absolute(104),
-                contentInsets: ListLayoutInsets(top: 22, leading: 16, bottom: 8, trailing: 16)
+                contentInsets: ListLayoutInsets(top: 12, leading: 16, bottom: 10, trailing: 16)
             )
         }
     }
@@ -501,7 +438,7 @@ final class LiveRoomViewModel {
         } layout: {
             ListLayout(
                 itemHeight: .absolute(112),
-                contentInsets: ListLayoutInsets(top: 10, leading: 16, bottom: 18, trailing: 16)
+                contentInsets: ListLayoutInsets(top: 12, leading: 16, bottom: 14, trailing: 16)
             )
         }
     }
@@ -682,7 +619,7 @@ final class LiveRoomViewModel {
         } layout: {
             ListLayout(
                 itemHeight: .estimated(118),
-                contentInsets: ListLayoutInsets(top: 14, leading: 16, bottom: 8, trailing: 16)
+                contentInsets: ListLayoutInsets(top: 10, leading: 16, bottom: 8, trailing: 16)
             )
         }
     }
@@ -856,7 +793,7 @@ final class LiveRoomViewModel {
         } layout: {
             ListLayout(
                 itemHeight: .absolute(76),
-                contentInsets: ListLayoutInsets(top: 4, leading: 16, bottom: 22, trailing: 16)
+                contentInsets: ListLayoutInsets(top: 12, leading: 16, bottom: 6, trailing: 16)
             )
         }
     }
