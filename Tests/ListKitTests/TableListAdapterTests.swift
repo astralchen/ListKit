@@ -188,6 +188,83 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(moved?.destination, 1)
     }
 
+    func testTableLifecycleUsesCapturedRowAfterSnapshotChanges() {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+        let tableDelegate = TableDelegateSpy()
+        var endedMessageID: Int?
+        var cancelledMessageID: Int?
+        adapter.tableDelegate = tableDelegate
+
+        adapter.apply(animatingDifferences: false) {
+            TableSection(.messages) {
+                TableRow(model: Message(id: 1, text: "A", version: 1), cell: MessageTableCell.self) { _, _, _ in }
+                    .onEndDisplay { message, _, _ in endedMessageID = message.id }
+                    .onCancelPrefetch { message, _ in cancelledMessageID = message.id }
+            }
+        }
+
+        let oldIndexPath = IndexPath(row: 0, section: 0)
+        let oldCell = MessageTableCell()
+        adapter.tableView(tableView, willDisplay: oldCell, forRowAt: oldIndexPath)
+        adapter.tableView(tableView, prefetchRowsAt: [oldIndexPath])
+
+        adapter.apply(animatingDifferences: false) {
+            TableSection(.messages) {
+                TableRow(model: Message(id: 2, text: "B", version: 1), cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+
+        adapter.tableView(tableView, didEndDisplaying: oldCell, forRowAt: oldIndexPath)
+        adapter.tableView(tableView, cancelPrefetchingForRowsAt: [oldIndexPath])
+
+        XCTAssertEqual(endedMessageID, 1)
+        XCTAssertEqual(cancelledMessageID, 1)
+        XCTAssertEqual(tableDelegate.didEndDisplayingCount, 1)
+    }
+
+    func testTableSelectionModeIsEnforcedPerSection() {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+        var deselectedMessageID: Int?
+
+        adapter.apply(animatingDifferences: false) {
+            TableSection(0) {
+                TableRow(model: Message(id: 0, text: "None", version: 1), cell: MessageTableCell.self) { _, _, _ in }
+            }
+            .selectionMode(.none)
+            TableSection(1) {
+                TableRow(model: Message(id: 10, text: "A", version: 1), cell: MessageTableCell.self) { _, _, _ in }
+                    .onDeselect { message, _ in deselectedMessageID = message.id }
+                TableRow(model: Message(id: 11, text: "B", version: 1), cell: MessageTableCell.self) { _, _, _ in }
+            }
+            .selectionMode(.single)
+            TableSection(2) {
+                TableRow(model: Message(id: 20, text: "C", version: 1), cell: MessageTableCell.self) { _, _, _ in }
+            }
+            .selectionMode(.multiple)
+        }
+
+        let disabled = IndexPath(row: 0, section: 0)
+        let firstSingle = IndexPath(row: 0, section: 1)
+        let secondSingle = IndexPath(row: 1, section: 1)
+        let multiple = IndexPath(row: 0, section: 2)
+
+        XCTAssertTrue(tableView.allowsSelection)
+        XCTAssertTrue(tableView.allowsMultipleSelection)
+        XCTAssertNil(adapter.tableView(tableView, shouldSelectRowAt: disabled))
+        XCTAssertEqual(adapter.tableView(tableView, shouldSelectRowAt: firstSingle), firstSingle)
+        XCTAssertEqual(adapter.tableView(tableView, shouldSelectRowAt: multiple), multiple)
+
+        tableView.selectRow(at: firstSingle, animated: false, scrollPosition: .none)
+        tableView.selectRow(at: secondSingle, animated: false, scrollPosition: .none)
+        adapter.tableView(tableView, didSelectRowAt: secondSingle)
+
+        XCTAssertFalse(tableView.indexPathsForSelectedRows?.contains(firstSingle) ?? false)
+        XCTAssertTrue(tableView.indexPathsForSelectedRows?.contains(secondSingle) ?? false)
+        XCTAssertEqual(deselectedMessageID, 10)
+    }
+
     func testTableDataSourceForwardsEditingAndMoveCallbacks() {
         let tableView = UITableView(frame: .zero, style: .plain)
         let adapter = TableListAdapter<Section>(tableView: tableView)
@@ -383,4 +460,12 @@ private final class MessageTableCell: UITableViewCell {
 
 private final class MessageHeaderView: UITableViewHeaderFooterView {
     var title: String?
+}
+
+private final class TableDelegateSpy: NSObject, UITableViewDelegate {
+    var didEndDisplayingCount = 0
+
+    func tableView(_ tableView: UITableView, didEndDisplaying cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        didEndDisplayingCount += 1
+    }
 }

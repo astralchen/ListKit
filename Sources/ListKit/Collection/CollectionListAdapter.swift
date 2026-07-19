@@ -51,6 +51,9 @@ where SectionID: Hashable & Sendable {
     var isApplyingSnapshot = false
     private var rowsByIdentity: [AnyListIdentity: AnyListRow] = [:]
     private var supplementariesByKindAndSection: [SupplementaryKey: AnySupplementary] = [:]
+    private var displayedRowsByCell: [ObjectIdentifier: AnyListRow] = [:]
+    private var displayedSupplementariesByView: [ObjectIdentifier: AnySupplementary] = [:]
+    private var prefetchedRowsByIndexPath: [IndexPath: AnyListRow] = [:]
     private let eventRouter = ListEventRouter<ListContext>()
 
     /// 创建 adapter 并接管 collection view 的 data source、delegate 和 prefetch data source。
@@ -224,7 +227,7 @@ where SectionID: Hashable & Sendable {
         layoutSignature = newLayoutSignature
         rebuildLookupTables()
         registerBackgroundDecorationsIfNeeded()
-        collectionView?.allowsMultipleSelection = newSections.contains { $0.selectionMode == .multiple }
+        configureSelectionBehavior()
 
         var snapshot = NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>()
         for section in newSections {
@@ -250,6 +253,7 @@ where SectionID: Hashable & Sendable {
         dataSource.apply(snapshot, animatingDifferences: options.animatingDifferences) { [weak self] in
             guard let self else { return }
             self.isApplyingSnapshot = false
+            self.reconcileSelection()
             if shouldInvalidateLayout {
                 self.layoutInvalidationGeneration += 1
                 self.collectionView?.collectionViewLayout.invalidateLayout()
@@ -317,6 +321,9 @@ where SectionID: Hashable & Sendable {
 
     public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let row = row(at: indexPath) else { return }
+        if selectionMode(at: indexPath) == .single {
+            deselectOtherItems(in: indexPath.section, keeping: indexPath, collectionView: collectionView)
+        }
         let context = context(for: indexPath, sectionID: row.identity.sectionID)
         row.selectHandler?(context)
         row.selectionChangeHandler?(true, context)
@@ -329,13 +336,23 @@ where SectionID: Hashable & Sendable {
         row.selectionChangeHandler?(false, context)
     }
 
+    public func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
+        selectionMode(at: indexPath) != .none
+    }
+
+    public func collectionView(_ collectionView: UICollectionView, shouldDeselectItemAt indexPath: IndexPath) -> Bool {
+        selectionMode(at: indexPath) != .none
+    }
+
     public func collectionView(
         _ collectionView: UICollectionView,
         willDisplay cell: UICollectionViewCell,
         forItemAt indexPath: IndexPath
     ) {
-        guard let row = row(at: indexPath) else { return }
-        row.displayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+        if let row = row(at: indexPath) {
+            displayedRowsByCell[ObjectIdentifier(cell)] = row
+            row.displayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+        }
         displayDelegate?.collectionView?(collectionView, willDisplay: cell, forItemAt: indexPath)
     }
 
@@ -344,8 +361,10 @@ where SectionID: Hashable & Sendable {
         didEndDisplaying cell: UICollectionViewCell,
         forItemAt indexPath: IndexPath
     ) {
-        guard let row = row(at: indexPath) else { return }
-        row.endDisplayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+        let row = displayedRowsByCell.removeValue(forKey: ObjectIdentifier(cell)) ?? row(at: indexPath)
+        if let row {
+            row.endDisplayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+        }
         displayDelegate?.collectionView?(collectionView, didEndDisplaying: cell, forItemAt: indexPath)
     }
 
@@ -355,8 +374,10 @@ where SectionID: Hashable & Sendable {
         forElementKind elementKind: String,
         at indexPath: IndexPath
     ) {
-        guard let supplementary = supplementary(kind: elementKind, at: indexPath) else { return }
-        supplementary.displayHandler?(view, context(for: indexPath, sectionID: supplementary.identity.sectionID))
+        if let supplementary = supplementary(kind: elementKind, at: indexPath) {
+            displayedSupplementariesByView[ObjectIdentifier(view)] = supplementary
+            supplementary.displayHandler?(view, context(for: indexPath, sectionID: supplementary.identity.sectionID))
+        }
         displayDelegate?.collectionView?(
             collectionView,
             willDisplaySupplementaryView: view,
@@ -371,8 +392,11 @@ where SectionID: Hashable & Sendable {
         forElementOfKind elementKind: String,
         at indexPath: IndexPath
     ) {
-        guard let supplementary = supplementary(kind: elementKind, at: indexPath) else { return }
-        supplementary.endDisplayHandler?(view, context(for: indexPath, sectionID: supplementary.identity.sectionID))
+        let supplementary = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
+            ?? supplementary(kind: elementKind, at: indexPath)
+        if let supplementary {
+            supplementary.endDisplayHandler?(view, context(for: indexPath, sectionID: supplementary.identity.sectionID))
+        }
         displayDelegate?.collectionView?(
             collectionView,
             didEndDisplayingSupplementaryView: view,
@@ -387,6 +411,7 @@ where SectionID: Hashable & Sendable {
     ) {
         for indexPath in indexPaths {
             guard let row = row(at: indexPath) else { continue }
+            prefetchedRowsByIndexPath[indexPath] = row
             row.prefetchHandler?(context(for: indexPath, sectionID: row.identity.sectionID))
         }
     }
@@ -396,7 +421,9 @@ where SectionID: Hashable & Sendable {
         cancelPrefetchingForItemsAt indexPaths: [IndexPath]
     ) {
         for indexPath in indexPaths {
-            guard let row = row(at: indexPath) else { continue }
+            guard let row = prefetchedRowsByIndexPath.removeValue(forKey: indexPath) ?? row(at: indexPath) else {
+                continue
+            }
             row.cancelPrefetchHandler?(context(for: indexPath, sectionID: row.identity.sectionID))
         }
     }
@@ -975,6 +1002,51 @@ where SectionID: Hashable & Sendable {
     private func isItemSupplementary(kind: String, at indexPath: IndexPath) -> Bool {
         guard let section = sections[safe: indexPath.section] else { return false }
         return section.resolvedSupplementaryLayouts().first { $0.kind == kind }?.placement.isItem == true
+    }
+
+    private func configureSelectionBehavior() {
+        guard let collectionView else { return }
+        let selectableSections = sections.filter { $0.selectionMode != .none }
+        collectionView.allowsSelection = !selectableSections.isEmpty
+        collectionView.allowsMultipleSelection = selectableSections.contains { $0.selectionMode == .multiple }
+            || selectableSections.count > 1
+    }
+
+    private func reconcileSelection() {
+        guard let collectionView else { return }
+        let selectedIndexPaths = (collectionView.indexPathsForSelectedItems ?? []).sorted {
+            $0.section == $1.section ? $0.item < $1.item : $0.section < $1.section
+        }
+        var selectedSingleSections = Set<Int>()
+
+        for indexPath in selectedIndexPaths {
+            switch selectionMode(at: indexPath) {
+            case .none:
+                collectionView.deselectItem(at: indexPath, animated: false)
+            case .single:
+                if !selectedSingleSections.insert(indexPath.section).inserted {
+                    collectionView.deselectItem(at: indexPath, animated: false)
+                }
+            case .multiple:
+                break
+            }
+        }
+    }
+
+    private func deselectOtherItems(
+        in section: Int,
+        keeping selectedIndexPath: IndexPath,
+        collectionView: UICollectionView
+    ) {
+        let indexPaths = collectionView.indexPathsForSelectedItems ?? []
+        for indexPath in indexPaths where indexPath.section == section && indexPath != selectedIndexPath {
+            collectionView.deselectItem(at: indexPath, animated: false)
+            self.collectionView(collectionView, didDeselectItemAt: indexPath)
+        }
+    }
+
+    private func selectionMode(at indexPath: IndexPath) -> ListSelectionMode {
+        sections[safe: indexPath.section]?.selectionMode ?? .none
     }
 
     private func row(at indexPath: IndexPath) -> AnyListRow? {

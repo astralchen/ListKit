@@ -435,6 +435,83 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(cancelledUserID, 1)
     }
 
+    func testCollectionLifecycleUsesCapturedRowAfterSnapshotChanges() {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let displayDelegate = CollectionDisplayDelegateSpy()
+        var endedUserID: Int?
+        var cancelledUserID: Int?
+        adapter.displayDelegate = displayDelegate
+
+        adapter.apply(animatingDifferences: false) {
+            ListSection(0) {
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                    .onEndDisplay { _, _ in endedUserID = 1 }
+                    .onCancelPrefetch { user, _ in cancelledUserID = user.id }
+            }
+        }
+
+        let oldIndexPath = IndexPath(item: 0, section: 0)
+        let oldCell = NormalUserCell()
+        adapter.collectionView(collectionView, willDisplay: oldCell, forItemAt: oldIndexPath)
+        adapter.collectionView(collectionView, prefetchItemsAt: [oldIndexPath])
+
+        adapter.apply(animatingDifferences: false) {
+            ListSection(0) {
+                Row(2, model: User(id: 2, name: "B", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        adapter.collectionView(collectionView, didEndDisplaying: oldCell, forItemAt: oldIndexPath)
+        adapter.collectionView(collectionView, cancelPrefetchingForItemsAt: [oldIndexPath])
+
+        XCTAssertEqual(endedUserID, 1)
+        XCTAssertEqual(cancelledUserID, 1)
+        XCTAssertEqual(displayDelegate.didEndDisplayingCount, 1)
+    }
+
+    func testCollectionSelectionModeIsEnforcedPerSection() {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        var deselectedUserID: Int?
+
+        adapter.apply(animatingDifferences: false) {
+            ListSection(0) {
+                Row(0, model: User(id: 0, name: "None", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            }
+            .selectionMode(.none)
+            ListSection(1) {
+                Row(10, model: User(id: 10, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                    .onDeselect { user, _ in deselectedUserID = user.id }
+                Row(11, model: User(id: 11, name: "B", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            }
+            .selectionMode(.single)
+            ListSection(2) {
+                Row(20, model: User(id: 20, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            }
+            .selectionMode(.multiple)
+        }
+
+        let disabled = IndexPath(item: 0, section: 0)
+        let firstSingle = IndexPath(item: 0, section: 1)
+        let secondSingle = IndexPath(item: 1, section: 1)
+        let multiple = IndexPath(item: 0, section: 2)
+
+        XCTAssertTrue(collectionView.allowsSelection)
+        XCTAssertTrue(collectionView.allowsMultipleSelection)
+        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: disabled))
+        XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: firstSingle))
+        XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: multiple))
+
+        collectionView.selectItem(at: firstSingle, animated: false, scrollPosition: [])
+        collectionView.selectItem(at: secondSingle, animated: false, scrollPosition: [])
+        adapter.collectionView(collectionView, didSelectItemAt: secondSingle)
+
+        XCTAssertFalse(collectionView.indexPathsForSelectedItems?.contains(firstSingle) ?? false)
+        XCTAssertTrue(collectionView.indexPathsForSelectedItems?.contains(secondSingle) ?? false)
+        XCTAssertEqual(deselectedUserID, 10)
+    }
+
     func testCellEventBindingSendsTypedEvent() {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
@@ -1643,6 +1720,18 @@ private final class FlowLayoutDelegateSpy: NSObject, UICollectionViewDelegateFlo
     ) -> CGSize {
         sizeRequestCount += 1
         return CGSize(width: 44, height: 55)
+    }
+}
+
+private final class CollectionDisplayDelegateSpy: NSObject, UICollectionViewDelegate {
+    var didEndDisplayingCount = 0
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didEndDisplaying cell: UICollectionViewCell,
+        forItemAt indexPath: IndexPath
+    ) {
+        didEndDisplayingCount += 1
     }
 }
 

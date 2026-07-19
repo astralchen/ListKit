@@ -1050,7 +1050,7 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
 
     /// 设置 section 的选择模式。
     ///
-    /// - Parameter mode: 单选、多选或不管理选择。
+    /// - Parameter mode: 单选、多选或不启用选择。
     public func selectionMode(_ mode: ListSelectionMode) -> Self {
         var copy = self
         copy.selectionMode = mode

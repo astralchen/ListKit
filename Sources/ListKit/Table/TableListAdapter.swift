@@ -35,6 +35,9 @@ where SectionID: Hashable & Sendable {
     private var sections: [TableSection<SectionID>] = []
     private var dataSource: TableDiffableDataSource<SectionID>!
     private var rowsByIdentity: [AnyListIdentity: AnyTableRow] = [:]
+    private var displayedRowsByCell: [ObjectIdentifier: AnyTableRow] = [:]
+    private var displayedSupplementariesByView: [ObjectIdentifier: AnyTableSectionSupplementary] = [:]
+    private var prefetchedRowsByIndexPath: [IndexPath: AnyTableRow] = [:]
     private let eventRouter = ListEventRouter<TableListContext>()
 
     /// 创建 adapter 并接管 table view 的 data source、delegate 和 prefetch data source。
@@ -181,7 +184,7 @@ where SectionID: Hashable & Sendable {
 
         sections = newSections
         rebuildLookupTables()
-        tableView?.allowsMultipleSelection = newSections.contains { $0.selectionMode == .multiple }
+        configureSelectionBehavior()
 
         var snapshot = NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>()
         for section in newSections {
@@ -201,6 +204,7 @@ where SectionID: Hashable & Sendable {
 
         dataSource.apply(snapshot, animatingDifferences: options.animatingDifferences) { [weak self] in
             guard let self else { return }
+            self.reconcileSelection()
             let visibleRefreshCount = applyPlan.shouldRunVisibleRefresh
                 ? self.refreshVisibleRowsIfNeeded(applyPlan: applyPlan)
                 : 0
@@ -249,6 +253,9 @@ where SectionID: Hashable & Sendable {
 
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         guard let row = row(at: indexPath) else { return }
+        if selectionMode(at: indexPath) == .single {
+            deselectOtherRows(in: indexPath.section, keeping: indexPath, tableView: tableView)
+        }
         let context = context(for: indexPath, sectionID: row.identity.sectionID)
         row.selectHandler?(context)
         row.selectionChangeHandler?(true, context)
@@ -263,15 +270,27 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didDeselectRowAt: indexPath)
     }
 
+    public func tableView(_ tableView: UITableView, shouldSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        selectionMode(at: indexPath) == .none ? nil : indexPath
+    }
+
+    public func tableView(_ tableView: UITableView, shouldDeselectRowAt indexPath: IndexPath) -> IndexPath? {
+        selectionMode(at: indexPath) == .none ? nil : indexPath
+    }
+
     public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        guard let row = row(at: indexPath) else { return }
-        row.displayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+        if let row = row(at: indexPath) {
+            displayedRowsByCell[ObjectIdentifier(cell)] = row
+            row.displayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+        }
         tableDelegate?.tableView?(tableView, willDisplay: cell, forRowAt: indexPath)
     }
 
     public func tableView(_ tableView: UITableView, didEndDisplaying cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        guard let row = row(at: indexPath) else { return }
-        row.endDisplayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+        let row = displayedRowsByCell.removeValue(forKey: ObjectIdentifier(cell)) ?? row(at: indexPath)
+        if let row {
+            row.endDisplayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+        }
         tableDelegate?.tableView?(tableView, didEndDisplaying: cell, forRowAt: indexPath)
     }
 
@@ -280,6 +299,7 @@ where SectionID: Hashable & Sendable {
             tableDelegate?.tableView?(tableView, willDisplayHeaderView: view, forSection: section)
             return
         }
+        displayedSupplementariesByView[ObjectIdentifier(view)] = header
         header.displayHandler?(
             headerView,
             context(for: IndexPath(row: 0, section: section), sectionID: header.identity.sectionID)
@@ -292,6 +312,7 @@ where SectionID: Hashable & Sendable {
             tableDelegate?.tableView?(tableView, willDisplayFooterView: view, forSection: section)
             return
         }
+        displayedSupplementariesByView[ObjectIdentifier(view)] = footer
         footer.displayHandler?(
             footerView,
             context(for: IndexPath(row: 0, section: section), sectionID: footer.identity.sectionID)
@@ -300,7 +321,9 @@ where SectionID: Hashable & Sendable {
     }
 
     public func tableView(_ tableView: UITableView, didEndDisplayingHeaderView view: UIView, forSection section: Int) {
-        guard let header = sections[safe: section]?.header, let headerView = view as? UITableViewHeaderFooterView else {
+        let header = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
+            ?? sections[safe: section]?.header
+        guard let header, let headerView = view as? UITableViewHeaderFooterView else {
             tableDelegate?.tableView?(tableView, didEndDisplayingHeaderView: view, forSection: section)
             return
         }
@@ -312,7 +335,9 @@ where SectionID: Hashable & Sendable {
     }
 
     public func tableView(_ tableView: UITableView, didEndDisplayingFooterView view: UIView, forSection section: Int) {
-        guard let footer = sections[safe: section]?.footer, let footerView = view as? UITableViewHeaderFooterView else {
+        let footer = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
+            ?? sections[safe: section]?.footer
+        guard let footer, let footerView = view as? UITableViewHeaderFooterView else {
             tableDelegate?.tableView?(tableView, didEndDisplayingFooterView: view, forSection: section)
             return
         }
@@ -326,13 +351,16 @@ where SectionID: Hashable & Sendable {
     public func tableView(_ tableView: UITableView, prefetchRowsAt indexPaths: [IndexPath]) {
         for indexPath in indexPaths {
             guard let row = row(at: indexPath) else { continue }
+            prefetchedRowsByIndexPath[indexPath] = row
             row.prefetchHandler?(context(for: indexPath, sectionID: row.identity.sectionID))
         }
     }
 
     public func tableView(_ tableView: UITableView, cancelPrefetchingForRowsAt indexPaths: [IndexPath]) {
         for indexPath in indexPaths {
-            guard let row = row(at: indexPath) else { continue }
+            guard let row = prefetchedRowsByIndexPath.removeValue(forKey: indexPath) ?? row(at: indexPath) else {
+                continue
+            }
             row.cancelPrefetchHandler?(context(for: indexPath, sectionID: row.identity.sectionID))
         }
     }
@@ -720,6 +748,51 @@ where SectionID: Hashable & Sendable {
         supplementary.configureVisibleView(view, context)
         supplementary.displayHandler?(view, context)
         return 1
+    }
+
+    private func configureSelectionBehavior() {
+        guard let tableView else { return }
+        let selectableSections = sections.filter { $0.selectionMode != .none }
+        tableView.allowsSelection = !selectableSections.isEmpty
+        tableView.allowsMultipleSelection = selectableSections.contains { $0.selectionMode == .multiple }
+            || selectableSections.count > 1
+    }
+
+    private func reconcileSelection() {
+        guard let tableView else { return }
+        let selectedIndexPaths = (tableView.indexPathsForSelectedRows ?? []).sorted {
+            $0.section == $1.section ? $0.row < $1.row : $0.section < $1.section
+        }
+        var selectedSingleSections = Set<Int>()
+
+        for indexPath in selectedIndexPaths {
+            switch selectionMode(at: indexPath) {
+            case .none:
+                tableView.deselectRow(at: indexPath, animated: false)
+            case .single:
+                if !selectedSingleSections.insert(indexPath.section).inserted {
+                    tableView.deselectRow(at: indexPath, animated: false)
+                }
+            case .multiple:
+                break
+            }
+        }
+    }
+
+    private func deselectOtherRows(
+        in section: Int,
+        keeping selectedIndexPath: IndexPath,
+        tableView: UITableView
+    ) {
+        let indexPaths = tableView.indexPathsForSelectedRows ?? []
+        for indexPath in indexPaths where indexPath.section == section && indexPath != selectedIndexPath {
+            tableView.deselectRow(at: indexPath, animated: false)
+            self.tableView(tableView, didDeselectRowAt: indexPath)
+        }
+    }
+
+    private func selectionMode(at indexPath: IndexPath) -> ListSelectionMode {
+        sections[safe: indexPath.section]?.selectionMode ?? .none
     }
 
     private func row(at indexPath: IndexPath) -> AnyTableRow? {
