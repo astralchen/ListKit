@@ -19,6 +19,39 @@ final class CapsuleLabel: UILabel {
     }
 }
 
+@MainActor
+private enum LiveRoomActionMenu {
+    static func make(
+        items: [LiveRoomMenuItem],
+        onAction: @escaping @MainActor (LiveRoomMenuAction) -> Void
+    ) -> UIMenu {
+        func action(for item: LiveRoomMenuItem) -> UIAction {
+            UIAction(
+                title: item.title,
+                image: UIImage(systemName: item.symbolName),
+                attributes: item.role == .destructive ? .destructive : [],
+                state: item.isSelected ? .on : .off
+            ) { _ in
+                onAction(item.action)
+            }
+        }
+
+        let standardActions = items
+            .filter { $0.role == .standard }
+            .map { action(for: $0) }
+        let destructiveActions = items
+            .filter { $0.role == .destructive }
+            .map { action(for: $0) }
+        var children: [UIMenuElement] = standardActions
+        if !destructiveActions.isEmpty {
+            children.append(
+                UIMenu(title: "", options: .displayInline, children: destructiveActions)
+            )
+        }
+        return UIMenu(title: "Actions", children: children)
+    }
+}
+
 class LiveConsoleHeaderCell: UICollectionViewCell {
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
@@ -50,6 +83,9 @@ class LiveConsoleHeaderCell: UICollectionViewCell {
         menuButton.backgroundColor = UIColor.tertiarySystemFill
         menuButton.layer.cornerRadius = 22
         menuButton.translatesAutoresizingMaskIntoConstraints = false
+        menuButton.showsMenuAsPrimaryAction = true
+        menuButton.accessibilityLabel = "More Actions"
+        menuButton.accessibilityIdentifier = "live-console-header-menu"
 
         let titleRow = UIStackView(arrangedSubviews: [titleLabel, badgeLabel])
         titleRow.axis = .horizontal
@@ -85,10 +121,23 @@ class LiveConsoleHeaderCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(_ model: LiveConsoleHeaderViewModel) {
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        menuButton.menu = nil
+    }
+
+    func setMenuAccessibilityIdentifier(_ identifier: String) {
+        menuButton.accessibilityIdentifier = identifier
+    }
+
+    func configure(
+        _ model: LiveConsoleHeaderViewModel,
+        onMenuAction: @escaping @MainActor (LiveRoomMenuAction) -> Void
+    ) {
         titleLabel.text = model.title
         subtitleLabel.text = model.subtitle
         badgeLabel.text = "  \(model.badge)  "
+        menuButton.menu = LiveRoomActionMenu.make(items: model.menuItems, onAction: onMenuAction)
     }
 }
 
@@ -96,6 +145,7 @@ final class StudioControlHeaderCell: LiveConsoleHeaderCell {
     override init(frame: CGRect) {
         super.init(frame: frame)
         accessibilityIdentifier = "studio-control-header"
+        setMenuAccessibilityIdentifier("studio-control-header-menu")
     }
 
     required init?(coder: NSCoder) {
@@ -107,7 +157,6 @@ final class LiveConsoleToolbarCell: UICollectionViewCell {
     var onAddMessage: (@MainActor () -> Void)?
     var onSendGift: (@MainActor () -> Void)?
 
-    private let selectedGiftLabel = UILabel()
     private let addMessageButton = UIButton(type: .system)
     private let sendGiftButton = UIButton(type: .system)
 
@@ -117,13 +166,6 @@ final class LiveConsoleToolbarCell: UICollectionViewCell {
         contentView.layer.cornerRadius = 16
         contentView.layer.masksToBounds = true
 
-        selectedGiftLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        selectedGiftLabel.textColor = .secondaryLabel
-        selectedGiftLabel.adjustsFontForContentSizeCategory = true
-        selectedGiftLabel.lineBreakMode = .byTruncatingTail
-        selectedGiftLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        selectedGiftLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
         styleActionButton(addMessageButton, symbolName: "text.bubble.fill")
         addMessageButton.accessibilityIdentifier = "live-console-add-message"
         addMessageButton.addTarget(self, action: #selector(addMessageTapped), for: .touchUpInside)
@@ -132,15 +174,15 @@ final class LiveConsoleToolbarCell: UICollectionViewCell {
         sendGiftButton.accessibilityIdentifier = "live-console-send-gift"
         sendGiftButton.addTarget(self, action: #selector(sendGiftTapped), for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [selectedGiftLabel, addMessageButton, sendGiftButton])
+        let stack = UIStackView(arrangedSubviews: [addMessageButton, sendGiftButton])
         stack.axis = .horizontal
         stack.alignment = .center
+        stack.distribution = .fillEqually
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            selectedGiftLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 92),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
             stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
@@ -161,9 +203,9 @@ final class LiveConsoleToolbarCell: UICollectionViewCell {
     }
 
     func configure(_ model: LiveRoomToolbarViewModel) {
-        selectedGiftLabel.text = "Selected: \(model.selectedGiftName)"
         addMessageButton.setDemoActionButtonTitle(model.messageButtonTitle)
         sendGiftButton.setDemoActionButtonTitle(model.giftButtonTitle)
+        sendGiftButton.accessibilityValue = "Selected gift: \(model.selectedGiftName)"
     }
 
     private func styleActionButton(_ button: UIButton, symbolName: String) {
@@ -425,6 +467,9 @@ final class RoomHeroView: UIView {
         menuButton.backgroundColor = UIColor.tertiarySystemFill
         menuButton.layer.cornerRadius = 22
         menuButton.translatesAutoresizingMaskIntoConstraints = false
+        menuButton.showsMenuAsPrimaryAction = true
+        menuButton.accessibilityLabel = "More Actions"
+        menuButton.accessibilityIdentifier = "room-toolkit-header-menu"
 
         let titleStack = UIStackView(arrangedSubviews: [titleLabel, badgeLabel])
         titleStack.axis = .horizontal
@@ -460,10 +505,18 @@ final class RoomHeroView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(_ model: LiveRoomTitleViewModel) {
+    func configure(
+        _ model: LiveRoomTitleViewModel,
+        onMenuAction: @escaping @MainActor (LiveRoomMenuAction) -> Void
+    ) {
         titleLabel.text = model.title
         subtitleLabel.text = model.subtitle
-        statsLabel.text = "\(model.viewerText)    8,932 heat    32 live events"
+        statsLabel.text = "\(model.viewerText)    \(model.heatText) heat    \(model.liveEventCount) live events"
+        menuButton.menu = LiveRoomActionMenu.make(items: model.menuItems, onAction: onMenuAction)
+    }
+
+    func clearMenu() {
+        menuButton.menu = nil
     }
 }
 
@@ -488,8 +541,16 @@ final class RoomHeroCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(_ model: LiveRoomTitleViewModel) {
-        heroView.configure(model)
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        heroView.clearMenu()
+    }
+
+    func configure(
+        _ model: LiveRoomTitleViewModel,
+        onMenuAction: @escaping @MainActor (LiveRoomMenuAction) -> Void
+    ) {
+        heroView.configure(model, onMenuAction: onMenuAction)
     }
 }
 
@@ -513,7 +574,7 @@ final class RoomMetricStripView: UIView {
 
         let stack = UIStackView(arrangedSubviews: [liveMetric, qualityMetric, hostMetric, micMetric, stageMetric])
         stack.axis = .horizontal
-        stack.alignment = .center
+        stack.alignment = .fill
         stack.distribution = .fillEqually
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -575,6 +636,7 @@ final class RoomMetricStripCell: UICollectionViewCell {
 final class RoomActivityTitleCell: UICollectionViewCell {
     private let titleLabel = UILabel()
     private let filterButton = UIButton(type: .system)
+    private var onFilterChange: ((RoomActivityFilter) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -588,6 +650,8 @@ final class RoomActivityTitleCell: UICollectionViewCell {
         filterButton.titleLabel?.font = UIFont.preferredFont(forTextStyle: .subheadline)
         filterButton.tintColor = .systemBlue
         filterButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        filterButton.showsMenuAsPrimaryAction = true
+        filterButton.accessibilityIdentifier = "room-toolkit-activity-filter"
 
         let stack = UIStackView(arrangedSubviews: [titleLabel, UIView(), filterButton])
         stack.axis = .horizontal
@@ -610,10 +674,54 @@ final class RoomActivityTitleCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(_ model: RoomActivityTitleViewModel) {
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        onFilterChange = nil
+        filterButton.menu = nil
+    }
+
+    func configure(
+        _ model: RoomActivityTitleViewModel,
+        onFilterChange: @escaping (RoomActivityFilter) -> Void
+    ) {
+        self.onFilterChange = onFilterChange
         titleLabel.text = model.title
         filterButton.setTitle(model.buttonTitle, for: .normal)
         filterButton.setImage(UIImage(systemName: model.symbolName), for: .normal)
+        filterButton.accessibilityLabel = "Filter Live Activity"
+        filterButton.accessibilityValue = model.selectedFilter.title
+        let actions = RoomActivityFilter.allCases.map { [weak self] filter in
+            UIAction(
+                title: filter.title,
+                image: UIImage(systemName: filter.symbolName),
+                state: filter == model.selectedFilter ? .on : .off
+            ) { _ in
+                self?.selectFilter(filter)
+            }
+        }
+        let options: UIMenu.Options
+        if #available(iOS 15.0, *) {
+            options = .singleSelection
+        } else {
+            options = []
+        }
+        filterButton.menu = UIMenu(
+            title: "Show",
+            image: nil,
+            identifier: nil,
+            options: options,
+            children: actions
+        )
+    }
+
+    private func selectFilter(_ filter: RoomActivityFilter) {
+        filterButton.menu?.children
+            .compactMap { $0 as? UIAction }
+            .forEach { action in
+                action.state = action.title == filter.title ? .on : .off
+            }
+        filterButton.accessibilityValue = filter.title
+        onFilterChange?(filter)
     }
 }
 
@@ -1249,85 +1357,6 @@ final class AdminEventTableCell: UITableViewCell {
     }
 }
 
-final class ModerationTableCell: UITableViewCell {
-    var onResolve: (@MainActor () -> Void)?
-
-    private let iconView = UIImageView()
-    private let titleLabel = UILabel()
-    private let detailLabel = UILabel()
-    private let resolveButton = UIButton(type: .system)
-
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
-        selectionStyle = .none
-        backgroundColor = .clear
-        contentView.backgroundColor = .systemBackground
-        contentView.layer.cornerRadius = 8
-        contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = UIColor.separator.cgColor
-
-        iconView.image = UIImage(systemName: "shield.lefthalf.filled")
-        iconView.tintColor = .systemGreen
-        iconView.contentMode = .scaleAspectFit
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-
-        titleLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.textColor = .label
-
-        detailLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
-        detailLabel.adjustsFontForContentSizeCategory = true
-        detailLabel.textColor = .secondaryLabel
-        detailLabel.numberOfLines = 2
-
-        resolveButton.setImage(UIImage(systemName: "checkmark.circle.fill"), for: .normal)
-        resolveButton.setTitle(" Resolve", for: .normal)
-        resolveButton.addTarget(self, action: #selector(resolveTapped), for: .touchUpInside)
-
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, detailLabel])
-        textStack.axis = .vertical
-        textStack.spacing = 3
-
-        let stack = UIStackView(arrangedSubviews: [iconView, textStack, resolveButton])
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            iconView.widthAnchor.constraint(equalToConstant: 28),
-            iconView.heightAnchor.constraint(equalToConstant: 28),
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        onResolve = nil
-    }
-
-    func configure(_ model: ModerationEvent) {
-        titleLabel.text = "\(model.kind.rawValue) · \(model.title)"
-        detailLabel.text = model.detail
-        contentView.layer.borderColor = (model.isSelected ? UIColor.systemGreen : UIColor.separator).cgColor
-        contentView.layer.borderWidth = model.isSelected ? 2 : 1
-        accessibilityIdentifier = "moderation-\(model.id)"
-        resolveButton.accessibilityIdentifier = "moderation-resolve-\(model.id)"
-    }
-
-    @objc private func resolveTapped() {
-        onResolve?()
-    }
-}
-
 final class AdminHeaderView: UITableViewHeaderFooterView {
     private let titleLabel = UILabel()
     private let detailLabel = UILabel()
@@ -1424,8 +1453,9 @@ private final class MetricView: UIView {
 }
 
 private final class StripMetricView: UIView {
+    private let iconContainer = UIView()
     private let iconView = UIImageView()
-    private let titleLabel = UILabel()
+    private let titleLabel = CapsuleLabel()
     private let detailLabel = UILabel()
     private let accent: UIColor
 
@@ -1436,31 +1466,44 @@ private final class StripMetricView: UIView {
         iconView.contentMode = .scaleAspectFit
         iconView.tintColor = accent
         iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.accessibilityIdentifier = "room-metric-icon-container"
+        iconContainer.addSubview(iconView)
 
         titleLabel.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = .label
         titleLabel.textAlignment = .center
         titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         detailLabel.font = UIFont.preferredFont(forTextStyle: .caption2)
         detailLabel.textColor = .secondaryLabel
         detailLabel.textAlignment = .center
         detailLabel.adjustsFontForContentSizeCategory = true
+        detailLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = UIStackView(arrangedSubviews: [iconView, titleLabel, detailLabel])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 4
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        addSubview(iconContainer)
+        addSubview(titleLabel)
+        addSubview(detailLabel)
 
         NSLayoutConstraint.activate([
+            iconContainer.widthAnchor.constraint(equalToConstant: 26),
+            iconContainer.heightAnchor.constraint(equalToConstant: 26),
+            iconContainer.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconContainer.topAnchor.constraint(equalTo: topAnchor, constant: 10),
             iconView.widthAnchor.constraint(equalToConstant: 26),
             iconView.heightAnchor.constraint(equalToConstant: 26),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 4),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
+            titleLabel.topAnchor.constraint(equalTo: iconContainer.bottomAnchor, constant: 4),
+            detailLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            detailLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 4),
+            detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
+            detailLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+            detailLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor)
         ])
     }
 
@@ -1470,11 +1513,9 @@ private final class StripMetricView: UIView {
 
     func configure(symbolName: String, title: String, detail: String, usesBadge: Bool) {
         iconView.image = UIImage(systemName: symbolName)
-        titleLabel.text = title
-        detailLabel.text = detail
+        titleLabel.text = usesBadge ? "  \(title)  " : title
+        detailLabel.text = detail.isEmpty ? " " : detail
         titleLabel.textColor = usesBadge ? .white : .label
         titleLabel.backgroundColor = usesBadge ? accent : .clear
-        titleLabel.layer.cornerRadius = usesBadge ? 6 : 0
-        titleLabel.layer.masksToBounds = usesBadge
     }
 }

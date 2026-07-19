@@ -4,6 +4,260 @@ import UIKit
 
 @MainActor
 final class ListKitCoreTests: XCTestCase {
+    func testTransactionResolvesAnimationScopesAndReduceMotion() {
+        let transaction = ListTransaction()
+            .snapshotAnimation(.enabled)
+            .contentAnimation(.disabled)
+            .updatePolicy(.serial)
+            .scrollBehavior(.scrollTo(ListScrollTarget("message"), position: .bottom))
+
+        let reduced = transaction.resolved(reduceMotionEnabled: true)
+        XCTAssertTrue(reduced.snapshotAnimation)
+        XCTAssertFalse(reduced.outlineAnimation)
+        XCTAssertFalse(reduced.layoutAnimation)
+        XCTAssertFalse(reduced.contentAnimation)
+        XCTAssertFalse(reduced.scrollAnimation)
+        XCTAssertEqual(reduced.updatePolicy, .serial)
+        XCTAssertTrue(reduced.reduceMotionApplied)
+
+        let forced = ListTransaction(animation: .enabled).resolved(reduceMotionEnabled: true)
+        XCTAssertTrue(forced.snapshotAnimation)
+        XCTAssertTrue(forced.outlineAnimation)
+        XCTAssertTrue(forced.layoutAnimation)
+        XCTAssertTrue(forced.contentAnimation)
+        XCTAssertTrue(forced.scrollAnimation)
+        XCTAssertFalse(forced.reduceMotionApplied)
+
+        let ignoringReduceMotion = ListTransaction()
+            .respectsReduceMotion(false)
+            .resolved(reduceMotionEnabled: true)
+        XCTAssertTrue(ignoringReduceMotion.snapshotAnimation)
+        XCTAssertFalse(ignoringReduceMotion.reduceMotionApplied)
+    }
+
+    func testRowAnimationModifiersReachErasedDescriptors() {
+        let row = Row(
+            "row",
+            model: "value",
+            cell: UICollectionViewListCell.self
+        ) { _, _, _ in }
+            .contentTransition(.opacity(duration: 0.35))
+            .outlineAnimation(.disabled)
+            .eraseToAnyListRow(sectionID: "section")
+
+        XCTAssertEqual(row.contentTransition, .opacity(duration: 0.35))
+        XCTAssertEqual(row.outlineAnimation, .disabled)
+    }
+
+    func testApplyPlannerReportsMovesAndChangedSections() {
+        let first = makeTestListNode("first", refreshID: 1)
+        let second = makeTestListNode("second", refreshID: 1)
+        let plan = ListApplyPlanner.makePlan(
+            old: [ListSectionSnapshot(sectionID: AnyListID(0), rows: [first, second], supplementaries: [])],
+            new: [ListSectionSnapshot(sectionID: AnyListID(0), rows: [second, first], supplementaries: [])],
+            options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
+            diagnosticsIssues: []
+        )
+
+        XCTAssertEqual(plan.initialSummary.movedCount, 1)
+        XCTAssertEqual(plan.changedSectionCount, 1)
+    }
+
+    func testApplyWithoutScrollBehaviorDoesNotCreateAnchorInset() async {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 300, height: 44)
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: layout
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        let result = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(0) {
+                Row("only", model: "Only", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertEqual(result.summary.animation.anchorCompensation, 0)
+        XCTAssertEqual(collectionView.contentInset.bottom, 0)
+    }
+
+    func testPreservingVisibleRowInShortCollectionDoesNotCreateAnchorInset() async {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 300, height: 44)
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: layout
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(0) {
+                Row("anchor", model: "Anchor", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+        collectionView.layoutIfNeeded()
+
+        let result = await adapter.applyAndWait(
+            transaction: ListTransaction.disabled.scrollBehavior(
+                .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 0))
+            )
+        ) {
+            ListSection(0) {
+                Row("anchor", model: "Anchor", cell: NormalUserCell.self) { _, _, _ in }
+                Row("trailing", model: "Trailing", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertEqual(result.summary.animation.anchorCompensation, 0)
+        XCTAssertEqual(collectionView.contentInset.bottom, 0)
+    }
+
+    func testAsyncApplyPreservesVisibleRowPositionWhenTrailingContentShrinks() async throws {
+        let layout = UICollectionViewFlowLayout()
+        layout.itemSize = CGSize(width: 300, height: 60)
+        layout.minimumLineSpacing = 0
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: layout
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        func sections(activityCount: Int) -> [ListSection<Int>] {
+            ListSectionsBuilder<Int>.build {
+                ListSection(0) {
+                    ForEach(0..<5, id: \.self) { index in
+                        Row("prefix-\(index)", model: index, cell: NormalUserCell.self) { _, _, _ in }
+                    }
+                    Row("anchor", model: 5, cell: NormalUserCell.self) { _, _, _ in }
+                }
+                ListSection(1) {
+                    ForEach(0..<activityCount, id: \.self) { index in
+                        Row("activity-\(index)", model: index, cell: NormalUserCell.self) { _, _, _ in }
+                    }
+                }
+            }
+        }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            sections(activityCount: 4)
+        }
+        collectionView.layoutIfNeeded()
+
+        let anchorIndexPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 0).first)
+        let initialAttributes = try XCTUnwrap(layout.layoutAttributesForItem(at: anchorIndexPath))
+        collectionView.setContentOffset(
+            CGPoint(x: 0, y: initialAttributes.frame.minY - 40),
+            animated: false
+        )
+        collectionView.layoutIfNeeded()
+        let initialViewportY = initialAttributes.frame.minY - collectionView.contentOffset.y
+
+        _ = await adapter.applyAndWait(
+            options: .init(
+                transaction: ListTransaction.disabled.scrollBehavior(
+                    .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 0))
+                )
+            )
+        ) {
+            sections(activityCount: 0)
+        }
+        collectionView.layoutIfNeeded()
+
+        let filteredIndexPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 0).first)
+        let filteredAttributes = try XCTUnwrap(layout.layoutAttributesForItem(at: filteredIndexPath))
+        XCTAssertEqual(
+            filteredAttributes.frame.minY - collectionView.contentOffset.y,
+            initialViewportY,
+            accuracy: 0.5
+        )
+        XCTAssertGreaterThan(collectionView.contentInset.bottom, 0)
+
+        _ = await adapter.applyAndWait(
+            options: .init(
+                transaction: ListTransaction.disabled.scrollBehavior(
+                    .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 0))
+                )
+            )
+        ) {
+            sections(activityCount: 4)
+        }
+        collectionView.layoutIfNeeded()
+
+        let restoredIndexPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 0).first)
+        let restoredAttributes = try XCTUnwrap(layout.layoutAttributesForItem(at: restoredIndexPath))
+        XCTAssertEqual(
+            restoredAttributes.frame.minY - collectionView.contentOffset.y,
+            initialViewportY,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(collectionView.contentInset.bottom, 0, accuracy: 0.5)
+    }
+
+    func testUnrelatedFlatSectionUpdateDoesNotAnimateOutlineSection() async {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                DisclosureGroup(
+                    Row("parent", model: "Parent", cell: UICollectionViewListCell.self) { _, _, _ in }
+                        .outlineDisclosure(),
+                    isExpanded: true
+                ) {
+                    Row("child", model: "Child", cell: UICollectionViewListCell.self) { _, _, _ in }
+                }
+            }
+            ListSection(1) {
+                Row("activity-a", model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
+                Row("activity-b", model: "B", cell: UICollectionViewCell.self) { _, _, _ in }
+            }
+        }
+        let initialOutlineAnimationGeneration = adapter.outlineAnimationGeneration
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: ListTransaction(animation: .enabled), applicationMode: .differences)
+        ) {
+            ListSection(0) {
+                DisclosureGroup(
+                    Row("parent", model: "Parent", cell: UICollectionViewListCell.self) { _, _, _ in }
+                        .outlineDisclosure(),
+                    isExpanded: true
+                ) {
+                    Row("child", model: "Child", cell: UICollectionViewListCell.self) { _, _, _ in }
+                }
+            }
+            ListSection(1) {
+                Row("activity-b", model: "B", cell: UICollectionViewCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertEqual(adapter.outlineAnimationGeneration, initialOutlineAnimationGeneration)
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: ListTransaction(animation: .enabled), applicationMode: .differences)
+        ) {
+            ListSection(0) {
+                DisclosureGroup(
+                    Row("parent", model: "Parent", cell: UICollectionViewListCell.self) { _, _, _ in }
+                        .outlineDisclosure(),
+                    isExpanded: false
+                ) {
+                    Row("child", model: "Child", cell: UICollectionViewListCell.self) { _, _, _ in }
+                }
+            }
+            ListSection(1) {
+                Row("activity-b", model: "B", cell: UICollectionViewCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertEqual(adapter.outlineAnimationGeneration, initialOutlineAnimationGeneration + 1)
+    }
+
     func testBuilderSupportsForEachAndConditionalRows() {
         let users = [
             User(id: 1, name: "A", isVIP: false, version: 1),
@@ -225,7 +479,7 @@ final class ListKitCoreTests: XCTestCase {
         var selectedID: Int?
         var receivedEvent: UserEvent?
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, context in
                     context.send(UserEvent.avatarTap(userID: 1))
@@ -345,7 +599,7 @@ final class ListKitCoreTests: XCTestCase {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let options = ListApplyOptions(
-            animatingDifferences: false,
+            transaction: .disabled,
             refreshStrategy: .diffableOnly,
             diagnostics: .disabled
         )
@@ -374,7 +628,7 @@ final class ListKitCoreTests: XCTestCase {
 
         let duplicateResult = adapter.apply(
             options: ListApplyOptions(
-                animatingDifferences: false,
+                transaction: .disabled,
                 diagnostics: .init(mode: .warning, logsApplySummary: false)
             )
         ) {
@@ -391,7 +645,12 @@ final class ListKitCoreTests: XCTestCase {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        _ = adapter.apply(refresh: .diffableOnly, animatingDifferences: false) {
+        _ = adapter.apply(
+            options: ListApplyOptions(
+                transaction: .disabled,
+                refreshStrategy: .diffableOnly
+            )
+        ) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
@@ -399,7 +658,12 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        let result = adapter.apply(refresh: .diffableOnly, animatingDifferences: false) {
+        let result = adapter.apply(
+            options: ListApplyOptions(
+                transaction: .disabled,
+                refreshStrategy: .diffableOnly
+            )
+        ) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(2)
@@ -421,7 +685,7 @@ final class ListKitCoreTests: XCTestCase {
         var prefetchedUserID: Int?
         var cancelledUserID: Int?
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
                     .onSelect { user, _ in selectedUserID = user.id }
@@ -430,7 +694,6 @@ final class ListKitCoreTests: XCTestCase {
                     .onCancelPrefetch { user, _ in cancelledUserID = user.id }
             }
         }
-
         let indexPath = IndexPath(item: 0, section: 0)
         adapter.collectionView(collectionView, didSelectItemAt: indexPath)
         adapter.collectionView(collectionView, didDeselectItemAt: indexPath)
@@ -451,7 +714,7 @@ final class ListKitCoreTests: XCTestCase {
         var cancelledUserID: Int?
         adapter.displayDelegate = displayDelegate
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
                     .onEndDisplay { _, _ in endedUserID = 1 }
@@ -464,7 +727,7 @@ final class ListKitCoreTests: XCTestCase {
         adapter.collectionView(collectionView, willDisplay: oldCell, forItemAt: oldIndexPath)
         adapter.collectionView(collectionView, prefetchItemsAt: [oldIndexPath])
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(2, model: User(id: 2, name: "B", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
             }
@@ -483,7 +746,7 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var deselectedUserID: Int?
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(0, model: User(id: 0, name: "None", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
             }
@@ -525,7 +788,7 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var receivedEvent: UserEvent?
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: EventCell.self) { _, _, _ in }
                     .onCellEvent({ cell, send in
@@ -604,7 +867,10 @@ final class ListKitCoreTests: XCTestCase {
 
         adapter.scrollDelegate = scrollDelegate
         adapter.layoutDelegate = layoutDelegate
-        adapter.apply(animatingDifferences: false) {
+        let applyCompleted = expectation(description: "selection apply")
+        adapter.apply(transaction: .disabled, completion: { _ in
+            applyCompleted.fulfill()
+        }) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
                     .onSelectionChange { isSelected, _ in
@@ -612,6 +878,7 @@ final class ListKitCoreTests: XCTestCase {
                     }
             }
         }
+        wait(for: [applyCompleted], timeout: 1)
 
         let indexPath = IndexPath(item: 0, section: 0)
         adapter.collectionView(collectionView, didSelectItemAt: indexPath)
@@ -871,7 +1138,7 @@ final class ListKitCoreTests: XCTestCase {
         let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 390, height: 300), collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: "3333", cell: NormalUserCell.self) { _, _, _ in }
                 Row(2, model: "800003", cell: NormalUserCell.self) { _, _, _ in }
@@ -1076,7 +1343,7 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         let initialApply = expectation(description: "initial apply")
-        adapter.apply(animatingDifferences: false, completion: {
+        adapter.apply(transaction: .disabled, completion: { _ in
             initialApply.fulfill()
         }) {
             ListSection(0) {
@@ -1088,7 +1355,7 @@ final class ListKitCoreTests: XCTestCase {
         let baselineGeneration = adapter.layoutInvalidationGeneration
 
         let dataOnlyApply = expectation(description: "data only apply")
-        adapter.apply(animatingDifferences: false, completion: {
+        adapter.apply(transaction: .disabled, completion: { _ in
             dataOnlyApply.fulfill()
         }) {
             ListSection(0) {
@@ -1100,7 +1367,7 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(adapter.layoutInvalidationGeneration, baselineGeneration)
 
         let layoutApply = expectation(description: "layout apply")
-        adapter.apply(animatingDifferences: false, completion: {
+        adapter.apply(transaction: .disabled, completion: { _ in
             layoutApply.fulfill()
         }) {
             ListSection(0) {
@@ -1119,7 +1386,7 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         let initialApply = expectation(description: "initial supplementary apply")
-        adapter.apply(animatingDifferences: false, completion: {
+        adapter.apply(transaction: .disabled, completion: { _ in
             initialApply.fulfill()
         }) {
             ListSection(0) {
@@ -1135,7 +1402,7 @@ final class ListKitCoreTests: XCTestCase {
         let baselineGeneration = adapter.layoutInvalidationGeneration
 
         let metadataApply = expectation(description: "metadata apply")
-        adapter.apply(animatingDifferences: false, completion: {
+        adapter.apply(transaction: .disabled, completion: { _ in
             metadataApply.fulfill()
         }) {
             ListSection(0) {
@@ -1161,7 +1428,7 @@ final class ListKitCoreTests: XCTestCase {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
             }
@@ -1181,7 +1448,7 @@ final class ListKitCoreTests: XCTestCase {
             diagnostics: ListDiagnosticsOptions(mode: .warning, logsApplySummary: false)
         )
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
             }
@@ -1197,7 +1464,7 @@ final class ListKitCoreTests: XCTestCase {
         let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 240, height: 120), collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         adapter.apply(options: ListApplyOptions(
-            animatingDifferences: false,
+            transaction: .disabled,
             diagnostics: .disabled
         )) {
             ListSection(0) {
@@ -1228,7 +1495,7 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let diagnostics = ListDiagnosticsOptions(mode: .warning, logsApplySummary: false)
 
-        adapter.apply(options: ListApplyOptions(animatingDifferences: false, diagnostics: .disabled)) {
+        adapter.apply(options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled)) {
             ListSection(0) {
                 Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
             }
@@ -1237,7 +1504,7 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertNil(adapter.makeCompositionalSection(for: 0, diagnostics: diagnostics))
         XCTAssertTrue(adapter.lastLayoutDiagnostics.contains { $0.kind == .unresolvedLayoutID })
 
-        adapter.apply(options: ListApplyOptions(animatingDifferences: false, diagnostics: .disabled)) {
+        adapter.apply(options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled)) {
             ListSection(0) {
                 Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
             }
@@ -1253,7 +1520,7 @@ final class ListKitCoreTests: XCTestCase {
         let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 200, height: 200), collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(10) {
                 Row("first", model: "A", cell: NormalUserCell.self) { cell, model, _ in
                     cell.name = model
@@ -1286,7 +1553,7 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        adapter.apply(sections, animatingDifferences: false)
+        adapter.apply(sections, transaction: .disabled)
 
         XCTAssertEqual(adapter.itemCount(in: 0), 1)
     }
@@ -1298,7 +1565,7 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var displayCount = 0
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row("first", model: "A", cell: NormalUserCell.self) { cell, model, _ in
                     cell.name = model
@@ -1331,7 +1598,7 @@ final class ListKitCoreTests: XCTestCase {
 
         func applyBadge(refreshID: Int) -> ListApplyResult<Int> {
             let applyCompleted = expectation(description: "badge apply \(refreshID)")
-            let result = adapter.apply(animatingDifferences: false, completion: {
+            let result = adapter.apply(transaction: .disabled, completion: { _ in
                 applyCompleted.fulfill()
             }) {
                 ListSection(0) {
@@ -1390,7 +1657,7 @@ final class ListKitCoreTests: XCTestCase {
 
         func applyBadge(refreshID: Int) -> ListApplyResult<Int> {
             let applyCompleted = expectation(description: "never badge apply \(refreshID)")
-            let result = adapter.apply(animatingDifferences: false, completion: {
+            let result = adapter.apply(transaction: .disabled, completion: { _ in
                 applyCompleted.fulfill()
             }) {
                 ListSection(0) {
@@ -1450,7 +1717,7 @@ final class ListKitCoreTests: XCTestCase {
         ]
 
         let applyCompleted = expectation(description: "manual badge apply")
-        adapter.apply(animatingDifferences: false, completion: {
+        adapter.apply(transaction: .disabled, completion: { _ in
             applyCompleted.fulfill()
         }) {
             ListSection(0) {
@@ -1502,7 +1769,7 @@ final class ListKitCoreTests: XCTestCase {
 
         func applyBadgeLayout(width: CGFloat) {
             let applyCompleted = expectation(description: "badge layout \(width)")
-            adapter.apply(animatingDifferences: false, completion: {
+            adapter.apply(transaction: .disabled, completion: { _ in
                 applyCompleted.fulfill()
             }) {
                 ListSection(0) {
@@ -1558,7 +1825,7 @@ final class ListKitCoreTests: XCTestCase {
                 ListSectionSnapshot(sectionID: AnyListID(0), rows: [keptNew, insertedNew], supplementaries: [headerNew])
             ],
             options: ListApplyOptions(
-                animatingDifferences: false,
+                transaction: .disabled,
                 refreshStrategy: .automatic,
                 diagnostics: .disabled
             ),
@@ -1594,7 +1861,7 @@ final class ListKitCoreTests: XCTestCase {
             old: [ListSectionSnapshot(sectionID: AnyListID(0), rows: oldRows, supplementaries: [])],
             new: [ListSectionSnapshot(sectionID: AnyListID(0), rows: newRows, supplementaries: [])],
             options: ListApplyOptions(
-                animatingDifferences: false,
+                transaction: .disabled,
                 refreshStrategy: .forceReload,
                 diagnostics: .disabled
             ),
@@ -1618,7 +1885,7 @@ final class ListKitCoreTests: XCTestCase {
             old: [ListSectionSnapshot(sectionID: AnyListID(0), rows: oldRows, supplementaries: [])],
             new: [ListSectionSnapshot(sectionID: AnyListID(0), rows: newRows, supplementaries: [])],
             options: ListApplyOptions(
-                animatingDifferences: false,
+                transaction: .disabled,
                 refreshStrategy: .automatic,
                 diagnostics: .init(mode: .warning, logsApplySummary: false)
             ),

@@ -30,7 +30,7 @@ ListKit 按职责分成几层，`UICollectionView` 和 `UITableView` adapter 共
 ```swift
 private lazy var adapter = CollectionListAdapter<Section>(collectionView: collectionView)
 
-adapter.apply(animatingDifferences: false) {
+adapter.apply(transaction: .disabled) {
     ListSection(.users) {
         ForEach(users, id: \.userID) { user in
             if user.isVIP {
@@ -59,7 +59,7 @@ Table DSL 与 Collection DSL 保持同一套 identity、`refreshID`、refresh po
 ```swift
 private lazy var adapter = TableListAdapter<Section>(tableView: tableView)
 
-adapter.apply(animatingDifferences: false) {
+adapter.apply(transaction: .disabled) {
     TableSection(.messages) {
         TableForEach(messages, id: \.messageID) { message in
             TableRow(model: message, cell: MessageCell.self) { cell, message, context in
@@ -220,9 +220,10 @@ Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
 let count = adapter.itemCount(in: .messages)
 let indexPaths = adapter.indexPaths(forRowID: messageID, in: .messages)
 
-adapter.apply(animatingDifferences: false, completion: { [weak adapter] in
-    adapter?.scrollToLastItem(in: .messages, animated: true)
-}) {
+let transaction = ListTransaction.automatic.scrollBehavior(
+    .scrollToLast(in: Section.messages, position: .bottom)
+)
+let result = await adapter.applyAndWait(transaction: transaction) {
     ListSection(.messages) {
         ForEach(messages, id: \.messageID) { message in
             Row(model: message, cell: MessageCell.self) { cell, message, _ in
@@ -232,6 +233,8 @@ adapter.apply(animatingDifferences: false, completion: { [weak adapter] in
         }
     }
 }
+
+print(result.summary.animation.scrollAnimated)
 ```
 
 动态高度变化用 `reloadVisibleRows`，它通过 diffable snapshot reload 当前可见 identity，适合公屏消息展开、图片加载后重新量高：
@@ -398,7 +401,7 @@ ListSection(.main) { ... }
 ```swift
 let result = adapter.apply(
     options: ListApplyOptions(
-        animatingDifferences: false,
+        transaction: .disabled,
         refreshStrategy: .diffableOnly,
         diagnostics: .init(mode: .warning)
     )
@@ -410,6 +413,45 @@ let result = adapter.apply(
 
 print(result.summary.refreshIDChangedCount)
 ```
+
+## 动画事务
+
+一次更新的 snapshot、outline、layout、Row 内容和滚动动画统一由 `ListTransaction` 描述。默认 `.automatic` 遵循系统 Reduce Motion；`.enabled` 表示明确强制动画，`.disabled` 则关闭动画。UIKit diffable 的具体 duration 和 curve 仍由系统决定：
+
+```swift
+let transaction = ListTransaction()
+    .snapshotAnimation(.automatic)
+    .outlineAnimation(.automatic)
+    .layoutAnimation(.disabled)
+    .contentAnimation(.automatic)
+    .scrollAnimation(.automatic)
+    .updatePolicy(.coalesceLatest)
+    .scrollBehavior(
+        .preserveVisiblePosition(
+            of: ListScrollTarget(RowID.activityTitle, in: Section.activityTitle)
+        )
+    )
+
+let result = await adapter.applyAndWait(transaction: transaction) {
+    sections
+}
+
+print(result.summary.animation.completionState)
+print(result.summary.animation.anchorCompensation)
+```
+
+高频状态更新可用 `.coalesceLatest`，旧的未完成更新会以 `.superseded` 结束；必须逐次提交时使用 `.serial`。相同 identity 的可见 Row 如需局部过渡，可在 Row 上声明：
+
+```swift
+Row(model: message, cell: MessageCell.self) { cell, message, _ in
+    cell.configure(message)
+}
+.refreshID(message.version)
+.refreshPolicy(.automaticVisible)
+.contentTransition(.opacity)
+```
+
+需要等待 diffable、outline、layout、内容过渡全部结束时使用 `applyAndWait`；普通同步提交继续使用 `apply`。`ListApplySummary.animation` 会报告实际动画范围、内容过渡数量、滚动补偿、Reduce Motion 和最终完成状态。
 
 DEBUG 默认会输出 apply summary。重复 section/row/supplementary identity 会先由 `ListDiagnostics` 报告，避免 diffable 抛出更难定位的异常。
 
@@ -655,12 +697,12 @@ ListSection(.files) {
 }
 ```
 
-需要等待 diffable、层级 snapshot、selection 和可见刷新全部完成时，使用 async apply；
+需要等待 diffable、层级 snapshot、selection 和可见刷新全部完成时，使用 `applyAndWait`；
 需要无动画整体替换时选择 `.reloadData`：
 
 ```swift
-let result = await adapter.apply(
-    options: .init(applicationMode: .reloadData)
+let result = await adapter.applyAndWait(
+    options: .init(transaction: .disabled, applicationMode: .reloadData)
 ) {
     makeSections()
 }

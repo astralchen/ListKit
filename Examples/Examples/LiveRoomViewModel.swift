@@ -1,33 +1,13 @@
 import UIKit
 import ListKit
 
-@MainActor
-protocol LiveRoomViewModelInput: AnyObject {
-    func sendMessage()
-    func toggleMic(_ id: String)
-    func selectGift(_ id: String)
-    func sendGift()
-    func selectStudioMode(_ index: Int)
-    func handleModeration(_ id: String)
-}
-
-@MainActor
-protocol LiveRoomViewModelOutput: AnyObject {
-    var titleViewModel: LiveRoomTitleViewModel { get }
-    var toolbarViewModel: LiveRoomToolbarViewModel { get }
-    var liveConsoleSections: [ListSection<LiveRoomSection>] { get }
-    var studioControlSections: [ListSection<LiveRoomSection>] { get }
-    var roomToolkitSections: [ListSection<LiveRoomSection>] { get }
-    var collectionSections: [ListSection<LiveRoomSection>] { get }
-    var tableSections: [TableSection<AdminSection>] { get }
-    var pendingScrollMessageID: String? { get }
-}
-
 enum LiveRoomCollectionEvent: ListEvent {
     case addMessage
     case sendSelectedGift
     case sendGift(String)
     case studioModeChanged(Int)
+    case roomActivityFilterChanged(RoomActivityFilter)
+    case headerMenuAction(LiveRoomMenuAction)
     case activateCapability(String)
 }
 
@@ -37,7 +17,10 @@ enum LiveRoomAdminEvent: ListEvent {
 }
 
 @MainActor
-final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
+final class LiveRoomViewModel {
+    private static let cardBackgroundHorizontalInset: CGFloat = 16
+    private static let cardContentHorizontalInset: CGFloat = cardBackgroundHorizontalInset + 8
+
     private var state: LiveRoomState
     private var selectedStudioModeIndex = 0
 
@@ -45,15 +28,21 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         self.state = state
     }
 
-    var titleViewModel: LiveRoomTitleViewModel {
+    private var titleViewModel: LiveRoomTitleViewModel {
         LiveRoomTitleViewModel(
             title: state.roomName,
             subtitle: "Live UI experiments with ListKit",
-            viewerText: "\(state.viewerCount)"
+            viewerText: "\(state.viewerCount)",
+            heatText: NumberFormatter.localizedString(
+                from: NSNumber(value: state.heat),
+                number: .decimal
+            ),
+            liveEventCount: 28 + state.messages.count,
+            menuItems: roomToolkitMenuItems
         )
     }
 
-    var toolbarViewModel: LiveRoomToolbarViewModel {
+    private var toolbarViewModel: LiveRoomToolbarViewModel {
         LiveRoomToolbarViewModel(
             messageButtonTitle: "Add Message",
             giftButtonTitle: "Send Gift",
@@ -88,44 +77,38 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         makeRoomActivitySection()
     }
 
-    @ListSectionBuilder<LiveRoomSection>
-    var collectionSections: [ListSection<LiveRoomSection>] {
-        makeStatusSection()
-        makeMicSeatsSection()
-        makeMessagesSection()
-        makeGiftsSection()
-        makeDiagnosticsSection()
-    }
-
     var tableSections: [TableSection<AdminSection>] {
         [
             makeModerationSection()
         ]
     }
 
-    @ListSectionBuilder<LiveRoomSection>
-    var liveActivitySections: [ListSection<LiveRoomSection>] {
-        makeRoomActivitySection()
-    }
-
-    @ListSectionBuilder<LiveRoomSection>
-    var peopleSections: [ListSection<LiveRoomSection>] {
-        makeMicSeatsSection()
-    }
-
-    @ListSectionBuilder<LiveRoomSection>
-    var toolkitSections: [ListSection<LiveRoomSection>] {
-        makeStatusSection()
-        makeGiftsSection()
-        makeDiagnosticsSection()
-    }
-
     var pendingScrollMessageID: String? {
         state.pendingScrollMessageID
     }
 
+    var isAPIGuideExpanded: Bool {
+        state.isAPIGuideExpanded
+    }
+
+    var activityFilter: RoomActivityFilter {
+        state.activityFilter
+    }
+
     var messageCount: Int {
         state.messages.count
+    }
+
+    var viewerCount: Int {
+        state.viewerCount
+    }
+
+    var heat: Int {
+        state.heat
+    }
+
+    var selectedStudioMode: Int {
+        selectedStudioModeIndex
     }
 
     var pendingModerationCount: Int {
@@ -202,6 +185,39 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         selectedStudioModeIndex = min(max(index, 0), 2)
     }
 
+    func performMenuAction(_ action: LiveRoomMenuAction) {
+        switch action {
+        case .addMessage:
+            sendMessage()
+        case .sendSelectedGift:
+            sendGift()
+        case .refreshStatus:
+            state.viewerCount += 5
+            state.heat += 128
+            state.statusVersion += 1
+            state.pendingScrollMessageID = nil
+        case .addSystemEvent:
+            state.messageSequence += 1
+            let message = LiveMessage(
+                id: "msg-\(state.messageSequence)",
+                sender: "System",
+                text: "System health check completed.",
+                tone: "system",
+                version: 0
+            )
+            state.messages.append(message)
+            state.heat += 64
+            state.statusVersion += 1
+            state.pendingScrollMessageID = message.id
+        case .selectStudioMode(let index):
+            selectStudioMode(index)
+            state.pendingScrollMessageID = nil
+        case .resetDemo:
+            state = .sample()
+            selectedStudioModeIndex = 0
+        }
+    }
+
     func handleModeration(_ id: String) {
         guard let index = state.moderationEvents.firstIndex(where: { $0.id == id }) else { return }
         let event = state.moderationEvents.remove(at: index)
@@ -232,6 +248,16 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         state.pendingScrollMessageID = message.id
     }
 
+    func setAPIGuideExpanded(_ isExpanded: Bool) {
+        state.isAPIGuideExpanded = isExpanded
+    }
+
+    func setRoomActivityFilter(_ filter: RoomActivityFilter) {
+        guard state.activityFilter != filter else { return }
+        state.activityFilter = filter
+        state.pendingScrollMessageID = nil
+    }
+
     func moveModeration(from source: IndexPath, to destination: IndexPath) {
         guard source.section == destination.section,
               state.moderationEvents.indices.contains(source.row) else { return }
@@ -242,22 +268,25 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
 
     func recordCollectionApply(_ summary: ListApplySummary) {
         state.diagnostics.collectionApplyCount += 1
-        state.diagnostics.insertedCount = summary.insertedCount
-        state.diagnostics.deletedCount = summary.deletedCount
-        state.diagnostics.keptCount = summary.keptCount
-        state.diagnostics.refreshIDChangedCount = summary.refreshIDChangedCount
-        state.diagnostics.visibleRefreshCount = summary.visibleRefreshCount
-        state.diagnostics.diagnosticsIssueCount = summary.diagnosticsIssues.count
+        recordApply(summary)
     }
 
     func recordTableApply(_ summary: ListApplySummary) {
         state.diagnostics.tableApplyCount += 1
-        state.diagnostics.insertedCount += summary.insertedCount
-        state.diagnostics.deletedCount += summary.deletedCount
-        state.diagnostics.keptCount += summary.keptCount
-        state.diagnostics.refreshIDChangedCount += summary.refreshIDChangedCount
-        state.diagnostics.visibleRefreshCount += summary.visibleRefreshCount
-        state.diagnostics.diagnosticsIssueCount += summary.diagnosticsIssues.count
+        recordApply(summary)
+    }
+
+    private func recordApply(_ summary: ListApplySummary) {
+        state.diagnostics.insertedCount = summary.insertedCount
+        state.diagnostics.deletedCount = summary.deletedCount
+        state.diagnostics.movedCount = summary.movedCount
+        state.diagnostics.keptCount = summary.keptCount
+        state.diagnostics.refreshIDChangedCount = summary.refreshIDChangedCount
+        state.diagnostics.visibleRefreshCount = summary.visibleRefreshCount
+        state.diagnostics.contentTransitionCount = summary.animation.contentTransitionCount
+        state.diagnostics.anchorCompensation = summary.animation.anchorCompensation
+        state.diagnostics.lastCompletionState = String(describing: summary.animation.completionState)
+        state.diagnostics.diagnosticsIssueCount = summary.diagnosticsIssues.count
     }
 
     func recordPrefetch(itemCount: Int, cancelled: Bool = false) {
@@ -280,7 +309,8 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         LiveConsoleHeaderViewModel(
             title: "Live Console",
             subtitle: "Collection adapter demo with room status, mic seats, activity, gifts, and diagnostics.",
-            badge: "LIVE"
+            badge: "LIVE",
+            menuItems: liveConsoleMenuItems
         )
     }
 
@@ -288,8 +318,60 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         LiveConsoleHeaderViewModel(
             title: "Studio Control",
             subtitle: "Operational density with segmented modes, filters, collection sections, and admin actions.",
-            badge: "OPS"
+            badge: "OPS",
+            menuItems: studioControlMenuItems
         )
+    }
+
+    private var liveConsoleMenuItems: [LiveRoomMenuItem] {
+        [
+            LiveRoomMenuItem(action: .addMessage, title: "Add Message", symbolName: "text.bubble"),
+            LiveRoomMenuItem(action: .sendSelectedGift, title: "Send Selected Gift", symbolName: "gift"),
+            LiveRoomMenuItem(action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise"),
+            LiveRoomMenuItem(
+                action: .resetDemo,
+                title: "Reset Demo",
+                symbolName: "arrow.counterclockwise",
+                role: .destructive
+            )
+        ]
+    }
+
+    private var studioControlMenuItems: [LiveRoomMenuItem] {
+        let modes = ["Room Mode", "Gift Mode", "Log Mode"]
+        var items = modes.indices.map { index in
+            LiveRoomMenuItem(
+                action: .selectStudioMode(index),
+                title: modes[index],
+                symbolName: ["person.3", "gift", "text.alignleft"][index],
+                isSelected: selectedStudioModeIndex == index
+            )
+        }
+        items.append(
+            LiveRoomMenuItem(action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise")
+        )
+        items.append(
+            LiveRoomMenuItem(
+                action: .resetDemo,
+                title: "Reset Demo",
+                symbolName: "arrow.counterclockwise",
+                role: .destructive
+            )
+        )
+        return items
+    }
+
+    private var roomToolkitMenuItems: [LiveRoomMenuItem] {
+        [
+            LiveRoomMenuItem(action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise"),
+            LiveRoomMenuItem(action: .addSystemEvent, title: "Add System Event", symbolName: "bolt.horizontal"),
+            LiveRoomMenuItem(
+                action: .resetDemo,
+                title: "Reset Demo",
+                symbolName: "arrow.counterclockwise",
+                role: .destructive
+            )
+        ]
     }
 
     private var studioControlPanelViewModel: StudioControlPanelViewModel {
@@ -304,8 +386,13 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         RoomActivityTitleViewModel(
             title: "Live Activity",
             buttonTitle: "Filter",
-            symbolName: "slider.horizontal.3"
+            symbolName: "slider.horizontal.3",
+            selectedFilter: state.activityFilter
         )
+    }
+
+    private var filteredRoomActivityMessages: [LiveMessage] {
+        state.messages.filter(state.activityFilter.includes)
     }
 
     private var studioModeSummary: String {
@@ -334,8 +421,10 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
     private func makeConsoleHeaderSection() -> ListSection<LiveRoomSection> {
         let model = consoleHeaderViewModel
         return ListSection(.consoleHeader) {
-            Row(LiveRoomRowID.consoleHeader, model: model, cell: LiveConsoleHeaderCell.self) { cell, model, _ in
-                cell.configure(model)
+            Row(LiveRoomRowID.consoleHeader, model: model, cell: LiveConsoleHeaderCell.self) { cell, model, context in
+                cell.configure(model) { action in
+                    context.send(LiveRoomCollectionEvent.headerMenuAction(action))
+                }
             }
             .refreshID(model)
             .refreshPolicy(.whenRefreshIDChanges)
@@ -350,8 +439,10 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
     private func makeStudioHeaderSection() -> ListSection<LiveRoomSection> {
         let model = studioHeaderViewModel
         return ListSection(.studioHeader) {
-            Row(LiveRoomRowID.studioHeader, model: model, cell: StudioControlHeaderCell.self) { cell, model, _ in
-                cell.configure(model)
+            Row(LiveRoomRowID.studioHeader, model: model, cell: StudioControlHeaderCell.self) { cell, model, context in
+                cell.configure(model) { action in
+                    context.send(LiveRoomCollectionEvent.headerMenuAction(action))
+                }
             }
             .refreshID(model)
             .refreshPolicy(.whenRefreshIDChanges)
@@ -385,8 +476,10 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
     private func makeRoomHeroSection() -> ListSection<LiveRoomSection> {
         let model = titleViewModel
         return ListSection(.roomHero) {
-            Row(LiveRoomRowID.roomHero, model: model, cell: RoomHeroCell.self) { cell, model, _ in
-                cell.configure(model)
+            Row(LiveRoomRowID.roomHero, model: model, cell: RoomHeroCell.self) { cell, model, context in
+                cell.configure(model) { action in
+                    context.send(LiveRoomCollectionEvent.headerMenuAction(action))
+                }
             }
             .refreshID(model)
             .refreshPolicy(.whenRefreshIDChanges)
@@ -447,9 +540,9 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
                     Self.configureCapabilityCell(cell, capability: capability)
                 }
                 .refreshID(root)
-                .selectionDisabled()
                 .focusable()
-                .outlineDisclosure(),
+                .outlineDisclosure()
+                .outlineAnimation(.automatic),
                 isExpanded: state.isAPIGuideExpanded
             ) {
                 ForEach(capabilities, id: \.id) { capability in
@@ -460,12 +553,6 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
                     .focusable()
                     .selectionFollowsFocus()
                     .springLoadingEnabled()
-                    .onSelect { capability, context in
-                        context.send(LiveRoomCollectionEvent.activateCapability(capability.title))
-                    }
-                    .onPrimaryAction { capability, context in
-                        context.send(LiveRoomCollectionEvent.activateCapability(capability.title))
-                    }
                     .contextMenu { context in
                         UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
                             UIMenu(children: [
@@ -498,7 +585,7 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         .indexTitle("API")
         .onExpansionChange { [weak self] identity, isExpanded in
             guard identity.rowID.typed(LiveRoomRowID.self) == .apiGuideRoot else { return }
-            self?.state.isAPIGuideExpanded = isExpanded
+            self?.setAPIGuideExpanded(isExpanded)
         }
     }
 
@@ -515,13 +602,33 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
         cell.contentConfiguration = content
     }
 
+    private static func cardContentInsets(top: CGFloat, bottom: CGFloat) -> ListLayoutInsets {
+        ListLayoutInsets(
+            top: top,
+            leading: cardContentHorizontalInset,
+            bottom: bottom,
+            trailing: cardContentHorizontalInset
+        )
+    }
+
+    private static func cardBackgroundInsets(top: CGFloat, bottom: CGFloat) -> ListLayoutInsets {
+        ListLayoutInsets(
+            top: top,
+            leading: cardBackgroundHorizontalInset,
+            bottom: bottom,
+            trailing: cardBackgroundHorizontalInset
+        )
+    }
+
     private func makeRoomActivityTitleSection() -> ListSection<LiveRoomSection> {
         let model = roomActivityTitleViewModel
         return ListSection(.roomActivityTitle) {
-            Row(LiveRoomRowID.roomActivityTitle, model: model, cell: RoomActivityTitleCell.self) { cell, model, _ in
-                cell.configure(model)
+            Row(LiveRoomRowID.roomActivityTitle, model: model, cell: RoomActivityTitleCell.self) { cell, model, context in
+                cell.configure(model) { filter in
+                    context.send(LiveRoomCollectionEvent.roomActivityFilterChanged(filter))
+                }
             }
-            .refreshID(model)
+            .refreshID(LiveRoomRowID.roomActivityTitle)
             .refreshPolicy(.whenRefreshIDChanges)
         } layout: {
             ListLayout(
@@ -533,12 +640,13 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
 
     private func makeRoomActivitySection() -> ListSection<LiveRoomSection> {
         ListSection(.roomActivity) {
-            ForEach(state.messages, id: \.id) { message in
+            ForEach(filteredRoomActivityMessages, id: \.id) { message in
                 Row(model: message, cell: LiveMessageCell.self) { cell, message, _ in
                     cell.configure(message)
                 }
                 .refreshID(message.refreshToken)
                 .refreshPolicy(.automaticVisible)
+                .contentTransition(.opacity)
                 .selectionDisabled()
                 .contextMenu { _ in
                     UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
@@ -552,10 +660,13 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
             ListLayout(
                 itemHeight: .estimated(106),
                 spacing: 0,
-                contentInsets: ListLayoutInsets(top: 0, leading: 16, bottom: 28, trailing: 16)
+                contentInsets: Self.cardContentInsets(top: 0, bottom: 28)
             )
         } background: {
-            BackgroundDecoration(LiveActivityBackgroundView.self, contentInsets: ListLayoutInsets(top: 0, leading: 16, bottom: 28, trailing: 16))
+            BackgroundDecoration(
+                LiveActivityBackgroundView.self,
+                contentInsets: Self.cardBackgroundInsets(top: 0, bottom: 28)
+            )
         }
     }
 
@@ -598,8 +709,8 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
                 itemWidth: .absolute(92),
                 itemHeight: .absolute(112),
                 spacing: 10,
-                contentInsets: ListLayoutInsets(top: 8, leading: 16, bottom: 12, trailing: 16),
-                scrollingBehavior: .groupPagingCentered
+                contentInsets: Self.cardContentInsets(top: 8, bottom: 12),
+                scrollingBehavior: .continuousGroupLeadingBoundary
             )
         } header: {
             Header(SectionHeaderView.self, id: "mic-header") { view, _ in
@@ -608,7 +719,10 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
             .layout(height: .absolute(36))
             .refreshID(state.micSeats.map(\.refreshToken).joined(separator: "|"))
         } background: {
-            BackgroundDecoration(LiveSectionBackgroundView.self, contentInsets: ListLayoutInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
+            BackgroundDecoration(
+                LiveSectionBackgroundView.self,
+                contentInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
+            )
         }
         .selectionMode(.single)
     }
@@ -622,6 +736,7 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
                 }
                 .refreshID(message.refreshToken)
                 .refreshPolicy(.automaticVisible)
+                .contentTransition(.opacity)
                 .selectionDisabled()
                 .contextMenu { _ in
                     UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
@@ -635,7 +750,7 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
             ListLayout(
                 itemHeight: .estimated(106),
                 spacing: 8,
-                contentInsets: ListLayoutInsets(top: 8, leading: 16, bottom: 12, trailing: 16)
+                contentInsets: Self.cardContentInsets(top: 8, bottom: 12)
             )
         } header: {
             Header(SectionHeaderView.self, id: "messages-header") { view, _ in
@@ -644,7 +759,10 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
             .layout(height: .absolute(36))
             .refreshID(messageCount)
         } background: {
-            BackgroundDecoration(LiveSectionBackgroundView.self, contentInsets: ListLayoutInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
+            BackgroundDecoration(
+                LiveSectionBackgroundView.self,
+                contentInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
+            )
         }
     }
 
@@ -685,7 +803,7 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
                 columns: 2,
                 spacing: 10,
                 itemHeight: .absolute(86),
-                contentInsets: ListLayoutInsets(top: 8, leading: 16, bottom: 12, trailing: 16)
+                contentInsets: Self.cardContentInsets(top: 8, bottom: 12)
             )
         } header: {
             Header(SectionHeaderView.self, id: "gifts-header") { view, _ in
@@ -694,7 +812,10 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
             .layout(height: .absolute(36))
             .refreshID(state.selectedGiftID)
         } background: {
-            BackgroundDecoration(LiveSectionBackgroundView.self, contentInsets: ListLayoutInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
+            BackgroundDecoration(
+                LiveSectionBackgroundView.self,
+                contentInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
+            )
         }
         .selectionMode(.single)
     }
@@ -749,6 +870,7 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
                 }
                 .height(.fixed(72))
                 .refreshID(event.refreshToken)
+                .contentTransition(.opacity)
                 .selected(event.isSelected)
                 .focusable()
                 .selectionFollowsFocus()
@@ -803,7 +925,6 @@ final class LiveRoomViewModel: LiveRoomViewModelInput, LiveRoomViewModelOutput {
             .refreshID(moderationCount)
         }
         .selectionMode(.single)
-        .indexTitle("M")
     }
 
     func selectModeration(_ id: String) {

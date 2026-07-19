@@ -37,10 +37,33 @@ enum LiveRoomRowID: Hashable, Sendable {
     case consoleToolbar
 }
 
+enum LiveRoomMenuAction: Hashable, Sendable {
+    case addMessage
+    case sendSelectedGift
+    case refreshStatus
+    case addSystemEvent
+    case selectStudioMode(Int)
+    case resetDemo
+}
+
+enum LiveRoomMenuRole: Hashable, Sendable {
+    case standard
+    case destructive
+}
+
+struct LiveRoomMenuItem: Hashable, Sendable {
+    var action: LiveRoomMenuAction
+    var title: String
+    var symbolName: String
+    var isSelected: Bool = false
+    var role: LiveRoomMenuRole = .standard
+}
+
 struct LiveConsoleHeaderViewModel: Hashable, Sendable {
     var title: String
     var subtitle: String
     var badge: String
+    var menuItems: [LiveRoomMenuItem]
 }
 
 struct StudioControlPanelViewModel: Hashable, Sendable {
@@ -49,16 +72,58 @@ struct StudioControlPanelViewModel: Hashable, Sendable {
     var chips: [String]
 }
 
+enum RoomActivityFilter: String, CaseIterable, Hashable, Sendable {
+    case all
+    case messages
+    case gifts
+    case system
+
+    var title: String {
+        switch self {
+        case .all: "All Activity"
+        case .messages: "Messages"
+        case .gifts: "Gifts"
+        case .system: "System"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .all: "line.3.horizontal.decrease.circle"
+        case .messages: "message"
+        case .gifts: "gift"
+        case .system: "gearshape"
+        }
+    }
+
+    func includes(_ message: LiveMessage) -> Bool {
+        switch self {
+        case .all:
+            true
+        case .messages:
+            message.tone == "chat" || message.tone == "hot"
+        case .gifts:
+            message.tone == "gift"
+        case .system:
+            message.tone == "system"
+        }
+    }
+}
+
 struct RoomActivityTitleViewModel: Hashable, Sendable {
     var title: String
     var buttonTitle: String
     var symbolName: String
+    var selectedFilter: RoomActivityFilter
 }
 
 struct LiveRoomTitleViewModel: Hashable, Sendable {
     var title: String
     var subtitle: String
     var viewerText: String
+    var heatText: String
+    var liveEventCount: Int
+    var menuItems: [LiveRoomMenuItem]
 }
 
 struct LiveRoomToolbarViewModel: Hashable, Sendable {
@@ -76,9 +141,9 @@ struct RoomStatusViewModel: Hashable, Sendable {
     var pendingModerationCount: Int
     var refreshVersion: Int
 
-    var viewerText: String { "\(viewerCount) viewers" }
-    var heatText: String { "\(heat) heat" }
-    var moderationText: String { "\(pendingModerationCount) pending" }
+    var viewerText: String { "\(viewerCount)" }
+    var heatText: String { "\(heat)" }
+    var moderationText: String { "\(pendingModerationCount)" }
 }
 
 struct ApplyDiagnostics: Hashable, Sendable {
@@ -86,9 +151,13 @@ struct ApplyDiagnostics: Hashable, Sendable {
     var tableApplyCount: Int = 0
     var insertedCount: Int = 0
     var deletedCount: Int = 0
+    var movedCount: Int = 0
     var keptCount: Int = 0
     var refreshIDChangedCount: Int = 0
     var visibleRefreshCount: Int = 0
+    var contentTransitionCount: Int = 0
+    var anchorCompensation: CGFloat = 0
+    var lastCompletionState: String = "submitted"
     var diagnosticsIssueCount: Int = 0
     var prefetchedItemCount: Int = 0
     var cancelledPrefetchItemCount: Int = 0
@@ -99,9 +168,13 @@ struct ApplyDiagnostics: Hashable, Sendable {
         hasher.combine(tableApplyCount)
         hasher.combine(insertedCount)
         hasher.combine(deletedCount)
+        hasher.combine(movedCount)
         hasher.combine(keptCount)
         hasher.combine(refreshIDChangedCount)
         hasher.combine(visibleRefreshCount)
+        hasher.combine(contentTransitionCount)
+        hasher.combine(anchorCompensation)
+        hasher.combine(lastCompletionState)
         hasher.combine(diagnosticsIssueCount)
         hasher.combine(prefetchedItemCount)
         hasher.combine(cancelledPrefetchItemCount)
@@ -109,11 +182,11 @@ struct ApplyDiagnostics: Hashable, Sendable {
     }
 
     var summaryText: String {
-        "apply c\(collectionApplyCount)/t\(tableApplyCount)  ins \(insertedCount)  del \(deletedCount)  kept \(keptCount)"
+        "apply c\(collectionApplyCount)/t\(tableApplyCount)  ins \(insertedCount)  del \(deletedCount)  move \(movedCount)  kept \(keptCount)"
     }
 
     var refreshText: String {
-        "refreshID \(refreshIDChangedCount)  visible \(visibleRefreshCount)  prefetch \(prefetchedItemCount)/−\(cancelledPrefetchItemCount)"
+        "\(lastCompletionState)  refreshID \(refreshIDChangedCount)  visible \(visibleRefreshCount)  transition \(contentTransitionCount)  anchor \(Int(anchorCompensation.rounded()))"
     }
 }
 
@@ -197,6 +270,7 @@ struct LiveRoomState: Hashable, Sendable {
     var messageSequence: Int
     var selectedGiftID: String
     var isAPIGuideExpanded: Bool
+    var activityFilter: RoomActivityFilter
     var pendingScrollMessageID: String?
     var micSeats: [MicSeat]
     var messages: [LiveMessage]
@@ -222,6 +296,7 @@ struct LiveRoomState: Hashable, Sendable {
             messageSequence: 4,
             selectedGiftID: "rocket",
             isAPIGuideExpanded: true,
+            activityFilter: .all,
             pendingScrollMessageID: nil,
             micSeats: [
                 MicSeat(id: "host", nickname: "Alex", role: "Host", level: 48, isSpeaking: true, isMuted: false, version: 1),

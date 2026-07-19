@@ -53,12 +53,16 @@ where SectionID: Hashable & Sendable {
     private var dataSource: TableDiffableDataSource<SectionID>!
     private var rowsByIdentity: [AnyListIdentity: AnyTableRow] = [:]
     private var displayedRowsByCell: [ObjectIdentifier: AnyTableRow] = [:]
-    private var displayedSupplementariesByView: [ObjectIdentifier: AnyTableSectionSupplementary] = [:]
+    private var displayedSupplementariesByView: [ObjectIdentifier: TableDisplayedSupplementary] = [:]
     private var prefetchedRowsByIndexPath: [IndexPath: AnyTableRow] = [:]
     private var applyGeneration = 0
     private var prefetchRowsHandler: (@MainActor ([TableListContext]) -> Void)?
     private var cancelPrefetchingRowsHandler: (@MainActor ([TableListContext]) -> Void)?
     private var activeContextMenu: (row: AnyTableRow, indexPath: IndexPath)?
+    private var preservedAnchorBottomInsetCompensation: CGFloat = 0
+    private var temporaryAnchorBaseBottomInset: CGFloat?
+    private var isSerialApplyActive = false
+    private var serialApplyWaiters: [CheckedContinuation<Void, Never>] = []
     private let eventRouter = ListEventRouter<TableListContext>()
 
     /// 创建 adapter 并接管 table view 的 data source、delegate 和 prefetch data source。
@@ -108,109 +112,52 @@ where SectionID: Hashable & Sendable {
         [tableDelegate, tableDataSource, scrollDelegate].compactMap { $0 as AnyObject? }
     }
 
-    /// 重建 table 描述树并应用到 diffable data source。
-    ///
-    /// - Parameters:
-    ///   - animatingDifferences: 是否启用 diffable 动画。
-    ///   - content: section builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
+    /// 提交一次 table 更新。需要等待动画完成时使用 async 重载。
     @discardableResult
     public func apply(
-        animatingDifferences: Bool = true,
+        options: ListApplyOptions,
+        completion: ((ListApplySummary) -> Void)? = nil,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
     ) -> TableApplyResult<SectionID> {
-        apply(animatingDifferences: animatingDifferences, completion: nil, content)
+        _apply(options: options, completion: completion, content)
     }
 
-    /// 重建 table 描述树并在 diffable apply 完成后执行回调。
-    ///
-    /// - Parameters:
-    ///   - animatingDifferences: 是否启用 diffable 动画。
-    ///   - completion: diffable apply 完成后的回调。
-    ///   - content: section builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
+    /// 以 SwiftUI 风格的 transaction 提交更新。
     @discardableResult
     public func apply(
-        animatingDifferences: Bool = true,
-        completion: (() -> Void)?,
+        transaction: ListTransaction = .automatic,
+        completion: ((ListApplySummary) -> Void)? = nil,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
     ) -> TableApplyResult<SectionID> {
         apply(
-            options: ListApplyOptions(animatingDifferences: animatingDifferences),
+            options: ListApplyOptions(transaction: transaction),
             completion: completion,
             content
         )
     }
 
-    /// 应用已经构建好的 table section 数组。
-    ///
-    /// - Parameters:
-    ///   - sections: section 数组。
-    ///   - animatingDifferences: 是否启用 diffable 动画。
-    ///   - completion: diffable apply 完成后的回调。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
+    /// 提交已经构建好的 table sections。
     @discardableResult
     public func apply(
         _ sections: [TableSection<SectionID>],
-        animatingDifferences: Bool = true,
-        completion: (() -> Void)? = nil
+        options: ListApplyOptions,
+        completion: ((ListApplySummary) -> Void)? = nil
     ) -> TableApplyResult<SectionID> {
-        apply(animatingDifferences: animatingDifferences, completion: completion) {
-            sections
-        }
+        apply(options: options, completion: completion) { sections }
     }
 
-    /// 使用 apply 级刷新策略重建 table 描述树。
-    ///
-    /// - Parameters:
-    ///   - refreshStrategy: 本次 apply 的刷新策略。
-    ///   - animatingDifferences: 是否启用 diffable 动画。
-    ///   - content: section builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
+    /// 以 transaction 提交已经构建好的 sections。
     @discardableResult
     public func apply(
-        refresh refreshStrategy: ListApplyRefreshStrategy,
-        animatingDifferences: Bool = true,
-        @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
+        _ sections: [TableSection<SectionID>],
+        transaction: ListTransaction = .automatic,
+        completion: ((ListApplySummary) -> Void)? = nil
     ) -> TableApplyResult<SectionID> {
         apply(
-            options: ListApplyOptions(
-                animatingDifferences: animatingDifferences,
-                refreshStrategy: refreshStrategy
-            ),
-            completion: nil,
-            content
+            sections,
+            options: ListApplyOptions(transaction: transaction),
+            completion: completion
         )
-    }
-
-    /// 使用完整 options 重建 table 描述树。
-    ///
-    /// - Parameters:
-    ///   - options: apply 行为、刷新和 diagnostics 配置。
-    ///   - content: section builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
-    @discardableResult
-    public func apply(
-        options: ListApplyOptions,
-        @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
-    ) -> TableApplyResult<SectionID> {
-        apply(options: options, completion: nil, content)
-    }
-
-    /// 使用完整 options 重建 table 描述树，并在 diffable apply 完成后执行回调。
-    ///
-    /// - Parameters:
-    ///   - options: apply 行为、刷新和 diagnostics 配置。
-    ///   - completion: diffable apply 完成后的回调。
-    ///   - content: section builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
-    @discardableResult
-    public func apply(
-        options: ListApplyOptions,
-        completion: (() -> Void)?,
-        @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
-    ) -> TableApplyResult<SectionID> {
-        _apply(options: options, completion: { _ in completion?() }, content)
     }
 
     private func _apply(
@@ -219,6 +166,9 @@ where SectionID: Hashable & Sendable {
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
     ) -> TableApplyResult<SectionID> {
         let newSections = content()
+        let resolvedTransaction = options.transaction.resolved(
+            reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+        )
         let applyPlan = ListApplyPlanner.makePlan(
             old: Self.makeCoreSnapshots(from: sections),
             new: Self.makeCoreSnapshots(from: newSections),
@@ -228,12 +178,29 @@ where SectionID: Hashable & Sendable {
         let diagnosticsIssues = applyPlan.initialSummary.diagnosticsIssues
 
         if !applyPlan.shouldApplyDiffable {
-            let summary = applyPlan.initialSummary
+            let summary = applyPlan.initialSummary.replacingAnimation(
+                ListAnimationSummary(
+                    completionState: .completed,
+                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                )
+            )
             lastApplySummary = summary
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options, prefix: "ListKit table apply summary")
             completion?(summary)
             return TableApplyResult(adapter: self, summary: summary)
+        }
+
+        let visibleAnchor: TableVisibleRowAnchor?
+        switch resolvedTransaction.scrollBehavior.storage {
+        case .preserveVisiblePosition(let target):
+            visibleAnchor = captureVisibleRowAnchor(for: target)
+            if let visibleAnchor {
+                reserveScrollRange(for: visibleAnchor)
+            }
+        case .none, .scrollTo, .scrollToLast:
+            visibleAnchor = nil
+            cancelTemporaryAnchorReservation()
         }
 
         applyGeneration += 1
@@ -254,7 +221,9 @@ where SectionID: Hashable & Sendable {
             snapshot.reloadItems(refreshItems)
         }
 
-        let summary = applyPlan.initialSummary
+        let summary = applyPlan.initialSummary.replacingAnimation(
+            ListAnimationSummary(reduceMotionApplied: resolvedTransaction.reduceMotionApplied)
+        )
         lastApplySummary = summary
         ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
 
@@ -262,23 +231,77 @@ where SectionID: Hashable & Sendable {
         let didApplyBox = TableMainActorCallbackBox { [weak self] in
             guard let self else { return }
             guard self.applyGeneration == generation else {
-                completion?(summary)
+                let supersededSummary = summary.replacingAnimation(
+                    ListAnimationSummary(
+                        completionState: .superseded,
+                        reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                    )
+                )
+                ListApplyLogger.logApplySummary(
+                    supersededSummary,
+                    options: options,
+                    prefix: "ListKit table apply summary"
+                )
+                completion?(supersededSummary)
                 return
             }
             self.reconcileSelection()
-            let visibleRefreshCount = applyPlan.shouldRunVisibleRefresh
-                ? self.refreshVisibleRowsIfNeeded(applyPlan: applyPlan)
-                : 0
-            let visibleSupplementaryRefreshCount = applyPlan.shouldRunVisibleRefresh
-                ? self.refreshVisibleSupplementariesIfNeeded(applyPlan: applyPlan)
-                : 0
-            let completedSummary = applyPlan.completedSummary(
-                visibleRefreshCount: visibleRefreshCount,
-                visibleSupplementaryRefreshCount: visibleSupplementaryRefreshCount
-            )
-            self.lastApplySummary = completedSummary
-            ListApplyLogger.logApplySummary(completedSummary, options: options, prefix: "ListKit table apply summary")
-            completion?(completedSummary)
+            let metrics = TableApplyAnimationMetrics()
+            let animationCoordinator = ListAnimationCompletionCoordinator {
+                let scrollOutcome = self.performScrollBehavior(
+                    resolvedTransaction.scrollBehavior,
+                    visibleAnchor: visibleAnchor,
+                    animated: resolvedTransaction.scrollAnimation
+                )
+                let snapshotAnimated = options.applicationMode == .differences
+                    && resolvedTransaction.snapshotAnimation
+                    && (applyPlan.initialSummary.insertedCount > 0
+                        || applyPlan.initialSummary.deletedCount > 0
+                        || applyPlan.initialSummary.movedCount > 0
+                        || applyPlan.initialSummary.snapshotRefreshCount > 0)
+                let completedSummary = applyPlan.completedSummary(
+                    visibleRefreshCount: metrics.visibleRefreshCount,
+                    visibleSupplementaryRefreshCount: metrics.visibleSupplementaryRefreshCount,
+                    animation: ListAnimationSummary(
+                        completionState: .completed,
+                        snapshotAnimated: snapshotAnimated,
+                        animatedSectionCount: snapshotAnimated ? applyPlan.changedSectionCount : 0,
+                        contentTransitionCount: metrics.contentTransitionCount,
+                        layoutInvalidated: metrics.layoutInvalidated,
+                        layoutAnimated: metrics.layoutAnimated,
+                        scrollAnimated: scrollOutcome.animated,
+                        anchorCompensation: scrollOutcome.anchorCompensation,
+                        reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                    )
+                )
+                self.lastApplySummary = completedSummary
+                ListApplyLogger.logApplySummary(
+                    completedSummary,
+                    options: options,
+                    prefix: "ListKit table apply summary"
+                )
+                completion?(completedSummary)
+            }
+
+            if applyPlan.shouldRunVisibleRefresh {
+                let refresh = self.refreshVisibleRowsIfNeeded(
+                    applyPlan: applyPlan,
+                    animatingContent: resolvedTransaction.contentAnimation,
+                    coordinator: animationCoordinator
+                )
+                metrics.visibleRefreshCount = refresh.refreshedCount
+                metrics.contentTransitionCount = refresh.transitionCount
+                metrics.visibleSupplementaryRefreshCount = self.refreshVisibleSupplementariesIfNeeded(
+                    applyPlan: applyPlan
+                )
+                metrics.layoutInvalidated = refresh.needsLayoutInvalidation
+                metrics.layoutAnimated = self.performLayoutUpdate(
+                    invalidating: metrics.layoutInvalidated,
+                    animated: resolvedTransaction.layoutAnimation,
+                    coordinator: animationCoordinator
+                )
+            }
+            animationCoordinator.finishScheduling()
         }
         let didApply = { didApplyBox.schedule() }
 
@@ -286,7 +309,7 @@ where SectionID: Hashable & Sendable {
         case .differences:
             dataSource.apply(
                 snapshot,
-                animatingDifferences: options.animatingDifferences,
+                animatingDifferences: resolvedTransaction.snapshotAnimation,
                 completion: didApply
             )
         case .reloadData:
@@ -300,20 +323,53 @@ where SectionID: Hashable & Sendable {
         return TableApplyResult(adapter: self, summary: summary)
     }
 
-    /// 重建描述树并等待 UIKit 完成 snapshot、selection 和可见刷新。
+    /// 重建描述树并等待 snapshot、layout 和内容过渡完成。
     @discardableResult
-    public func apply(
-        options: ListApplyOptions = ListApplyOptions(),
+    public func applyAndWait(
+        options: ListApplyOptions,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
     ) async -> TableApplyResult<SectionID> {
         let builtSections = content()
-        return await withCheckedContinuation { continuation in
+        let usesSerialScheduling = options.transaction.updatePolicy == .serial
+        if usesSerialScheduling {
+            await acquireSerialApplySlot()
+        }
+        if Task.isCancelled {
+            if usesSerialScheduling { releaseSerialApplySlot() }
+            let resolved = options.transaction.resolved(
+                reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+            )
+            return TableApplyResult(
+                adapter: self,
+                summary: ListApplySummary(
+                    animation: ListAnimationSummary(
+                        completionState: .cancelledBeforeCommit,
+                        reduceMotionApplied: resolved.reduceMotionApplied
+                    )
+                )
+            )
+        }
+
+        let result = await withCheckedContinuation { continuation in
             _ = _apply(options: options, completion: { [weak self] summary in
                 continuation.resume(returning: TableApplyResult(adapter: self, summary: summary))
             }) {
                 builtSections
             }
         }
+        if usesSerialScheduling {
+            releaseSerialApplySlot()
+        }
+        return result
+    }
+
+    /// 提交 transaction，并等待 snapshot、layout 和内容过渡完成。
+    @discardableResult
+    public func applyAndWait(
+        transaction: ListTransaction = .automatic,
+        @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
+    ) async -> TableApplyResult<SectionID> {
+        await applyAndWait(options: ListApplyOptions(transaction: transaction), content)
     }
 
     /// 绑定自定义业务事件。
@@ -494,7 +550,10 @@ where SectionID: Hashable & Sendable {
             tableDelegate?.tableView?(tableView, willDisplayHeaderView: view, forSection: section)
             return
         }
-        displayedSupplementariesByView[ObjectIdentifier(view)] = header
+        displayedSupplementariesByView[ObjectIdentifier(view)] = TableDisplayedSupplementary(
+            role: .header,
+            supplementary: header
+        )
         header.displayHandler?(
             headerView,
             context(for: IndexPath(row: 0, section: section), identity: header.identity)
@@ -507,7 +566,10 @@ where SectionID: Hashable & Sendable {
             tableDelegate?.tableView?(tableView, willDisplayFooterView: view, forSection: section)
             return
         }
-        displayedSupplementariesByView[ObjectIdentifier(view)] = footer
+        displayedSupplementariesByView[ObjectIdentifier(view)] = TableDisplayedSupplementary(
+            role: .footer,
+            supplementary: footer
+        )
         footer.displayHandler?(
             footerView,
             context(for: IndexPath(row: 0, section: section), identity: footer.identity)
@@ -516,8 +578,10 @@ where SectionID: Hashable & Sendable {
     }
 
     public func tableView(_ tableView: UITableView, didEndDisplayingHeaderView view: UIView, forSection section: Int) {
-        let header = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
-            ?? sections[safe: section]?.header
+        let displayed = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
+        let header = displayed?.role == .header
+            ? displayed?.supplementary
+            : sections[safe: section]?.header
         guard let header, let headerView = view as? UITableViewHeaderFooterView else {
             tableDelegate?.tableView?(tableView, didEndDisplayingHeaderView: view, forSection: section)
             return
@@ -530,8 +594,10 @@ where SectionID: Hashable & Sendable {
     }
 
     public func tableView(_ tableView: UITableView, didEndDisplayingFooterView view: UIView, forSection section: Int) {
-        let footer = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
-            ?? sections[safe: section]?.footer
+        let displayed = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
+        let footer = displayed?.role == .footer
+            ? displayed?.supplementary
+            : sections[safe: section]?.footer
         guard let footer, let footerView = view as? UITableViewHeaderFooterView else {
             tableDelegate?.tableView?(tableView, didEndDisplayingFooterView: view, forSection: section)
             return
@@ -1038,22 +1104,75 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    private func refreshVisibleRowsIfNeeded(applyPlan: ListApplyPlan) -> Int {
-        guard let tableView else { return 0 }
+    private func refreshVisibleRowsIfNeeded(
+        applyPlan: ListApplyPlan,
+        animatingContent: Bool,
+        coordinator: ListAnimationCompletionCoordinator
+    ) -> TableVisibleRefreshResult {
+        guard let tableView else { return TableVisibleRefreshResult() }
         var refreshedCount = 0
+        var transitionCount = 0
+        var needsLayoutInvalidation = false
         for indexPath in tableView.indexPathsForVisibleRows ?? [] {
             guard
                 let row = row(at: indexPath),
                 let rowSnapshot = applyPlan.newRowsByIdentity[row.identity],
-                applyPlan.oldRowsByIdentity[row.identity] != nil,
+                let oldRowSnapshot = applyPlan.oldRowsByIdentity[row.identity],
                 ListApplyPlanner.shouldRefreshVisibleRow(rowSnapshot),
                 let cell = tableView.cellForRow(at: indexPath)
             else { continue }
 
-            row.configureVisibleCell(cell, context(for: indexPath, identity: row.identity))
+            let context = context(for: indexPath, identity: row.identity)
+            if animatingContent,
+               oldRowSnapshot.refreshID != rowSnapshot.refreshID,
+               case .opacity(let duration) = row.contentTransition.storage,
+               duration > 0 {
+                coordinator.enter()
+                UIView.transition(
+                    with: cell.contentView,
+                    duration: duration,
+                    options: [.transitionCrossDissolve, .beginFromCurrentState, .allowAnimatedContent]
+                ) {
+                    row.configureVisibleCell(cell, context)
+                } completion: { _ in
+                    coordinator.leave()
+                }
+                transitionCount += 1
+            } else {
+                row.configureVisibleCell(cell, context)
+            }
+            if oldRowSnapshot.refreshID != rowSnapshot.refreshID,
+               row.height?.isFixed != true {
+                needsLayoutInvalidation = true
+            }
             refreshedCount += 1
         }
-        return refreshedCount
+        return TableVisibleRefreshResult(
+            refreshedCount: refreshedCount,
+            transitionCount: transitionCount,
+            needsLayoutInvalidation: needsLayoutInvalidation
+        )
+    }
+
+    private func performLayoutUpdate(
+        invalidating shouldInvalidate: Bool,
+        animated: Bool,
+        coordinator: ListAnimationCompletionCoordinator
+    ) -> Bool {
+        guard shouldInvalidate, let tableView else { return false }
+        if animated {
+            coordinator.enter()
+            tableView.performBatchUpdates(nil) { _ in
+                coordinator.leave()
+            }
+            return true
+        }
+        UIView.performWithoutAnimation {
+            tableView.beginUpdates()
+            tableView.endUpdates()
+            tableView.layoutIfNeeded()
+        }
+        return false
     }
 
     private func refreshVisibleSupplementariesIfNeeded(applyPlan: ListApplyPlan) -> Int {
@@ -1164,6 +1283,170 @@ where SectionID: Hashable & Sendable {
         sections[safe: indexPath.section]?.rows[safe: indexPath.row]
     }
 
+    private func captureVisibleRowAnchor(for target: ListScrollTarget) -> TableVisibleRowAnchor? {
+        guard let tableView else { return nil }
+        tableView.layoutIfNeeded()
+        let visibleIndexPaths = Set(tableView.indexPathsForVisibleRows ?? [])
+        guard let indexPath = indexPaths(for: target).first(where: visibleIndexPaths.contains),
+              let identity = dataSource.itemIdentifier(for: indexPath) else { return nil }
+        return TableVisibleRowAnchor(
+            identity: identity,
+            viewportMinY: tableView.rectForRow(at: indexPath).minY - tableView.contentOffset.y,
+            horizontalContentOffset: tableView.contentOffset.x,
+            baseBottomInset: temporaryAnchorBaseBottomInset
+                ?? tableView.contentInset.bottom - preservedAnchorBottomInsetCompensation
+        )
+    }
+
+    private func reserveScrollRange(for anchor: TableVisibleRowAnchor) {
+        guard let tableView else { return }
+        temporaryAnchorBaseBottomInset = anchor.baseBottomInset
+        let systemBottomInset = tableView.adjustedContentInset.bottom - tableView.contentInset.bottom
+        let bottomInsetKeepingCurrentOffset = tableView.contentOffset.y
+            + tableView.bounds.height
+            - systemBottomInset
+        UIView.performWithoutAnimation {
+            tableView.contentInset.bottom = max(
+                tableView.contentInset.bottom,
+                bottomInsetKeepingCurrentOffset,
+                anchor.baseBottomInset
+            )
+        }
+    }
+
+    private func cancelTemporaryAnchorReservation() {
+        guard let tableView, let baseBottomInset = temporaryAnchorBaseBottomInset else { return }
+        UIView.performWithoutAnimation {
+            tableView.contentInset.bottom = baseBottomInset + preservedAnchorBottomInsetCompensation
+        }
+        temporaryAnchorBaseBottomInset = nil
+    }
+
+    private func restoreVisibleRowAnchor(_ anchor: TableVisibleRowAnchor) -> CGFloat {
+        guard let tableView else { return 0 }
+        tableView.layoutIfNeeded()
+        let snapshot = dataSource.snapshot()
+        guard let indexPath = Self.indexPath(for: anchor.identity, in: snapshot) else {
+            preservedAnchorBottomInsetCompensation = 0
+            temporaryAnchorBaseBottomInset = nil
+            UIView.performWithoutAnimation {
+                tableView.contentInset.bottom = anchor.baseBottomInset
+            }
+            return 0
+        }
+
+        let minimumOffsetY = -tableView.adjustedContentInset.top
+        let desiredOffsetY = max(
+            minimumOffsetY,
+            tableView.rectForRow(at: indexPath).minY - anchor.viewportMinY
+        )
+        let systemBottomInset = tableView.adjustedContentInset.bottom - tableView.contentInset.bottom
+        let maximumOffsetWithoutCompensation = max(
+            minimumOffsetY,
+            tableView.contentSize.height
+                - tableView.bounds.height
+                + systemBottomInset
+                + anchor.baseBottomInset
+        )
+        let compensation = max(0, desiredOffsetY - maximumOffsetWithoutCompensation)
+
+        preservedAnchorBottomInsetCompensation = compensation
+        temporaryAnchorBaseBottomInset = nil
+        UIView.performWithoutAnimation {
+            tableView.contentInset.bottom = anchor.baseBottomInset + compensation
+            tableView.layoutIfNeeded()
+            tableView.setContentOffset(
+                CGPoint(x: anchor.horizontalContentOffset, y: desiredOffsetY),
+                animated: false
+            )
+        }
+        return compensation
+    }
+
+    private func normalizeAnchorCompensation() -> CGFloat {
+        guard let tableView else { return 0 }
+        guard temporaryAnchorBaseBottomInset != nil || preservedAnchorBottomInsetCompensation > 0 else {
+            return 0
+        }
+        cancelTemporaryAnchorReservation()
+        let baseBottomInset = tableView.contentInset.bottom - preservedAnchorBottomInsetCompensation
+        let systemBottomInset = tableView.adjustedContentInset.bottom - tableView.contentInset.bottom
+        let minimumOffsetY = -tableView.adjustedContentInset.top
+        let maximumOffsetWithoutCompensation = max(
+            minimumOffsetY,
+            tableView.contentSize.height
+                - tableView.bounds.height
+                + systemBottomInset
+                + baseBottomInset
+        )
+        let compensation = max(0, tableView.contentOffset.y - maximumOffsetWithoutCompensation)
+        preservedAnchorBottomInsetCompensation = compensation
+        UIView.performWithoutAnimation {
+            tableView.contentInset.bottom = baseBottomInset + compensation
+        }
+        return compensation
+    }
+
+    private func performScrollBehavior(
+        _ behavior: ListScrollBehavior,
+        visibleAnchor: TableVisibleRowAnchor?,
+        animated: Bool
+    ) -> TableScrollOutcome {
+        guard let tableView else { return TableScrollOutcome() }
+        tableView.layoutIfNeeded()
+
+        switch behavior.storage {
+        case .none:
+            return TableScrollOutcome(anchorCompensation: normalizeAnchorCompensation())
+        case .preserveVisiblePosition:
+            guard let visibleAnchor else {
+                return TableScrollOutcome(anchorCompensation: normalizeAnchorCompensation())
+            }
+            return TableScrollOutcome(anchorCompensation: restoreVisibleRowAnchor(visibleAnchor))
+        case .scrollTo(let target, let position):
+            let compensation = normalizeAnchorCompensation()
+            guard let indexPath = indexPaths(for: target).first else {
+                return TableScrollOutcome(anchorCompensation: compensation)
+            }
+            tableView.scrollToRow(at: indexPath, at: position.tableViewPosition, animated: animated)
+            return TableScrollOutcome(animated: animated, anchorCompensation: compensation)
+        case .scrollToLast(let sectionID, let position):
+            let compensation = normalizeAnchorCompensation()
+            guard let indexPath = lastRowIndexPath(inAnySectionID: sectionID) else {
+                return TableScrollOutcome(anchorCompensation: compensation)
+            }
+            tableView.scrollToRow(at: indexPath, at: position.tableViewPosition, animated: animated)
+            return TableScrollOutcome(animated: animated, anchorCompensation: compensation)
+        }
+    }
+
+    private func indexPaths(for target: ListScrollTarget) -> [IndexPath] {
+        let snapshot = dataSource.snapshot()
+        return snapshot.itemIdentifiers.compactMap { identity in
+            guard identity.rowID == target.rowID,
+                  target.sectionID == nil || identity.sectionID == target.sectionID else { return nil }
+            return Self.indexPath(for: identity, in: snapshot)
+        }
+    }
+
+    private func acquireSerialApplySlot() async {
+        if !isSerialApplyActive {
+            isSerialApplyActive = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            serialApplyWaiters.append(continuation)
+        }
+    }
+
+    private func releaseSerialApplySlot() {
+        guard !serialApplyWaiters.isEmpty else {
+            isSerialApplyActive = false
+            return
+        }
+        serialApplyWaiters.removeFirst().resume()
+    }
+
     private func lastRowIndexPath(in sectionID: SectionID?) -> IndexPath? {
         if let sectionID {
             guard
@@ -1178,6 +1461,29 @@ where SectionID: Hashable & Sendable {
             return IndexPath(row: rowIndex, section: sectionIndex)
         }
         return nil
+    }
+
+    private func lastRowIndexPath(inAnySectionID sectionID: AnyListID?) -> IndexPath? {
+        let snapshot = dataSource.snapshot()
+        if let sectionID {
+            guard let section = snapshot.indexOfSection(sectionID),
+                  let item = snapshot.itemIdentifiers(inSection: sectionID).indices.last
+            else { return nil }
+            return IndexPath(row: item, section: section)
+        }
+        guard let identity = snapshot.itemIdentifiers.last else { return nil }
+        return Self.indexPath(for: identity, in: snapshot)
+    }
+
+    private static func indexPath(
+        for identity: AnyListIdentity,
+        in snapshot: NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>
+    ) -> IndexPath? {
+        guard let sectionID = snapshot.sectionIdentifier(containingItem: identity),
+              let section = snapshot.indexOfSection(sectionID),
+              let row = snapshot.itemIdentifiers(inSection: sectionID).firstIndex(of: identity)
+        else { return nil }
+        return IndexPath(row: row, section: section)
     }
 
     private func visibleIndexPaths<RowID>(
@@ -1214,6 +1520,54 @@ where SectionID: Hashable & Sendable {
     private func sameObject(_ lhs: AnyObject?, _ rhs: AnyObject?) -> Bool {
         guard let lhs, let rhs else { return false }
         return lhs === rhs
+    }
+}
+
+private struct TableVisibleRowAnchor {
+    let identity: AnyListIdentity
+    let viewportMinY: CGFloat
+    let horizontalContentOffset: CGFloat
+    let baseBottomInset: CGFloat
+}
+
+private struct TableVisibleRefreshResult {
+    var refreshedCount = 0
+    var transitionCount = 0
+    var needsLayoutInvalidation = false
+}
+
+private enum TableSupplementaryRole {
+    case header
+    case footer
+}
+
+private struct TableDisplayedSupplementary {
+    let role: TableSupplementaryRole
+    let supplementary: AnyTableSectionSupplementary
+}
+
+private struct TableScrollOutcome {
+    var animated = false
+    var anchorCompensation: CGFloat = 0
+}
+
+@MainActor
+private final class TableApplyAnimationMetrics {
+    var visibleRefreshCount = 0
+    var visibleSupplementaryRefreshCount = 0
+    var contentTransitionCount = 0
+    var layoutInvalidated = false
+    var layoutAnimated = false
+}
+
+private extension ListScrollPosition {
+    var tableViewPosition: UITableView.ScrollPosition {
+        switch self {
+        case .top: .top
+        case .center: .middle
+        case .bottom: .bottom
+        case .nearest: .none
+        }
     }
 }
 

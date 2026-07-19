@@ -8,7 +8,7 @@ struct ListKitLayoutTests {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
             } layout: {
@@ -25,7 +25,7 @@ struct ListKitLayoutTests {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
             } layout: {
@@ -73,8 +73,8 @@ struct ListKitLayoutTests {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        _ = await adapter.apply(
-            options: .init(animatingDifferences: false, applicationMode: .reloadData)
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
                 DisclosureGroup(
@@ -96,11 +96,46 @@ struct ListKitLayoutTests {
         #expect(adapter.rowIdentifier(at: indexPath, as: String.self) == "parent")
     }
 
+    @Test func selectingDisclosureParentTogglesTheNativeOutlineSnapshot() async {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        var expansionChanges: [Bool] = []
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                DisclosureGroup(
+                    Row("parent", model: "Parent", cell: UICollectionViewListCell.self) { _, _, _ in }
+                        .outlineDisclosure(),
+                    isExpanded: true
+                ) {
+                    Row("child", model: "Child", cell: UICollectionViewListCell.self) { _, _, _ in }
+                }
+            } layout: {
+                UIKitListLayout(appearance: .insetGrouped)
+            }
+            .selectionMode(.single)
+            .onExpansionChange { _, isExpanded in
+                expansionChanges.append(isExpanded)
+            }
+        }
+
+        let parentIndexPath = IndexPath(item: 0, section: 0)
+        adapter.collectionView(collectionView, didSelectItemAt: parentIndexPath)
+        await Task.yield()
+        #expect(expansionChanges == [false])
+
+        adapter.collectionView(collectionView, didSelectItemAt: parentIndexPath)
+        await Task.yield()
+        #expect(expansionChanges == [false, true])
+    }
+
     @Test func gridLayoutDoesNotCreateHorizontalOrthogonalScrolling() {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
             } layout: {

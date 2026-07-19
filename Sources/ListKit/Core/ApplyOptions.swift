@@ -1,60 +1,336 @@
+import CoreGraphics
+import Foundation
+
+// MARK: - Animation Transaction
+
+/// 单个动画作用域的执行策略。
+public enum ListAnimationPolicy: Equatable, Sendable {
+    /// 使用 UIKit 系统动画，并在 transaction 允许时遵循 Reduce Motion。
+    case automatic
+    /// 强制使用 UIKit 系统动画；用于明确需要动画的交互反馈。
+    case enabled
+    /// 禁用该作用域的动画。
+    case disabled
+}
+
+/// 连续 async apply 的调度方式。
+public enum ListUpdatePolicy: Equatable, Sendable {
+    /// 新 apply 立即提交；尚未完成的旧 apply 会以 `.superseded` 结束。
+    case coalesceLatest
+    /// 等待前一个 async apply 完成后再按调用顺序提交。
+    case serial
+}
+
+/// 声明式滚动目标。
+public struct ListScrollTarget: Hashable, Sendable {
+    let rowID: AnyListID
+    let sectionID: AnyListID?
+
+    /// 使用业务 Row id 创建目标。
+    public init<RowID>(_ rowID: RowID) where RowID: Hashable & Sendable {
+        self.rowID = AnyListID(rowID)
+        self.sectionID = nil
+    }
+
+    /// 使用业务 Row id 和 section id 创建无歧义目标。
+    public init<RowID, SectionID>(
+        _ rowID: RowID,
+        in sectionID: SectionID
+    ) where RowID: Hashable & Sendable, SectionID: Hashable & Sendable {
+        self.rowID = AnyListID(rowID)
+        self.sectionID = AnyListID(sectionID)
+    }
+}
+
+/// apply 后目标在 viewport 中的位置。
+public enum ListScrollPosition: Equatable, Sendable {
+    case top
+    case center
+    case bottom
+    case nearest
+}
+
+/// apply 期间的声明式滚动行为。
+public struct ListScrollBehavior: Equatable, Sendable {
+    enum Storage: Equatable, Sendable {
+        case none
+        case preserveVisiblePosition(ListScrollTarget)
+        case scrollTo(ListScrollTarget, ListScrollPosition)
+        case scrollToLast(AnyListID?, ListScrollPosition)
+    }
+
+    let storage: Storage
+
+    private init(storage: Storage) {
+        self.storage = storage
+    }
+
+    /// 不主动改变滚动位置。
+    public static let none = ListScrollBehavior(storage: .none)
+
+    /// 保持当前可见 Row 在 viewport 中的位置。
+    public static func preserveVisiblePosition(
+        of target: ListScrollTarget
+    ) -> ListScrollBehavior {
+        ListScrollBehavior(storage: .preserveVisiblePosition(target))
+    }
+
+    /// apply 后滚动到指定 Row。
+    public static func scrollTo(
+        _ target: ListScrollTarget,
+        position: ListScrollPosition = .nearest
+    ) -> ListScrollBehavior {
+        ListScrollBehavior(storage: .scrollTo(target, position))
+    }
+
+    /// apply 后滚动到全列表最后一个 Row。
+    public static func scrollToLast(
+        position: ListScrollPosition = .bottom
+    ) -> ListScrollBehavior {
+        ListScrollBehavior(storage: .scrollToLast(nil, position))
+    }
+
+    /// apply 后滚动到指定 section 的最后一个 Row。
+    public static func scrollToLast<SectionID>(
+        in sectionID: SectionID,
+        position: ListScrollPosition = .bottom
+    ) -> ListScrollBehavior where SectionID: Hashable & Sendable {
+        ListScrollBehavior(storage: .scrollToLast(AnyListID(sectionID), position))
+    }
+}
+
+/// 一次列表更新的动画、调度和滚动语义。
+///
+/// `ListTransaction` 只暴露 UIKit 能稳定兑现的系统动画开关；diffable 的 duration 和
+/// curve 仍由 UIKit 决定。Row 自身内容过渡通过 `contentTransition(_:)` 单独描述。
+public struct ListTransaction: Equatable, Sendable {
+    public var snapshotAnimation: ListAnimationPolicy
+    public var outlineAnimation: ListAnimationPolicy
+    public var layoutAnimation: ListAnimationPolicy
+    public var contentAnimation: ListAnimationPolicy
+    public var scrollAnimation: ListAnimationPolicy
+    public var updatePolicy: ListUpdatePolicy
+    public var scrollBehavior: ListScrollBehavior
+    public var respectsReduceMotion: Bool
+
+    /// 创建 transaction。未单独指定的作用域继承 `animation`。
+    public init(
+        animation: ListAnimationPolicy = .automatic,
+        snapshotAnimation: ListAnimationPolicy? = nil,
+        outlineAnimation: ListAnimationPolicy? = nil,
+        layoutAnimation: ListAnimationPolicy? = nil,
+        contentAnimation: ListAnimationPolicy? = nil,
+        scrollAnimation: ListAnimationPolicy? = nil,
+        updatePolicy: ListUpdatePolicy = .coalesceLatest,
+        scrollBehavior: ListScrollBehavior = .none,
+        respectsReduceMotion: Bool = true
+    ) {
+        self.snapshotAnimation = snapshotAnimation ?? animation
+        self.outlineAnimation = outlineAnimation ?? animation
+        self.layoutAnimation = layoutAnimation ?? animation
+        self.contentAnimation = contentAnimation ?? animation
+        self.scrollAnimation = scrollAnimation ?? animation
+        self.updatePolicy = updatePolicy
+        self.scrollBehavior = scrollBehavior
+        self.respectsReduceMotion = respectsReduceMotion
+    }
+
+    public static let automatic = ListTransaction()
+    public static let disabled = ListTransaction(animation: .disabled)
+
+    /// 同时设置所有动画作用域。
+    public func animation(_ policy: ListAnimationPolicy) -> Self {
+        var copy = self
+        copy.snapshotAnimation = policy
+        copy.outlineAnimation = policy
+        copy.layoutAnimation = policy
+        copy.contentAnimation = policy
+        copy.scrollAnimation = policy
+        return copy
+    }
+
+    public func snapshotAnimation(_ policy: ListAnimationPolicy) -> Self {
+        var copy = self
+        copy.snapshotAnimation = policy
+        return copy
+    }
+
+    public func outlineAnimation(_ policy: ListAnimationPolicy) -> Self {
+        var copy = self
+        copy.outlineAnimation = policy
+        return copy
+    }
+
+    public func layoutAnimation(_ policy: ListAnimationPolicy) -> Self {
+        var copy = self
+        copy.layoutAnimation = policy
+        return copy
+    }
+
+    public func contentAnimation(_ policy: ListAnimationPolicy) -> Self {
+        var copy = self
+        copy.contentAnimation = policy
+        return copy
+    }
+
+    public func scrollAnimation(_ policy: ListAnimationPolicy) -> Self {
+        var copy = self
+        copy.scrollAnimation = policy
+        return copy
+    }
+
+    public func updatePolicy(_ policy: ListUpdatePolicy) -> Self {
+        var copy = self
+        copy.updatePolicy = policy
+        return copy
+    }
+
+    public func scrollBehavior(_ behavior: ListScrollBehavior) -> Self {
+        var copy = self
+        copy.scrollBehavior = behavior
+        return copy
+    }
+
+    public func respectsReduceMotion(_ enabled: Bool = true) -> Self {
+        var copy = self
+        copy.respectsReduceMotion = enabled
+        return copy
+    }
+
+    func resolved(reduceMotionEnabled: Bool) -> ListResolvedTransaction {
+        func resolve(_ policy: ListAnimationPolicy) -> Bool {
+            switch policy {
+            case .automatic:
+                return !(respectsReduceMotion && reduceMotionEnabled)
+            case .enabled:
+                return true
+            case .disabled:
+                return false
+            }
+        }
+
+        let policies = [
+            snapshotAnimation,
+            outlineAnimation,
+            layoutAnimation,
+            contentAnimation,
+            scrollAnimation
+        ]
+        return ListResolvedTransaction(
+            snapshotAnimation: resolve(snapshotAnimation),
+            outlineAnimation: resolve(outlineAnimation),
+            layoutAnimation: resolve(layoutAnimation),
+            contentAnimation: resolve(contentAnimation),
+            scrollAnimation: resolve(scrollAnimation),
+            updatePolicy: updatePolicy,
+            scrollBehavior: scrollBehavior,
+            reduceMotionApplied: respectsReduceMotion
+                && reduceMotionEnabled
+                && policies.contains(.automatic)
+        )
+    }
+}
+
+struct ListResolvedTransaction {
+    let snapshotAnimation: Bool
+    let outlineAnimation: Bool
+    let layoutAnimation: Bool
+    let contentAnimation: Bool
+    let scrollAnimation: Bool
+    let updatePolicy: ListUpdatePolicy
+    let scrollBehavior: ListScrollBehavior
+    let reduceMotionApplied: Bool
+}
+
 // MARK: - Apply Options
 
 /// apply 级刷新策略。
 public enum ListApplyRefreshStrategy: Equatable, Sendable {
-    /// Row 自己的刷新策略生效。
     case automatic
-    /// 不触发 diffable reconfigure/reload，只刷新可见 cell。
     case visibleOnly
-    /// 只走 diffable reconfigure/reload，不做默认可见重配。
     case diffableOnly
-    /// 对新旧 snapshot 都存在的 item 执行 reconfigure/reload。
     case forceReload
 }
 
 /// diffable snapshot 的提交方式。
 public enum ListSnapshotApplicationMode: Equatable, Sendable {
-    /// 计算新旧 snapshot 差异，并按 `animatingDifferences` 决定是否显示动画。
     case differences
-    /// 跳过 diff，使用 UIKit 的 reload-data 路径重置列表。
-    ///
-    /// - Note: UIKit 从 iOS 15 开始提供原生实现；iOS 14 会退化为无动画 diff apply。
     case reloadData
 }
 
-/// `apply` 的可选参数，保留旧入口兼容，同时把全局刷新策略和 diagnostics 放到一个对象里。
+/// `apply` 的完整配置。
 public struct ListApplyOptions: Sendable {
-    public var animatingDifferences: Bool
+    public var transaction: ListTransaction
     public var refreshStrategy: ListApplyRefreshStrategy
     public var applicationMode: ListSnapshotApplicationMode
     public var diagnostics: ListDiagnosticsOptions
 
-    /// 创建 apply options。
-    ///
-    /// - Parameters:
-    ///   - animatingDifferences: 是否使用 diffable 动画应用 snapshot。
-    ///   - refreshStrategy: apply 级刷新策略。
-    ///   - applicationMode: diff 或 reload-data 提交方式。
-    ///   - diagnostics: diagnostics 处理方式。
     public init(
-        animatingDifferences: Bool = true,
+        transaction: ListTransaction = .automatic,
         refreshStrategy: ListApplyRefreshStrategy = .automatic,
         applicationMode: ListSnapshotApplicationMode = .differences,
         diagnostics: ListDiagnosticsOptions = .debugDefault
     ) {
-        self.animatingDifferences = animatingDifferences
+        self.transaction = transaction
         self.refreshStrategy = refreshStrategy
         self.applicationMode = applicationMode
         self.diagnostics = diagnostics
     }
 }
 
+// MARK: - Apply Diagnostics
+
+/// async apply 的最终状态。
+public enum ListApplyCompletionState: Equatable, Sendable {
+    case submitted
+    case completed
+    case superseded
+    case cancelledBeforeCommit
+}
+
+/// 本次 apply 实际执行的动画诊断。
+public struct ListAnimationSummary: Equatable, Sendable {
+    public let completionState: ListApplyCompletionState
+    public let snapshotAnimated: Bool
+    public let animatedSectionCount: Int
+    public let outlineAnimatedSectionCount: Int
+    public let contentTransitionCount: Int
+    public let layoutInvalidated: Bool
+    public let layoutAnimated: Bool
+    public let scrollAnimated: Bool
+    public let anchorCompensation: CGFloat
+    public let reduceMotionApplied: Bool
+
+    public init(
+        completionState: ListApplyCompletionState = .submitted,
+        snapshotAnimated: Bool = false,
+        animatedSectionCount: Int = 0,
+        outlineAnimatedSectionCount: Int = 0,
+        contentTransitionCount: Int = 0,
+        layoutInvalidated: Bool = false,
+        layoutAnimated: Bool = false,
+        scrollAnimated: Bool = false,
+        anchorCompensation: CGFloat = 0,
+        reduceMotionApplied: Bool = false
+    ) {
+        self.completionState = completionState
+        self.snapshotAnimated = snapshotAnimated
+        self.animatedSectionCount = animatedSectionCount
+        self.outlineAnimatedSectionCount = outlineAnimatedSectionCount
+        self.contentTransitionCount = contentTransitionCount
+        self.layoutInvalidated = layoutInvalidated
+        self.layoutAnimated = layoutAnimated
+        self.scrollAnimated = scrollAnimated
+        self.anchorCompensation = anchorCompensation
+        self.reduceMotionApplied = reduceMotionApplied
+    }
+}
+
 /// apply 后的摘要，DEBUG 日志和测试都复用这份数据。
-///
-/// - Note: row 统计沿用原字段；supplementary 使用独立字段，避免 item badge 等刷新行为被隐藏。
 public struct ListApplySummary: Equatable, Sendable {
     public let insertedCount: Int
     public let deletedCount: Int
+    public let movedCount: Int
     public let keptCount: Int
     public let refreshIDChangedCount: Int
     public let snapshotRefreshCount: Int
@@ -62,32 +338,24 @@ public struct ListApplySummary: Equatable, Sendable {
     public let supplementaryRefreshIDChangedCount: Int
     public let visibleSupplementaryRefreshCount: Int
     public let diagnosticsIssues: [ListDiagnosticsIssue]
+    public let animation: ListAnimationSummary
 
-    /// 创建 apply 摘要。
-    ///
-    /// - Parameters:
-    ///   - insertedCount: 本次新增的展示节点数量。
-    ///   - deletedCount: 本次删除的展示节点数量。
-    ///   - keptCount: identity 保持不变的展示节点数量。
-    ///   - refreshIDChangedCount: `refreshID` 变化的展示节点数量。
-    ///   - snapshotRefreshCount: 进入 diffable reconfigure/reload 的节点数量。
-    ///   - visibleRefreshCount: apply completion 后轻刷的可见 cell 数量。
-    ///   - supplementaryRefreshIDChangedCount: `refreshID` 变化的 supplementary 数量。
-    ///   - visibleSupplementaryRefreshCount: apply completion 后轻刷的可见 supplementary view 数量。
-    ///   - diagnosticsIssues: 本次发现的 diagnostics 问题。
     public init(
         insertedCount: Int = 0,
         deletedCount: Int = 0,
+        movedCount: Int = 0,
         keptCount: Int = 0,
         refreshIDChangedCount: Int = 0,
         snapshotRefreshCount: Int = 0,
         visibleRefreshCount: Int = 0,
         supplementaryRefreshIDChangedCount: Int = 0,
         visibleSupplementaryRefreshCount: Int = 0,
-        diagnosticsIssues: [ListDiagnosticsIssue] = []
+        diagnosticsIssues: [ListDiagnosticsIssue] = [],
+        animation: ListAnimationSummary = ListAnimationSummary()
     ) {
         self.insertedCount = insertedCount
         self.deletedCount = deletedCount
+        self.movedCount = movedCount
         self.keptCount = keptCount
         self.refreshIDChangedCount = refreshIDChangedCount
         self.snapshotRefreshCount = snapshotRefreshCount
@@ -95,5 +363,24 @@ public struct ListApplySummary: Equatable, Sendable {
         self.supplementaryRefreshIDChangedCount = supplementaryRefreshIDChangedCount
         self.visibleSupplementaryRefreshCount = visibleSupplementaryRefreshCount
         self.diagnosticsIssues = diagnosticsIssues
+        self.animation = animation
+    }
+}
+
+extension ListApplySummary {
+    func replacingAnimation(_ animation: ListAnimationSummary) -> ListApplySummary {
+        ListApplySummary(
+            insertedCount: insertedCount,
+            deletedCount: deletedCount,
+            movedCount: movedCount,
+            keptCount: keptCount,
+            refreshIDChangedCount: refreshIDChangedCount,
+            snapshotRefreshCount: snapshotRefreshCount,
+            visibleRefreshCount: visibleRefreshCount,
+            supplementaryRefreshIDChangedCount: supplementaryRefreshIDChangedCount,
+            visibleSupplementaryRefreshCount: visibleSupplementaryRefreshCount,
+            diagnosticsIssues: diagnosticsIssues,
+            animation: animation
+        )
     }
 }

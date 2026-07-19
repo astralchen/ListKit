@@ -32,6 +32,13 @@ public enum TableRowHeight: Equatable, Sendable {
     }
 }
 
+extension TableRowHeight {
+    var isFixed: Bool {
+        if case .fixed = self { return true }
+        return false
+    }
+}
+
 /// Table row 在 `TableForEach(id:)` 内使用时的占位 ID 类型。
 public struct InheritedTableRowID: Hashable, Sendable {
     private init() {}
@@ -141,6 +148,7 @@ public struct AnyTableRow {
     public let estimatedHeight: CGFloat?
     public let indentationLevel: Int?
     public let shouldIndentWhileEditing: Bool?
+    public let contentTransition: ListContentTransition
 
     let register: @MainActor (UITableView) -> Void
     let cellProvider: @MainActor (UITableView, IndexPath, TableListContext) -> UITableViewCell
@@ -222,6 +230,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     private var rowVariant: AnyListID?
     private var rowRefreshID: AnyListID?
     private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
+    private var rowContentTransition: ListContentTransition = .identity
     private var rowIsSelected: Bool?
     private var rowIsSelectionDisabled = false
     private var rowIsFocusable: Bool?
@@ -335,6 +344,13 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
         var copy = self
         copy.rowRefreshPolicy = policy
+        return copy
+    }
+
+    /// 设置相同 identity 的可见内容刷新过渡。
+    public func contentTransition(_ transition: ListContentTransition) -> Self {
+        var copy = self
+        copy.rowContentTransition = transition
         return copy
     }
 
@@ -758,6 +774,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
             estimatedHeight: rowEstimatedHeight,
             indentationLevel: rowIndentationLevel,
             shouldIndentWhileEditing: rowShouldIndentWhileEditing,
+            contentTransition: rowContentTransition,
             register: { tableView in
                 tableView.lk.register(cellType)
             },

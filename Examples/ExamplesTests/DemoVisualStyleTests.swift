@@ -49,6 +49,95 @@ struct DemoVisualStyleTests {
 
         #expect(descendantBounds.minX >= bounds.minX - 0.5)
         #expect(descendantBounds.maxX <= bounds.maxX + 0.5)
+        #expect(truncatedLabels(in: cell.contentView).isEmpty)
+    }
+
+    @Test func headerMoreButtonsExposeConfiguredMenus() {
+        let standard = LiveRoomMenuItem(
+            action: .refreshStatus,
+            title: "Refresh Status",
+            symbolName: "arrow.clockwise"
+        )
+        let selected = LiveRoomMenuItem(
+            action: .selectStudioMode(0),
+            title: "Room Mode",
+            symbolName: "person.3",
+            isSelected: true
+        )
+        let destructive = LiveRoomMenuItem(
+            action: .resetDemo,
+            title: "Reset Demo",
+            symbolName: "arrow.counterclockwise",
+            role: .destructive
+        )
+
+        let liveCell = LiveConsoleHeaderCell(frame: CGRect(x: 0, y: 0, width: 390, height: 86))
+        liveCell.configure(
+            LiveConsoleHeaderViewModel(
+                title: "Live Console",
+                subtitle: "Demo",
+                badge: "LIVE",
+                menuItems: [standard, destructive]
+            ),
+            onMenuAction: { _ in }
+        )
+
+        let studioCell = StudioControlHeaderCell(frame: CGRect(x: 0, y: 0, width: 390, height: 86))
+        studioCell.configure(
+            LiveConsoleHeaderViewModel(
+                title: "Studio Control",
+                subtitle: "Demo",
+                badge: "OPS",
+                menuItems: [selected, destructive]
+            ),
+            onMenuAction: { _ in }
+        )
+
+        let roomCell = RoomHeroCell(frame: CGRect(x: 0, y: 0, width: 390, height: 104))
+        roomCell.configure(
+            LiveRoomTitleViewModel(
+                title: "Room Toolkit",
+                subtitle: "Demo",
+                viewerText: "1248",
+                heatText: "8932",
+                liveEventCount: 4,
+                menuItems: [standard, destructive]
+            ),
+            onMenuAction: { _ in }
+        )
+
+        let liveMenu = descendants(of: UIButton.self, in: liveCell)
+            .first { $0.accessibilityIdentifier == "live-console-header-menu" }?.menu
+        let studioMenu = descendants(of: UIButton.self, in: studioCell)
+            .first { $0.accessibilityIdentifier == "studio-control-header-menu" }?.menu
+        let roomMenu = descendants(of: UIButton.self, in: roomCell)
+            .first { $0.accessibilityIdentifier == "room-toolkit-header-menu" }?.menu
+
+        #expect(menuActionTitles(in: liveMenu) == ["Refresh Status", "Reset Demo"])
+        #expect(menuActionTitles(in: studioMenu) == ["Room Mode", "Reset Demo"])
+        #expect(menuActionTitles(in: roomMenu) == ["Refresh Status", "Reset Demo"])
+        #expect(menuActions(in: studioMenu).first?.state == .on)
+    }
+
+    @Test func liveRoomStatusMetricsFitPhoneWidth() {
+        let cell = LiveRoomStatusCell(frame: CGRect(x: 0, y: 0, width: 390, height: 150))
+        cell.configure(
+            RoomStatusViewModel(
+                roomName: "Room Toolkit",
+                hostName: "Alex",
+                mode: "LIVE",
+                viewerCount: 1_255,
+                heat: 9_148,
+                pendingModerationCount: 7,
+                refreshVersion: 0
+            )
+        )
+
+        cell.setNeedsLayout()
+        cell.layoutIfNeeded()
+        cell.contentView.layoutIfNeeded()
+
+        #expect(truncatedLabels(in: cell.contentView).isEmpty)
     }
 
     @Test func roomToolkitRootViewIsCollectionView() {
@@ -104,6 +193,36 @@ struct DemoVisualStyleTests {
         #expect(descendantBounds.maxX <= header.bounds.maxX - 32)
     }
 
+    @Test func roomMetricsAlignIconsAndTitlesBelowThem() {
+        let strip = RoomMetricStripView(frame: CGRect(x: 0, y: 0, width: 390, height: 112))
+
+        strip.setNeedsLayout()
+        strip.layoutIfNeeded()
+
+        let icons = descendants(of: UIImageView.self, in: strip)
+        let iconContainers = descendants(of: UIView.self, in: strip).filter {
+            $0.accessibilityIdentifier == "room-metric-icon-container"
+        }
+        let titleValues = Set(["LIVE", "Excellent", "Host", "Mic On", "5"])
+        let titles = descendants(of: UILabel.self, in: strip).filter {
+            titleValues.contains($0.text?.trimmingCharacters(in: .whitespaces) ?? "")
+        }
+        let iconFrames = iconContainers.map { $0.convert($0.bounds, to: strip) }
+        let titleFrames = titles.map { $0.convert($0.bounds, to: strip) }
+
+        #expect(icons.count == 5)
+        #expect(iconContainers.count == 5)
+        #expect(titleFrames.count == 5)
+        #expect(verticalSpread(of: iconFrames) < 0.5)
+        #expect(verticalSpread(of: titleFrames) < 0.5)
+        #expect((iconFrames.map(\.maxY).max() ?? 0) <= (titleFrames.map(\.minY).min() ?? 0))
+
+        let liveLabel = titles.first {
+            $0.text?.trimmingCharacters(in: .whitespaces) == "LIVE"
+        }
+        #expect(liveLabel?.layer.cornerRadius == (liveLabel?.bounds.height ?? 0) / 2)
+    }
+
     @Test func capsuleLabelsUseHalfHeightCornerRadius() {
         let label = CapsuleLabel(frame: CGRect(x: 0, y: 0, width: 74, height: 24))
 
@@ -126,4 +245,59 @@ private func descendantUnionBounds(in rootView: UIView) -> CGRect {
 
     visit(rootView)
     return result
+}
+
+@MainActor
+private func truncatedLabels(in rootView: UIView) -> [UILabel] {
+    var result: [UILabel] = []
+
+    func visit(_ view: UIView) {
+        if let label = view as? UILabel,
+           label.isHidden == false,
+           label.intrinsicContentSize.width > label.bounds.width + 0.5 {
+            result.append(label)
+        }
+        view.subviews.forEach(visit)
+    }
+
+    visit(rootView)
+    return result
+}
+
+@MainActor
+private func descendants<View: UIView>(of type: View.Type, in rootView: UIView) -> [View] {
+    var result: [View] = []
+
+    func visit(_ view: UIView) {
+        if let match = view as? View {
+            result.append(match)
+        }
+        view.subviews.forEach(visit)
+    }
+
+    rootView.subviews.forEach(visit)
+    return result
+}
+
+private func verticalSpread(of frames: [CGRect]) -> CGFloat {
+    guard let minimum = frames.map(\.minY).min(),
+          let maximum = frames.map(\.minY).max() else {
+        return .infinity
+    }
+    return maximum - minimum
+}
+
+@MainActor
+private func menuActions(in menu: UIMenu?) -> [UIAction] {
+    guard let menu else { return [] }
+    return menu.children.flatMap { element -> [UIAction] in
+        if let action = element as? UIAction { return [action] }
+        if let submenu = element as? UIMenu { return menuActions(in: submenu) }
+        return []
+    }
+}
+
+@MainActor
+private func menuActionTitles(in menu: UIMenu?) -> [String] {
+    menuActions(in: menu).map(\.title)
 }

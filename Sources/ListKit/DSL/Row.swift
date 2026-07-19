@@ -14,6 +14,30 @@ public enum RowRefreshPolicy: Equatable, Sendable {
     case alwaysVisible
 }
 
+/// 相同 identity 的可见 Row 在内容刷新时使用的过渡。
+public struct ListContentTransition: Equatable, Sendable {
+    enum Storage: Equatable, Sendable {
+        case identity
+        case opacity(duration: TimeInterval)
+    }
+
+    let storage: Storage
+
+    private init(storage: Storage) {
+        self.storage = storage
+    }
+
+    /// 直接更新内容，不额外创建动画。
+    public static let identity = ListContentTransition(storage: .identity)
+    /// 使用 0.2 秒系统淡入淡出更新内容。
+    public static let opacity = ListContentTransition(storage: .opacity(duration: 0.2))
+
+    /// 使用指定时长的淡入淡出更新内容。
+    public static func opacity(duration: TimeInterval) -> ListContentTransition {
+        ListContentTransition(storage: .opacity(duration: max(0, duration)))
+    }
+}
+
 /// section 选择模式描述。
 public enum ListSelectionMode: Equatable, Sendable {
     /// 不启用选择。
@@ -39,6 +63,8 @@ public struct AnyListRow {
     public let selectionFollowsFocus: Bool?
     public let isSpringLoadingEnabled: Bool?
     public let showsOutlineDisclosure: Bool
+    public let contentTransition: ListContentTransition
+    public let outlineAnimation: ListAnimationPolicy
 
     let register: @MainActor (UICollectionView) -> Void
     let cellProvider: @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionViewCell
@@ -169,6 +195,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     private var rowSelectionFollowsFocus: Bool?
     private var rowIsSpringLoadingEnabled: Bool?
     private var rowShowsOutlineDisclosure = false
+    private var rowContentTransition: ListContentTransition = .identity
+    private var rowOutlineAnimation: ListAnimationPolicy = .automatic
     private var rowSelectHandler: (@MainActor (ListContext) -> Void)?
     private var rowDeselectHandler: (@MainActor (ListContext) -> Void)?
     private var rowSelectionChangeHandler: (@MainActor (Bool, ListContext) -> Void)?
@@ -278,6 +306,13 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
+    /// 设置相同 identity 的可见内容刷新过渡。
+    public func contentTransition(_ transition: ListContentTransition) -> Self {
+        var copy = self
+        copy.rowContentTransition = transition
+        return copy
+    }
+
     /// 绑定 UIKit 选中事件。
     ///
     /// - Parameter handler: cell 被选中时在主线程调用的闭包。
@@ -359,9 +394,18 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     }
 
     /// 在 `UICollectionViewListCell` 上展示系统 outline disclosure accessory。
+    /// 当 Row 是 `DisclosureGroup` 父节点且 section 允许选择时，点击整行也会使用
+    /// 当前 section snapshot 执行原生展开/收起动画。
     public func outlineDisclosure(_ visible: Bool = true) -> Self {
         var copy = self
         copy.rowShowsOutlineDisclosure = visible
+        return copy
+    }
+
+    /// 设置用户点击当前 disclosure Row 时的 outline 动画策略。
+    public func outlineAnimation(_ policy: ListAnimationPolicy) -> Self {
+        var copy = self
+        copy.rowOutlineAnimation = policy
         return copy
     }
 
@@ -616,6 +660,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
             selectionFollowsFocus: rowSelectionFollowsFocus,
             isSpringLoadingEnabled: rowIsSpringLoadingEnabled,
             showsOutlineDisclosure: rowShowsOutlineDisclosure,
+            contentTransition: rowContentTransition,
+            outlineAnimation: rowOutlineAnimation,
             register: { collectionView in
                 collectionView.lk.register(cellType)
             },
@@ -911,6 +957,7 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     private var rowVariant: AnyListID?
     private var rowRefreshID: AnyListID?
     private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
+    private var rowContentTransition: ListContentTransition = .identity
     private var rowSelectHandler: (@MainActor (ListContext) -> Void)?
     private var rowDisplayHandler: (@MainActor (UICollectionViewCell, ListContext) -> Void)?
     private var rowEndDisplayHandler: (@MainActor (UICollectionViewCell, ListContext) -> Void)?
@@ -993,6 +1040,13 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
         return copy
     }
 
+    /// 设置 ProviderRow 的可见内容刷新过渡。
+    public func contentTransition(_ transition: ListContentTransition) -> Self {
+        var copy = self
+        copy.rowContentTransition = transition
+        return copy
+    }
+
     /// 绑定选中事件。
     ///
     /// - Parameter handler: cell 被选中时在主线程调用的闭包。
@@ -1044,6 +1098,8 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
                 selectionFollowsFocus: nil,
                 isSpringLoadingEnabled: nil,
                 showsOutlineDisclosure: false,
+                contentTransition: rowContentTransition,
+                outlineAnimation: .automatic,
                 register: registerProvider,
                 cellProvider: cellProvider,
                 configureVisibleCell: visibleCellConfigurator,

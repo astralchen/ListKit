@@ -8,7 +8,7 @@ import UIKit
 /// ```swift
 /// private lazy var adapter = CollectionListAdapter<Section>(collectionView: collectionView)
 ///
-/// adapter.apply(animatingDifferences: false) {
+/// adapter.apply(transaction: .disabled) {
 ///     ListSection(.users) {
 ///         ForEach(users, id: \.userID) { user in
 ///             Row(model: user, cell: UserCell.self) { cell, user, context in
@@ -55,6 +55,7 @@ where SectionID: Hashable & Sendable {
     /// 最近一次 compositional layout provider/helper 产生的 diagnostics。
     public private(set) var lastLayoutDiagnostics: [ListDiagnosticsIssue] = []
     private(set) var layoutInvalidationGeneration = 0
+    private(set) var outlineAnimationGeneration = 0
 
     private weak var collectionView: UICollectionView?
     private var sections: [ListSection<SectionID>] = []
@@ -72,6 +73,10 @@ where SectionID: Hashable & Sendable {
     private var contextMenuItemsProvider: (@MainActor ([ListContext], CGPoint) -> UIContextMenuConfiguration?)?
     private var activeContextMenu: (row: AnyListRow, indexPath: IndexPath)?
     private var indexTitleEntries: [CollectionIndexTitleEntry] = []
+    private var preservedAnchorBottomInsetCompensation: CGFloat = 0
+    private var temporaryAnchorBaseBottomInset: CGFloat?
+    private var isSerialApplyActive = false
+    private var serialApplyWaiters: [CheckedContinuation<Void, Never>] = []
     private let eventRouter = ListEventRouter<ListContext>()
 
     /// 创建 adapter 并接管 collection view 的 data source、delegate 和 prefetch data source。
@@ -146,125 +151,52 @@ where SectionID: Hashable & Sendable {
         layoutDelegate ?? (collectionDelegate as? UICollectionViewDelegateFlowLayout)
     }
 
-    /// 重建列表描述树并应用到 diffable data source。
-    ///
-    /// - Important: identity 变化由 diffable 处理插入/删除；identity 不变时按 Row refresh policy 决定是否重配。
-    /// - Parameters:
-    ///   - animatingDifferences: 是否使用 diffable 动画应用 snapshot。
-    ///   - content: 生成当前 section 描述树的 builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
+    /// 提交一次列表更新。需要等待所有动画和可见刷新完成时使用 async 重载。
     @discardableResult
     public func apply(
-        animatingDifferences: Bool = true,
+        options: ListApplyOptions,
+        completion: ((ListApplySummary) -> Void)? = nil,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
     ) -> ListApplyResult<SectionID> {
-        apply(animatingDifferences: animatingDifferences, completion: nil, content)
+        _apply(options: options, completion: completion, content)
     }
 
-    /// 重建列表描述树并在 diffable apply 完成后执行回调。
-    ///
-    /// - Usage:
-    /// ```swift
-    /// adapter.apply(animatingDifferences: false, completion: { [weak adapter] in
-    ///     adapter?.scrollToLastItem(in: .messages, animated: true)
-    /// }) {
-    ///     ListSection(.messages) {
-    ///         ForEach(messages, id: \.messageID) { message in
-    ///             Row(model: message, cell: MessageCell.self) { cell, message, _ in
-    ///                 cell.configure(message)
-    ///             }
-    ///         }
-    ///     }
-    /// }
-    /// ```
-    /// - Parameters:
-    ///   - animatingDifferences: 是否使用 diffable 动画应用 snapshot。
-    ///   - completion: diffable apply 完成后的回调，常用于滚动到最新消息。
-    ///   - content: 生成当前 section 描述树的 builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
+    /// 以 SwiftUI 风格的 transaction 提交更新。
     @discardableResult
     public func apply(
-        animatingDifferences: Bool = true,
-        completion: (() -> Void)?,
+        transaction: ListTransaction = .automatic,
+        completion: ((ListApplySummary) -> Void)? = nil,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
     ) -> ListApplyResult<SectionID> {
         apply(
-            options: ListApplyOptions(animatingDifferences: animatingDifferences),
+            options: ListApplyOptions(transaction: transaction),
             completion: completion,
             content
         )
     }
 
-    /// 应用已经构建好的 section 数组。
-    ///
-    /// - Parameters:
-    ///   - sections: 原生 `ListSection` 数组。
-    ///   - animatingDifferences: 是否使用 diffable 动画应用 snapshot。
-    ///   - completion: diffable apply 完成后的回调。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
-    /// - Important: 旧 provider section 使用 deprecated 迁移入口，不要传入此方法。
+    /// 提交已经构建好的 section 数组。
     @discardableResult
     public func apply(
         _ sections: [ListSection<SectionID>],
-        animatingDifferences: Bool = true,
-        completion: (() -> Void)? = nil
+        options: ListApplyOptions,
+        completion: ((ListApplySummary) -> Void)? = nil
     ) -> ListApplyResult<SectionID> {
-        apply(animatingDifferences: animatingDifferences, completion: completion) {
-            sections
-        }
+        apply(options: options, completion: completion) { sections }
     }
 
-    /// 使用 apply 级刷新策略重建列表描述树。
-    ///
-    /// - Parameters:
-    ///   - refreshStrategy: 覆盖 Row 自身 refresh policy 的全局刷新策略。
-    ///   - animatingDifferences: 是否使用 diffable 动画应用 snapshot。
-    ///   - content: 生成当前 section 描述树的 builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
+    /// 以 transaction 提交已经构建好的 sections。
     @discardableResult
     public func apply(
-        refresh refreshStrategy: ListApplyRefreshStrategy,
-        animatingDifferences: Bool = true,
-        @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
+        _ sections: [ListSection<SectionID>],
+        transaction: ListTransaction = .automatic,
+        completion: ((ListApplySummary) -> Void)? = nil
     ) -> ListApplyResult<SectionID> {
         apply(
-            options: ListApplyOptions(
-                animatingDifferences: animatingDifferences,
-                refreshStrategy: refreshStrategy
-            ),
-            completion: nil,
-            content
+            sections,
+            options: ListApplyOptions(transaction: transaction),
+            completion: completion
         )
-    }
-
-    /// 使用完整 options 重建列表描述树。
-    ///
-    /// - Parameters:
-    ///   - options: diffable 动画、刷新策略和诊断策略。
-    ///   - content: 生成当前 section 描述树的 builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
-    @discardableResult
-    public func apply(
-        options: ListApplyOptions,
-        @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
-    ) -> ListApplyResult<SectionID> {
-        apply(options: options, completion: nil, content)
-    }
-
-    /// 使用完整 options 重建列表描述树，并在 diffable apply 完成后执行回调。
-    ///
-    /// - Parameters:
-    ///   - options: diffable 动画、刷新策略和诊断策略。
-    ///   - completion: diffable apply 完成后的回调。
-    ///   - content: 生成当前 section 描述树的 builder。
-    /// - Returns: 本次 apply 的摘要和事件绑定入口。
-    @discardableResult
-    public func apply(
-        options: ListApplyOptions,
-        completion: (() -> Void)?,
-        @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
-    ) -> ListApplyResult<SectionID> {
-        _apply(options: options, completion: { _ in completion?() }, content)
     }
 
     private func _apply(
@@ -273,6 +205,9 @@ where SectionID: Hashable & Sendable {
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
     ) -> ListApplyResult<SectionID> {
         let newSections = content()
+        let resolvedTransaction = options.transaction.resolved(
+            reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+        )
         let newLayoutSignature = Self.makeLayoutSignature(from: newSections)
         let shouldInvalidateLayout = layoutSignature != newLayoutSignature
         let diagnosticsIssues = ListDiagnostics.validate(newSections)
@@ -282,14 +217,42 @@ where SectionID: Hashable & Sendable {
             options: options,
             diagnosticsIssues: diagnosticsIssues
         )
+        let previousDataSourceSnapshot = dataSource.snapshot()
+        let outlineSectionsNeedingAnimation = Set(newSections.compactMap { section -> AnyListID? in
+            guard section.hasOutlineHierarchy else { return nil }
+            let sectionID = AnyListID(section.id)
+            guard previousDataSourceSnapshot.sectionIdentifiers.contains(sectionID) else {
+                return sectionID
+            }
+            let previousOutline = dataSource.snapshot(for: sectionID)
+            let nextOutline = Self.makeOutlineSnapshot(from: section.outlineRoots)
+            return Self.outlineSnapshotsAreEquivalent(previousOutline, nextOutline) ? nil : sectionID
+        })
 
         if !applyPlan.shouldApplyDiffable {
-            let summary = applyPlan.initialSummary
+            let summary = applyPlan.initialSummary.replacingAnimation(
+                ListAnimationSummary(
+                    completionState: .completed,
+                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                )
+            )
             lastApplySummary = summary
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options)
             completion?(summary)
             return ListApplyResult(adapter: self, summary: summary)
+        }
+
+        let visibleAnchor: ListVisibleRowAnchor?
+        switch resolvedTransaction.scrollBehavior.storage {
+        case .preserveVisiblePosition(let target):
+            visibleAnchor = captureVisibleRowAnchor(for: target)
+            if let visibleAnchor {
+                reserveScrollRange(for: visibleAnchor)
+            }
+        case .none, .scrollTo, .scrollToLast:
+            visibleAnchor = nil
+            cancelTemporaryAnchorReservation()
         }
 
         applyGeneration += 1
@@ -304,7 +267,16 @@ where SectionID: Hashable & Sendable {
         for section in newSections {
             let sectionID = AnyListID(section.id)
             snapshot.appendSections([sectionID])
-            if !section.hasOutlineHierarchy {
+            if section.hasOutlineHierarchy {
+                guard previousDataSourceSnapshot.sectionIdentifiers.contains(sectionID) else { continue }
+                let newIdentities = Set(section.rows.map(\.identity))
+                let retainedIdentities = previousDataSourceSnapshot
+                    .itemIdentifiers(inSection: sectionID)
+                    .filter(newIdentities.contains)
+                if !retainedIdentities.isEmpty {
+                    snapshot.appendItems(retainedIdentities, toSection: sectionID)
+                }
+            } else {
                 snapshot.appendItems(section.rows.map(\.identity), toSection: sectionID)
             }
         }
@@ -319,7 +291,9 @@ where SectionID: Hashable & Sendable {
             }
         }
 
-        let summary = applyPlan.initialSummary
+        let summary = applyPlan.initialSummary.replacingAnimation(
+            ListAnimationSummary(reduceMotionApplied: resolvedTransaction.reduceMotionApplied)
+        )
         lastApplySummary = summary
         ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
 
@@ -327,28 +301,73 @@ where SectionID: Hashable & Sendable {
         let finishApply = { [weak self] in
             guard let self else { return }
             guard self.applyGeneration == generation else {
-                completion?(summary)
+                let supersededSummary = summary.replacingAnimation(
+                    ListAnimationSummary(
+                        completionState: .superseded,
+                        reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                    )
+                )
+                ListApplyLogger.logApplySummary(supersededSummary, options: options)
+                completion?(supersededSummary)
                 return
             }
             self.isApplyingSnapshot = false
             self.reconcileSelection()
-            if shouldInvalidateLayout {
-                self.layoutInvalidationGeneration += 1
-                self.collectionView?.collectionViewLayout.invalidateLayout()
+            self.performLayoutUpdate(
+                invalidating: shouldInvalidateLayout,
+                animated: resolvedTransaction.layoutAnimation
+            ) { layoutAnimated in
+                let metrics = CollectionApplyAnimationMetrics()
+                metrics.layoutAnimated = layoutAnimated
+                let animationCoordinator = ListAnimationCompletionCoordinator {
+                    let snapshotAnimated = options.applicationMode == .differences
+                        && resolvedTransaction.snapshotAnimation
+                        && (applyPlan.initialSummary.insertedCount > 0
+                            || applyPlan.initialSummary.deletedCount > 0
+                            || applyPlan.initialSummary.movedCount > 0
+                            || applyPlan.initialSummary.snapshotRefreshCount > 0)
+                    let completedSummary = applyPlan.completedSummary(
+                        visibleRefreshCount: metrics.visibleRefreshCount,
+                        visibleSupplementaryRefreshCount: metrics.visibleSupplementaryRefreshCount,
+                        animation: ListAnimationSummary(
+                            completionState: .completed,
+                            snapshotAnimated: snapshotAnimated,
+                            animatedSectionCount: snapshotAnimated ? applyPlan.changedSectionCount : 0,
+                            outlineAnimatedSectionCount: resolvedTransaction.outlineAnimation
+                                ? outlineSectionsNeedingAnimation.count
+                                : 0,
+                            contentTransitionCount: metrics.contentTransitionCount,
+                            layoutInvalidated: shouldInvalidateLayout,
+                            layoutAnimated: metrics.layoutAnimated,
+                            scrollAnimated: metrics.scrollOutcome.animated,
+                            anchorCompensation: metrics.scrollOutcome.anchorCompensation,
+                            reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                        )
+                    )
+                    self.lastApplySummary = completedSummary
+                    ListApplyLogger.logApplySummary(completedSummary, options: options)
+                    completion?(completedSummary)
+                }
+
+                if applyPlan.shouldRunVisibleRefresh {
+                    let refresh = self.refreshVisibleRowsIfNeeded(
+                        applyPlan: applyPlan,
+                        animatingContent: resolvedTransaction.contentAnimation,
+                        coordinator: animationCoordinator
+                    )
+                    metrics.visibleRefreshCount = refresh.refreshedCount
+                    metrics.contentTransitionCount = refresh.transitionCount
+                    metrics.visibleSupplementaryRefreshCount = self.refreshVisibleSupplementariesIfNeeded(
+                        applyPlan: applyPlan
+                    )
+                }
+                metrics.scrollOutcome = self.performScrollBehavior(
+                    resolvedTransaction.scrollBehavior,
+                    visibleAnchor: visibleAnchor,
+                    animated: resolvedTransaction.scrollAnimation
+                )
+                animationCoordinator.finishScheduling()
             }
-            let visibleRefreshCount = applyPlan.shouldRunVisibleRefresh
-                ? self.refreshVisibleRowsIfNeeded(applyPlan: applyPlan)
-                : 0
-            let visibleSupplementaryRefreshCount = applyPlan.shouldRunVisibleRefresh
-                ? self.refreshVisibleSupplementariesIfNeeded(applyPlan: applyPlan)
-                : 0
-            let completedSummary = applyPlan.completedSummary(
-                visibleRefreshCount: visibleRefreshCount,
-                visibleSupplementaryRefreshCount: visibleSupplementaryRefreshCount
-            )
-            self.lastApplySummary = completedSummary
-            ListApplyLogger.logApplySummary(completedSummary, options: options)
-            completion?(completedSummary)
         }
         let finishApplyBox = ListMainActorCallbackBox(finishApply)
         // UIKit can invoke this completion from its internal diffing queue before
@@ -362,7 +381,9 @@ where SectionID: Hashable & Sendable {
             }
             self.applyOutlineSnapshots(
                 generation: generation,
-                animatingDifferences: options.animatingDifferences,
+                animatedSectionIDs: resolvedTransaction.outlineAnimation
+                    ? outlineSectionsNeedingAnimation
+                    : [],
                 completion: { finishApplyBox.call() }
             )
         }
@@ -372,7 +393,7 @@ where SectionID: Hashable & Sendable {
         case .differences:
             dataSource.apply(
                 snapshot,
-                animatingDifferences: options.animatingDifferences,
+                animatingDifferences: resolvedTransaction.snapshotAnimation,
                 completion: didApply
             )
         case .reloadData:
@@ -386,35 +407,53 @@ where SectionID: Hashable & Sendable {
         return ListApplyResult(adapter: self, summary: summary)
     }
 
-    /// 重建描述树并等待 UIKit 完成 snapshot、selection、layout 和可见刷新。
-    ///
-    /// 返回值包含最终 summary，适合后续滚动、焦点或依赖最终布局的工作。
+    /// 重建描述树并等待 snapshot、outline、layout 和内容过渡完成。
     @discardableResult
-    public func apply(
-        options: ListApplyOptions = ListApplyOptions(),
+    public func applyAndWait(
+        options: ListApplyOptions,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
     ) async -> ListApplyResult<SectionID> {
         let builtSections = content()
-        return await withCheckedContinuation { continuation in
+        let usesSerialScheduling = options.transaction.updatePolicy == .serial
+        if usesSerialScheduling {
+            await acquireSerialApplySlot()
+        }
+        if Task.isCancelled {
+            if usesSerialScheduling { releaseSerialApplySlot() }
+            let resolved = options.transaction.resolved(
+                reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+            )
+            return ListApplyResult(
+                adapter: self,
+                summary: ListApplySummary(
+                    animation: ListAnimationSummary(
+                        completionState: .cancelledBeforeCommit,
+                        reduceMotionApplied: resolved.reduceMotionApplied
+                    )
+                )
+            )
+        }
+
+        let result = await withCheckedContinuation { continuation in
             _ = _apply(options: options, completion: { [weak self] summary in
                 continuation.resume(returning: ListApplyResult(adapter: self, summary: summary))
             }) {
                 builtSections
             }
         }
+        if usesSerialScheduling {
+            releaseSerialApplySlot()
+        }
+        return result
     }
 
-    /// 迁移兼容入口：新页面优先使用 `apply { ListSection { Row(...) } }`。
-    @available(*, deprecated, message: "Migration-only compatibility. Prefer apply { ListSection { Row(...) } }.")
+    /// 提交 transaction，并等待 snapshot、outline、layout 和内容过渡完成。
     @discardableResult
-    public func apply(
-        _ providerSections: [ListProviderSection<SectionID>],
-        animatingDifferences: Bool = true,
-        completion: (() -> Void)? = nil
-    ) -> ListApplyResult<SectionID> {
-        apply(animatingDifferences: animatingDifferences, completion: completion) {
-            providerSections.map { $0.makeListSection() }
-        }
+    public func applyAndWait(
+        transaction: ListTransaction = .automatic,
+        @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
+    ) async -> ListApplyResult<SectionID> {
+        await applyAndWait(options: ListApplyOptions(transaction: transaction), content)
     }
 
     /// 绑定自定义业务事件。
@@ -472,6 +511,13 @@ where SectionID: Hashable & Sendable {
 
     public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let row = row(at: indexPath) else { return }
+        if toggleOutlineDisclosureIfNeeded(for: row, at: indexPath) {
+            collectionView.deselectItem(at: indexPath, animated: false)
+            let context = context(for: indexPath, identity: row.identity)
+            row.selectHandler?(context)
+            collectionDelegate?.collectionView?(collectionView, didSelectItemAt: indexPath)
+            return
+        }
         if selectionMode(at: indexPath) == .single {
             deselectOtherItems(in: indexPath.section, keeping: indexPath, collectionView: collectionView)
         }
@@ -1393,14 +1439,20 @@ where SectionID: Hashable & Sendable {
 
     private func applyOutlineSnapshots(
         generation: Int,
-        animatingDifferences: Bool,
+        animatedSectionIDs: Set<AnyListID>,
         completion: @escaping @MainActor () -> Void
     ) {
         let applications = sections.compactMap { section -> ListOutlineSnapshotApplication? in
             guard section.hasOutlineHierarchy else { return nil }
+            let sectionID = AnyListID(section.id)
+            let snapshot = Self.makeOutlineSnapshot(from: section.outlineRoots)
+            guard !Self.outlineSnapshotsAreEquivalent(dataSource.snapshot(for: sectionID), snapshot) else {
+                return nil
+            }
             return ListOutlineSnapshotApplication(
-                sectionID: AnyListID(section.id),
-                snapshot: Self.makeOutlineSnapshot(from: section.outlineRoots)
+                sectionID: sectionID,
+                snapshot: snapshot,
+                animatingDifferences: animatedSectionIDs.contains(sectionID)
             )
         }
         guard !applications.isEmpty else {
@@ -1411,7 +1463,6 @@ where SectionID: Hashable & Sendable {
             applications,
             at: 0,
             generation: generation,
-            animatingDifferences: animatingDifferences,
             completion: completion
         )
     }
@@ -1420,7 +1471,6 @@ where SectionID: Hashable & Sendable {
         _ applications: [ListOutlineSnapshotApplication],
         at index: Int,
         generation: Int,
-        animatingDifferences: Bool,
         completion: @escaping @MainActor () -> Void
     ) {
         guard applyGeneration == generation, let application = applications[safe: index] else {
@@ -1437,14 +1487,16 @@ where SectionID: Hashable & Sendable {
                 applications,
                 at: index + 1,
                 generation: generation,
-                animatingDifferences: animatingDifferences,
                 completion: completion
             )
+        }
+        if application.animatingDifferences {
+            outlineAnimationGeneration += 1
         }
         dataSource.apply(
             application.snapshot,
             to: application.sectionID,
-            animatingDifferences: animatingDifferences
+            animatingDifferences: application.animatingDifferences
         ) {
             nextApply.schedule()
         }
@@ -1467,9 +1519,50 @@ where SectionID: Hashable & Sendable {
         return snapshot
     }
 
+    private static func outlineSnapshotsAreEquivalent(
+        _ lhs: NSDiffableDataSourceSectionSnapshot<AnyListIdentity>,
+        _ rhs: NSDiffableDataSourceSectionSnapshot<AnyListIdentity>
+    ) -> Bool {
+        guard lhs.items == rhs.items, lhs.rootItems == rhs.rootItems else { return false }
+        return rhs.items.allSatisfy { identity in
+            lhs.parent(of: identity) == rhs.parent(of: identity)
+                && lhs.isExpanded(identity) == rhs.isExpanded(identity)
+        }
+    }
+
     private func notifyExpansionChange(identity: AnyListIdentity, isExpanded: Bool) {
         guard let section = sections.first(where: { AnyListID($0.id) == identity.sectionID }) else { return }
         section.expansionChangeHandler?(identity, isExpanded)
+    }
+
+    private func toggleOutlineDisclosureIfNeeded(
+        for row: AnyListRow,
+        at indexPath: IndexPath
+    ) -> Bool {
+        guard row.showsOutlineDisclosure,
+              let section = sections[safe: indexPath.section],
+              section.hasOutlineHierarchy else { return false }
+
+        let sectionID = AnyListID(section.id)
+        var snapshot = dataSource.snapshot(for: sectionID)
+        guard snapshot.contains(row.identity),
+              !snapshot.snapshot(of: row.identity).items.isEmpty else { return false }
+
+        let willExpand = !snapshot.isExpanded(row.identity)
+        if willExpand {
+            snapshot.expand([row.identity])
+        } else {
+            snapshot.collapse([row.identity])
+        }
+        let animatesOutline = ListTransaction(outlineAnimation: row.outlineAnimation)
+            .resolved(reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled)
+            .outlineAnimation
+        if animatesOutline {
+            outlineAnimationGeneration += 1
+        }
+        notifyExpansionChange(identity: row.identity, isExpanded: willExpand)
+        dataSource.apply(snapshot, to: sectionID, animatingDifferences: animatesOutline)
+        return true
     }
 
     private static func indexPath(
@@ -1537,23 +1630,76 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    private func refreshVisibleRowsIfNeeded(applyPlan: ListApplyPlan) -> Int {
-        guard let collectionView else { return 0 }
+    private func performLayoutUpdate(
+        invalidating shouldInvalidate: Bool,
+        animated: Bool,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        guard shouldInvalidate, let collectionView else {
+            completion(false)
+            return
+        }
+
+        layoutInvalidationGeneration += 1
+        if animated {
+            collectionView.performBatchUpdates {
+                collectionView.collectionViewLayout.invalidateLayout()
+                collectionView.layoutIfNeeded()
+            } completion: { finished in
+                completion(finished)
+            }
+        } else {
+            UIView.performWithoutAnimation {
+                collectionView.collectionViewLayout.invalidateLayout()
+                collectionView.layoutIfNeeded()
+            }
+            completion(false)
+        }
+    }
+
+    private func refreshVisibleRowsIfNeeded(
+        applyPlan: ListApplyPlan,
+        animatingContent: Bool,
+        coordinator: ListAnimationCompletionCoordinator
+    ) -> ListVisibleRefreshResult {
+        guard let collectionView else { return ListVisibleRefreshResult() }
         var refreshedCount = 0
+        var transitionCount = 0
         for indexPath in collectionView.indexPathsForVisibleItems {
             guard
                 let row = row(at: indexPath),
                 let rowSnapshot = applyPlan.newRowsByIdentity[row.identity],
-                applyPlan.oldRowsByIdentity[row.identity] != nil,
+                let oldRowSnapshot = applyPlan.oldRowsByIdentity[row.identity],
                 ListApplyPlanner.shouldRefreshVisibleRow(rowSnapshot)
             else { continue }
 
             if let cell = collectionView.cellForItem(at: indexPath) {
-                row.configureVisibleCell(cell, context(for: indexPath, identity: row.identity))
+                let context = context(for: indexPath, identity: row.identity)
+                if animatingContent,
+                   oldRowSnapshot.refreshID != rowSnapshot.refreshID,
+                   case .opacity(let duration) = row.contentTransition.storage,
+                   duration > 0 {
+                    coordinator.enter()
+                    UIView.transition(
+                        with: cell.contentView,
+                        duration: duration,
+                        options: [.transitionCrossDissolve, .beginFromCurrentState, .allowAnimatedContent]
+                    ) {
+                        row.configureVisibleCell(cell, context)
+                    } completion: { _ in
+                        coordinator.leave()
+                    }
+                    transitionCount += 1
+                } else {
+                    row.configureVisibleCell(cell, context)
+                }
                 refreshedCount += 1
             }
         }
-        return refreshedCount
+        return ListVisibleRefreshResult(
+            refreshedCount: refreshedCount,
+            transitionCount: transitionCount
+        )
     }
 
     private func refreshVisibleSupplementariesIfNeeded(
@@ -1697,6 +1843,184 @@ where SectionID: Hashable & Sendable {
         sections[safe: indexPath.section]?.rows[safe: indexPath.item]
     }
 
+    private func captureVisibleRowAnchor(for target: ListScrollTarget) -> ListVisibleRowAnchor? {
+        guard let collectionView else { return nil }
+        collectionView.layoutIfNeeded()
+
+        let visibleIndexPaths = Set(collectionView.indexPathsForVisibleItems)
+        guard
+            let indexPath = indexPaths(for: target)
+                .first(where: visibleIndexPaths.contains),
+            let identity = dataSource.itemIdentifier(for: indexPath),
+            let attributes = collectionView.collectionViewLayout.layoutAttributesForItem(at: indexPath)
+        else { return nil }
+
+        return ListVisibleRowAnchor(
+            identity: identity,
+            viewportMinY: attributes.frame.minY - collectionView.contentOffset.y,
+            horizontalContentOffset: collectionView.contentOffset.x,
+            baseBottomInset: temporaryAnchorBaseBottomInset
+                ?? collectionView.contentInset.bottom - preservedAnchorBottomInsetCompensation
+        )
+    }
+
+    private func reserveScrollRange(for anchor: ListVisibleRowAnchor) {
+        guard let collectionView else { return }
+        temporaryAnchorBaseBottomInset = anchor.baseBottomInset
+        let systemBottomInset = collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
+        let bottomInsetKeepingCurrentOffset = collectionView.contentOffset.y
+            + collectionView.bounds.height
+            - systemBottomInset
+        UIView.performWithoutAnimation {
+            collectionView.contentInset.bottom = max(
+                collectionView.contentInset.bottom,
+                bottomInsetKeepingCurrentOffset,
+                anchor.baseBottomInset
+            )
+        }
+    }
+
+    private func cancelTemporaryAnchorReservation() {
+        guard let collectionView, let baseBottomInset = temporaryAnchorBaseBottomInset else { return }
+        UIView.performWithoutAnimation {
+            collectionView.contentInset.bottom = baseBottomInset + preservedAnchorBottomInsetCompensation
+        }
+        temporaryAnchorBaseBottomInset = nil
+    }
+
+    private func restoreVisibleRowAnchor(_ anchor: ListVisibleRowAnchor) -> CGFloat {
+        guard let collectionView else { return 0 }
+        collectionView.layoutIfNeeded()
+
+        guard
+            let indexPath = Self.indexPath(for: anchor.identity, in: dataSource.snapshot()),
+            let attributes = collectionView.collectionViewLayout.layoutAttributesForItem(at: indexPath)
+        else {
+            preservedAnchorBottomInsetCompensation = 0
+            UIView.performWithoutAnimation {
+                collectionView.contentInset.bottom = anchor.baseBottomInset
+            }
+            temporaryAnchorBaseBottomInset = nil
+            return 0
+        }
+
+        let minimumOffsetY = -collectionView.adjustedContentInset.top
+        let desiredOffsetY = max(minimumOffsetY, attributes.frame.minY - anchor.viewportMinY)
+        let systemBottomInset = collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
+        let maximumOffsetWithoutCompensation = max(
+            minimumOffsetY,
+            collectionView.contentSize.height
+                - collectionView.bounds.height
+                + systemBottomInset
+                + anchor.baseBottomInset
+        )
+        let compensation = max(0, desiredOffsetY - maximumOffsetWithoutCompensation)
+
+        preservedAnchorBottomInsetCompensation = compensation
+        temporaryAnchorBaseBottomInset = nil
+        UIView.performWithoutAnimation {
+            collectionView.contentInset.bottom = anchor.baseBottomInset + compensation
+            collectionView.layoutIfNeeded()
+            collectionView.setContentOffset(
+                CGPoint(x: anchor.horizontalContentOffset, y: desiredOffsetY),
+                animated: false
+            )
+        }
+        return compensation
+    }
+
+    private func normalizeAnchorCompensation() -> CGFloat {
+        guard let collectionView else { return 0 }
+        guard temporaryAnchorBaseBottomInset != nil || preservedAnchorBottomInsetCompensation > 0 else {
+            return 0
+        }
+        cancelTemporaryAnchorReservation()
+        let baseBottomInset = collectionView.contentInset.bottom - preservedAnchorBottomInsetCompensation
+        let systemBottomInset = collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
+        let minimumOffsetY = -collectionView.adjustedContentInset.top
+        let maximumOffsetWithoutCompensation = max(
+            minimumOffsetY,
+            collectionView.contentSize.height
+                - collectionView.bounds.height
+                + systemBottomInset
+                + baseBottomInset
+        )
+        let compensation = max(0, collectionView.contentOffset.y - maximumOffsetWithoutCompensation)
+        preservedAnchorBottomInsetCompensation = compensation
+        UIView.performWithoutAnimation {
+            collectionView.contentInset.bottom = baseBottomInset + compensation
+        }
+        return compensation
+    }
+
+    private func performScrollBehavior(
+        _ behavior: ListScrollBehavior,
+        visibleAnchor: ListVisibleRowAnchor?,
+        animated: Bool
+    ) -> ListScrollOutcome {
+        guard let collectionView else { return ListScrollOutcome() }
+        collectionView.layoutIfNeeded()
+
+        switch behavior.storage {
+        case .none:
+            return ListScrollOutcome(anchorCompensation: normalizeAnchorCompensation())
+        case .preserveVisiblePosition:
+            guard let visibleAnchor else {
+                return ListScrollOutcome(anchorCompensation: normalizeAnchorCompensation())
+            }
+            return ListScrollOutcome(anchorCompensation: restoreVisibleRowAnchor(visibleAnchor))
+        case .scrollTo(let target, let position):
+            let compensation = normalizeAnchorCompensation()
+            guard let indexPath = indexPaths(for: target).first else {
+                return ListScrollOutcome(anchorCompensation: compensation)
+            }
+            collectionView.scrollToItem(
+                at: indexPath,
+                at: position.collectionViewPosition,
+                animated: animated
+            )
+            return ListScrollOutcome(animated: animated, anchorCompensation: compensation)
+        case .scrollToLast(let sectionID, let position):
+            let compensation = normalizeAnchorCompensation()
+            guard let indexPath = lastItemIndexPath(inAnySectionID: sectionID) else {
+                return ListScrollOutcome(anchorCompensation: compensation)
+            }
+            collectionView.scrollToItem(
+                at: indexPath,
+                at: position.collectionViewPosition,
+                animated: animated
+            )
+            return ListScrollOutcome(animated: animated, anchorCompensation: compensation)
+        }
+    }
+
+    private func indexPaths(for target: ListScrollTarget) -> [IndexPath] {
+        let snapshot = dataSource.snapshot()
+        return snapshot.itemIdentifiers.compactMap { identity in
+            guard identity.rowID == target.rowID,
+                  target.sectionID == nil || identity.sectionID == target.sectionID else { return nil }
+            return Self.indexPath(for: identity, in: snapshot)
+        }
+    }
+
+    private func acquireSerialApplySlot() async {
+        if !isSerialApplyActive {
+            isSerialApplyActive = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            serialApplyWaiters.append(continuation)
+        }
+    }
+
+    private func releaseSerialApplySlot() {
+        guard !serialApplyWaiters.isEmpty else {
+            isSerialApplyActive = false
+            return
+        }
+        serialApplyWaiters.removeFirst().resume()
+    }
+
     private func lastItemIndexPath(in sectionID: SectionID?) -> IndexPath? {
         if let sectionID {
             guard
@@ -1711,6 +2035,19 @@ where SectionID: Hashable & Sendable {
             return IndexPath(item: itemIndex, section: sectionIndex)
         }
         return nil
+    }
+
+    private func lastItemIndexPath(inAnySectionID sectionID: AnyListID?) -> IndexPath? {
+        let snapshot = dataSource.snapshot()
+        if let sectionID {
+            guard let section = snapshot.indexOfSection(sectionID),
+                  let identity = snapshot.itemIdentifiers(inSection: sectionID).last,
+                  let item = snapshot.itemIdentifiers(inSection: sectionID).firstIndex(of: identity)
+            else { return nil }
+            return IndexPath(item: item, section: section)
+        }
+        guard let identity = snapshot.itemIdentifiers.last else { return nil }
+        return Self.indexPath(for: identity, in: snapshot)
     }
 
     private func visibleIndexPaths<RowID>(
@@ -1803,6 +2140,43 @@ private struct VisibleSupplementaryTarget {
     let view: UICollectionReusableView
 }
 
+private struct ListVisibleRowAnchor {
+    let identity: AnyListIdentity
+    let viewportMinY: CGFloat
+    let horizontalContentOffset: CGFloat
+    let baseBottomInset: CGFloat
+}
+
+private struct ListVisibleRefreshResult {
+    var refreshedCount = 0
+    var transitionCount = 0
+}
+
+private struct ListScrollOutcome {
+    var animated = false
+    var anchorCompensation: CGFloat = 0
+}
+
+@MainActor
+private final class CollectionApplyAnimationMetrics {
+    var visibleRefreshCount = 0
+    var visibleSupplementaryRefreshCount = 0
+    var contentTransitionCount = 0
+    var layoutAnimated = false
+    var scrollOutcome = ListScrollOutcome()
+}
+
+private extension ListScrollPosition {
+    var collectionViewPosition: UICollectionView.ScrollPosition {
+        switch self {
+        case .top: .top
+        case .center: .centeredVertically
+        case .bottom: .bottom
+        case .nearest: []
+        }
+    }
+}
+
 private struct ListSectionLayoutSignature: Hashable {
     let sectionID: AnyListID
     let layoutID: AnyListID?
@@ -1822,6 +2196,7 @@ private struct ListSupplementaryLayoutSignature: Hashable {
 private struct ListOutlineSnapshotApplication: Sendable {
     let sectionID: AnyListID
     let snapshot: NSDiffableDataSourceSectionSnapshot<AnyListIdentity>
+    let animatingDifferences: Bool
 }
 
 private final class ListMainActorCallbackBox: @unchecked Sendable {

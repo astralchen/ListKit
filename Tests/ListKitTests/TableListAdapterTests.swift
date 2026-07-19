@@ -17,6 +17,7 @@ final class TableListAdapterTests: XCTestCase {
                         cell.textValue = message.text
                     }
                     .refreshID(message.version)
+                    .contentTransition(.opacity)
                     .height(.fixed(64))
             }
         } header: {
@@ -35,6 +36,7 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(sections.count, 1)
         XCTAssertEqual(sections[0].rows.count, 2)
         XCTAssertEqual(sections[0].rows[0].identity.rowID.typed(Int.self), 1)
+        XCTAssertEqual(sections[0].rows[0].contentTransition, .opacity)
         XCTAssertEqual(sections[0].header?.identity.rowID.typed(String.self), "chrome")
         XCTAssertEqual(sections[0].footer?.identity.rowID.typed(String.self), "chrome")
         XCTAssertNotEqual(sections[0].header?.identity, sections[0].footer?.identity)
@@ -46,7 +48,7 @@ final class TableListAdapterTests: XCTestCase {
         var selectedMessageID: Int?
         var receivedEvent: MessageEvent?
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(
                     model: Message(id: 1, text: "A", version: 1),
@@ -76,11 +78,43 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(receivedEvent, .configure(messageID: 1))
     }
 
+    func testPreservingVisibleRowInShortTableDoesNotCreateAnchorInset() async {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(.messages) {
+                TableRow(1, model: "Anchor", cell: MessageTableCell.self) { _, _, _ in }
+                    .height(.fixed(44))
+            }
+        }
+        tableView.layoutIfNeeded()
+
+        let result = await adapter.applyAndWait(
+            transaction: ListTransaction.disabled.scrollBehavior(
+                .preserveVisiblePosition(of: ListScrollTarget(1, in: Section.messages))
+            )
+        ) {
+            TableSection(.messages) {
+                TableRow(1, model: "Anchor", cell: MessageTableCell.self) { _, _, _ in }
+                    .height(.fixed(44))
+                TableRow(2, model: "Trailing", cell: MessageTableCell.self) { _, _, _ in }
+                    .height(.fixed(44))
+            }
+        }
+
+        XCTAssertEqual(result.summary.animation.anchorCompensation, 0)
+        XCTAssertEqual(tableView.contentInset.bottom, 0)
+    }
+
     func testTableAdapterDiagnosticsAndRefreshSummary() {
         let tableView = UITableView(frame: .zero, style: .plain)
         let adapter = TableListAdapter<Section>(tableView: tableView)
         let options = ListApplyOptions(
-            animatingDifferences: false,
+            transaction: .disabled,
             refreshStrategy: .diffableOnly,
             diagnostics: .disabled
         )
@@ -118,7 +152,7 @@ final class TableListAdapterTests: XCTestCase {
 
         let duplicateResult = adapter.apply(
             options: ListApplyOptions(
-                animatingDifferences: false,
+                transaction: .disabled,
                 diagnostics: .init(mode: .warning, logsApplySummary: false)
             )
         ) {
@@ -141,7 +175,7 @@ final class TableListAdapterTests: XCTestCase {
         var committedDeleteID: Int?
         var moved: (source: Int, destination: Int)?
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(
                     model: Message(id: 1, text: "A", version: 1),
@@ -196,7 +230,7 @@ final class TableListAdapterTests: XCTestCase {
         var cancelledMessageID: Int?
         adapter.tableDelegate = tableDelegate
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(model: Message(id: 1, text: "A", version: 1), cell: MessageTableCell.self) { _, _, _ in }
                     .onEndDisplay { message, _, _ in endedMessageID = message.id }
@@ -209,7 +243,7 @@ final class TableListAdapterTests: XCTestCase {
         adapter.tableView(tableView, willDisplay: oldCell, forRowAt: oldIndexPath)
         adapter.tableView(tableView, prefetchRowsAt: [oldIndexPath])
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(model: Message(id: 2, text: "B", version: 1), cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -228,7 +262,7 @@ final class TableListAdapterTests: XCTestCase {
         let adapter = TableListAdapter<Int>(tableView: tableView)
         var deselectedMessageID: Int?
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             TableSection(0) {
                 TableRow(model: Message(id: 0, text: "None", version: 1), cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -271,7 +305,7 @@ final class TableListAdapterTests: XCTestCase {
         var committedDeleteID: Int?
         var moved: (source: Int, destination: Int)?
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(
                     model: Message(id: 1, text: "A", version: 1),
@@ -306,7 +340,10 @@ final class TableListAdapterTests: XCTestCase {
         var displayedHeader = false
         var endedFooter = false
 
-        adapter.apply(animatingDifferences: false) {
+        let applyCompleted = expectation(description: "table supplementary lifecycle apply")
+        adapter.apply(transaction: .disabled, completion: { _ in
+            applyCompleted.fulfill()
+        }) {
             TableSection(.messages) {
                 TableRow(
                     model: Message(id: 1, text: "A", version: 1),
@@ -330,6 +367,7 @@ final class TableListAdapterTests: XCTestCase {
                 }
             }
         }
+        wait(for: [applyCompleted], timeout: 1)
 
         let header = adapter.tableView(tableView, viewForHeaderInSection: 0) as? MessageHeaderView
         let footer = adapter.tableView(tableView, viewForFooterInSection: 0) as? MessageHeaderView
@@ -362,7 +400,7 @@ final class TableListAdapterTests: XCTestCase {
         let adapter = TableListAdapter<Section>(tableView: tableView)
         var configuredText = "A"
 
-        adapter.apply(animatingDifferences: false) {
+        adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(1, model: configuredText, cell: MessageTableCell.self) { cell, text, _ in
                     cell.textValue = text
@@ -393,7 +431,7 @@ final class TableListAdapterTests: XCTestCase {
 
         func apply(version: Int) -> TableApplyResult<Section> {
             let applyCompleted = expectation(description: "table supplementary apply \(version)")
-            let result = adapter.apply(animatingDifferences: false, completion: {
+            let result = adapter.apply(transaction: .disabled, completion: { _ in
                 applyCompleted.fulfill()
             }) {
                 TableSection(.messages) {
