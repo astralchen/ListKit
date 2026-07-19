@@ -6,6 +6,7 @@ enum LiveRoomSection: Hashable, Sendable {
     case studioControls
     case roomHero
     case roomMetrics
+    case apiGuide
     case roomActivityTitle
     case roomActivity
     case status
@@ -26,6 +27,10 @@ enum LiveRoomRowID: Hashable, Sendable {
     case studioControls
     case roomHero
     case roomMetrics
+    case apiGuideRoot
+    case apiAsyncApply
+    case apiStableIdentity
+    case apiNativeInteractions
     case roomActivityTitle
     case status
     case diagnostics
@@ -85,6 +90,8 @@ struct ApplyDiagnostics: Hashable, Sendable {
     var refreshIDChangedCount: Int = 0
     var visibleRefreshCount: Int = 0
     var diagnosticsIssueCount: Int = 0
+    var prefetchedItemCount: Int = 0
+    var cancelledPrefetchItemCount: Int = 0
 
     var refreshVersion: Int {
         var hasher = Hasher()
@@ -96,6 +103,8 @@ struct ApplyDiagnostics: Hashable, Sendable {
         hasher.combine(refreshIDChangedCount)
         hasher.combine(visibleRefreshCount)
         hasher.combine(diagnosticsIssueCount)
+        hasher.combine(prefetchedItemCount)
+        hasher.combine(cancelledPrefetchItemCount)
         return hasher.finalize()
     }
 
@@ -104,8 +113,15 @@ struct ApplyDiagnostics: Hashable, Sendable {
     }
 
     var refreshText: String {
-        "refreshID \(refreshIDChangedCount)  visible \(visibleRefreshCount)  diagnostics \(diagnosticsIssueCount)"
+        "refreshID \(refreshIDChangedCount)  visible \(visibleRefreshCount)  prefetch \(prefetchedItemCount)/−\(cancelledPrefetchItemCount)"
     }
+}
+
+struct ListKitCapability: Hashable, Sendable {
+    var id: LiveRoomRowID
+    var title: String
+    var detail: String
+    var symbolName: String
 }
 
 struct MicSeat: Identifiable, Hashable, Sendable {
@@ -180,6 +196,7 @@ struct LiveRoomState: Hashable, Sendable {
     var statusVersion: Int
     var messageSequence: Int
     var selectedGiftID: String
+    var isAPIGuideExpanded: Bool
     var pendingScrollMessageID: String?
     var micSeats: [MicSeat]
     var messages: [LiveMessage]
@@ -204,6 +221,7 @@ struct LiveRoomState: Hashable, Sendable {
             statusVersion: 1,
             messageSequence: 4,
             selectedGiftID: "rocket",
+            isAPIGuideExpanded: true,
             pendingScrollMessageID: nil,
             micSeats: [
                 MicSeat(id: "host", nickname: "Alex", role: "Host", level: 48, isSpeaking: true, isMuted: false, version: 1),

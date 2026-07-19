@@ -38,23 +38,58 @@ public struct InheritedTableRowID: Hashable, Sendable {
 }
 
 /// UITableView row/header/footer 配置和事件闭包收到的上下文。
-public struct TableListContext: @unchecked Sendable {
-    public let sectionID: AnyListID
+@MainActor
+public struct TableListContext {
+    /// 当前 row/header/footer 的稳定展示身份。
+    public let identity: AnyListIdentity
+    public var sectionID: AnyListID { identity.sectionID }
+    public var itemID: AnyListID { identity.rowID }
+    /// 事件发生时的位置；跨刷新逻辑应优先使用 `identity`。
     public let indexPath: IndexPath
-    public unowned let tableView: UITableView
+    private let tableViewReference: TableListViewReference
+
+    public var tableView: UITableView {
+        guard let tableView = tableViewReference.tableView else {
+            preconditionFailure("ListKit: TableListContext tableView was released")
+        }
+        return tableView
+    }
+
+    public var tableViewIfAvailable: UITableView? {
+        tableViewReference.tableView
+    }
 
     private let eventDispatcher: @MainActor (any ListEvent, TableListContext) -> Void
 
+    init(
+        identity: AnyListIdentity,
+        indexPath: IndexPath,
+        tableView: UITableView,
+        eventDispatcher: @escaping @MainActor (any ListEvent, TableListContext) -> Void
+    ) {
+        self.identity = identity
+        self.indexPath = indexPath
+        self.tableViewReference = TableListViewReference(tableView)
+        self.eventDispatcher = eventDispatcher
+    }
+
+    @available(*, deprecated, message: "Pass a stable AnyListIdentity instead of a positional sectionID.")
     init(
         sectionID: AnyListID,
         indexPath: IndexPath,
         tableView: UITableView,
         eventDispatcher: @escaping @MainActor (any ListEvent, TableListContext) -> Void
     ) {
-        self.sectionID = sectionID
-        self.indexPath = indexPath
-        self.tableView = tableView
-        self.eventDispatcher = eventDispatcher
+        self.init(
+            identity: AnyListIdentity(
+                sectionID: sectionID,
+                rowID: AnyListID(indexPath.row),
+                presentationID: ObjectIdentifier(LegacyTableListContextPresentation.self)
+            ),
+            indexPath: indexPath,
+            tableView: tableView,
+            eventDispatcher: eventDispatcher
+        )
     }
 
     /// 向 table adapter 发送业务事件。
@@ -71,7 +106,26 @@ public struct TableListContext: @unchecked Sendable {
     public func section<ID>(as type: ID.Type = ID.self) -> ID? where ID: Hashable & Sendable {
         sectionID.typed(type)
     }
+
+    public func item<ID>(as type: ID.Type = ID.self) -> ID? where ID: Hashable & Sendable {
+        itemID.typed(type)
+    }
+
+    public func row<ID>(as type: ID.Type = ID.self) -> ID? where ID: Hashable & Sendable {
+        item(as: type)
+    }
 }
+
+@MainActor
+private final class TableListViewReference {
+    weak var tableView: UITableView?
+
+    init(_ tableView: UITableView) {
+        self.tableView = tableView
+    }
+}
+
+private final class LegacyTableListContextPresentation {}
 
 /// 类型擦除后的 table row 描述。
 public struct AnyTableRow {
@@ -79,8 +133,14 @@ public struct AnyTableRow {
     public let refreshID: AnyListID?
     public let refreshPolicy: RowRefreshPolicy
     public let isSelected: Bool?
+    public let isSelectionDisabled: Bool
+    public let isFocusable: Bool?
+    public let selectionFollowsFocus: Bool?
+    public let isSpringLoadingEnabled: Bool?
     public let height: TableRowHeight?
     public let estimatedHeight: CGFloat?
+    public let indentationLevel: Int?
+    public let shouldIndentWhileEditing: Bool?
 
     let register: @MainActor (UITableView) -> Void
     let cellProvider: @MainActor (UITableView, IndexPath, TableListContext) -> UITableViewCell
@@ -88,14 +148,22 @@ public struct AnyTableRow {
     let selectHandler: (@MainActor (TableListContext) -> Void)?
     let deselectHandler: (@MainActor (TableListContext) -> Void)?
     let selectionChangeHandler: (@MainActor (Bool, TableListContext) -> Void)?
+    let highlightChangeHandler: (@MainActor (Bool, TableListContext) -> Void)?
+    let primaryActionHandler: (@MainActor (TableListContext) -> Void)?
+    let accessoryButtonHandler: (@MainActor (TableListContext) -> Void)?
     let displayHandler: (@MainActor (UITableViewCell, TableListContext) -> Void)?
     let endDisplayHandler: (@MainActor (UITableViewCell, TableListContext) -> Void)?
     let prefetchHandler: (@MainActor (TableListContext) -> Void)?
     let cancelPrefetchHandler: (@MainActor (TableListContext) -> Void)?
     let contextMenuProvider: (@MainActor (TableListContext) -> UIContextMenuConfiguration?)?
+    let contextMenuHighlightPreviewProvider: (@MainActor (TableListContext) -> UITargetedPreview?)?
+    let contextMenuDismissalPreviewProvider: (@MainActor (TableListContext) -> UITargetedPreview?)?
+    let contextMenuCommitHandler: (@MainActor (TableListContext, any UIContextMenuInteractionCommitAnimating) -> Void)?
     let editingStyle: UITableViewCell.EditingStyle?
     let commitEditingHandler: (@MainActor (UITableViewCell.EditingStyle, TableListContext) -> Void)?
+    let editingChangeHandler: (@MainActor (Bool, TableListContext) -> Void)?
     let moveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
+    let moveTargetProvider: (@MainActor (IndexPath, IndexPath) -> IndexPath)?
     let leadingSwipeActionsProvider: (@MainActor (TableListContext) -> UISwipeActionsConfiguration?)?
     let trailingSwipeActionsProvider: (@MainActor (TableListContext) -> UISwipeActionsConfiguration?)?
 }
@@ -155,19 +223,33 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     private var rowRefreshID: AnyListID?
     private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
     private var rowIsSelected: Bool?
+    private var rowIsSelectionDisabled = false
+    private var rowIsFocusable: Bool?
+    private var rowSelectionFollowsFocus: Bool?
+    private var rowIsSpringLoadingEnabled: Bool?
     private var rowHeight: TableRowHeight?
     private var rowEstimatedHeight: CGFloat?
+    private var rowIndentationLevel: Int?
+    private var rowShouldIndentWhileEditing: Bool?
     private var rowSelectHandler: (@MainActor (TableListContext) -> Void)?
     private var rowDeselectHandler: (@MainActor (TableListContext) -> Void)?
     private var rowSelectionChangeHandler: (@MainActor (Bool, TableListContext) -> Void)?
+    private var rowHighlightChangeHandler: (@MainActor (Bool, TableListContext) -> Void)?
+    private var rowPrimaryActionHandler: (@MainActor (TableListContext) -> Void)?
+    private var rowAccessoryButtonHandler: (@MainActor (TableListContext) -> Void)?
     private var rowDisplayHandler: (@MainActor (Cell, TableListContext) -> Void)?
     private var rowEndDisplayHandler: (@MainActor (Cell, TableListContext) -> Void)?
     private var rowPrefetchHandler: (@MainActor (TableListContext) -> Void)?
     private var rowCancelPrefetchHandler: (@MainActor (TableListContext) -> Void)?
     private var rowContextMenuProvider: (@MainActor (TableListContext) -> UIContextMenuConfiguration?)?
+    private var rowContextMenuHighlightPreviewProvider: (@MainActor (TableListContext) -> UITargetedPreview?)?
+    private var rowContextMenuDismissalPreviewProvider: (@MainActor (TableListContext) -> UITargetedPreview?)?
+    private var rowContextMenuCommitHandler: (@MainActor (TableListContext, any UIContextMenuInteractionCommitAnimating) -> Void)?
     private var rowEditingStyle: UITableViewCell.EditingStyle?
     private var rowCommitEditingHandler: (@MainActor (UITableViewCell.EditingStyle, TableListContext) -> Void)?
+    private var rowEditingChangeHandler: (@MainActor (Bool, TableListContext) -> Void)?
     private var rowMoveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
+    private var rowMoveTargetProvider: (@MainActor (IndexPath, IndexPath) -> IndexPath)?
     private var rowLeadingSwipeActionsProvider: (@MainActor (TableListContext) -> UISwipeActionsConfiguration?)?
     private var rowTrailingSwipeActionsProvider: (@MainActor (TableListContext) -> UISwipeActionsConfiguration?)?
     private var rowCellEventBinders: [CellEventBinder] = []
@@ -274,12 +356,54 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return copy
     }
 
+    /// 设置 UIKit table row 的缩进级别。
+    public func indentationLevel(_ level: Int) -> Self {
+        var copy = self
+        copy.rowIndentationLevel = level
+        return copy
+    }
+
+    /// 控制编辑状态下当前 row 是否缩进。
+    public func indentWhileEditing(_ enabled: Bool = true) -> Self {
+        var copy = self
+        copy.rowShouldIndentWhileEditing = enabled
+        return copy
+    }
+
     /// 设置 row 的初始选中状态。
     ///
     /// - Parameter isSelected: 是否选中。
     public func selected(_ isSelected: Bool = true) -> Self {
         var copy = self
         copy.rowIsSelected = isSelected
+        return copy
+    }
+
+    /// 禁止当前 Row 被选择，同时保留 section 级选择策略。
+    public func selectionDisabled(_ disabled: Bool = true) -> Self {
+        var copy = self
+        copy.rowIsSelectionDisabled = disabled
+        return copy
+    }
+
+    /// 控制焦点系统是否可以聚焦当前 Row。
+    public func focusable(_ isFocusable: Bool = true) -> Self {
+        var copy = self
+        copy.rowIsFocusable = isFocusable
+        return copy
+    }
+
+    /// 控制焦点移动时是否同步选择状态。
+    public func selectionFollowsFocus(_ enabled: Bool = true) -> Self {
+        var copy = self
+        copy.rowSelectionFollowsFocus = enabled
+        return copy
+    }
+
+    /// 控制当前 Row 是否响应 spring loading。
+    public func springLoadingEnabled(_ enabled: Bool = true) -> Self {
+        var copy = self
+        copy.rowIsSpringLoadingEnabled = enabled
         return copy
     }
 
@@ -337,6 +461,51 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         let boxedModel = TableMainActorValueBox(value: model)
         return onSelectionChange { isSelected, context in
             handler(boxedModel.value, isSelected, context)
+        }
+    }
+
+    /// 监听高亮状态变化。
+    public func onHighlightChange(_ handler: @escaping @MainActor (Bool, TableListContext) -> Void) -> Self {
+        var copy = self
+        copy.rowHighlightChangeHandler = handler
+        return copy
+    }
+
+    /// 监听高亮状态变化，并传入当前 model。
+    public func onHighlightChange(_ handler: @escaping @MainActor (Model, Bool, TableListContext) -> Void) -> Self {
+        let boxedModel = TableMainActorValueBox(value: model)
+        return onHighlightChange { highlighted, context in
+            handler(boxedModel.value, highlighted, context)
+        }
+    }
+
+    /// 监听键盘回车、遥控器等触发的主操作。
+    public func onPrimaryAction(_ handler: @escaping @MainActor (TableListContext) -> Void) -> Self {
+        var copy = self
+        copy.rowPrimaryActionHandler = handler
+        return copy
+    }
+
+    /// 监听主操作，并传入当前 model。
+    public func onPrimaryAction(_ handler: @escaping @MainActor (Model, TableListContext) -> Void) -> Self {
+        let boxedModel = TableMainActorValueBox(value: model)
+        return onPrimaryAction { context in
+            handler(boxedModel.value, context)
+        }
+    }
+
+    /// 监听 cell accessory button 点击。
+    public func onAccessoryButtonTap(_ handler: @escaping @MainActor (TableListContext) -> Void) -> Self {
+        var copy = self
+        copy.rowAccessoryButtonHandler = handler
+        return copy
+    }
+
+    /// 监听 accessory button 点击，并传入当前 model。
+    public func onAccessoryButtonTap(_ handler: @escaping @MainActor (Model, TableListContext) -> Void) -> Self {
+        let boxedModel = TableMainActorValueBox(value: model)
+        return onAccessoryButtonTap { context in
+            handler(boxedModel.value, context)
         }
     }
 
@@ -443,6 +612,26 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return copy
     }
 
+    /// 自定义 context menu 的高亮和消失预览。
+    public func contextMenuPreview(
+        highlighting: (@MainActor (TableListContext) -> UITargetedPreview?)? = nil,
+        dismissal: (@MainActor (TableListContext) -> UITargetedPreview?)? = nil
+    ) -> Self {
+        var copy = self
+        copy.rowContextMenuHighlightPreviewProvider = highlighting
+        copy.rowContextMenuDismissalPreviewProvider = dismissal
+        return copy
+    }
+
+    /// 监听 context menu preview commit。
+    public func onContextMenuCommit(
+        _ handler: @escaping @MainActor (TableListContext, any UIContextMenuInteractionCommitAnimating) -> Void
+    ) -> Self {
+        var copy = self
+        copy.rowContextMenuCommitHandler = handler
+        return copy
+    }
+
     /// 设置 row 的 UIKit 编辑动作。
     ///
     /// - Parameters:
@@ -461,15 +650,46 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return copy
     }
 
+    /// 监听当前 row 进入或退出编辑状态。
+    public func onEditingChange(_ handler: @escaping @MainActor (Bool, TableListContext) -> Void) -> Self {
+        var copy = self
+        copy.rowEditingChangeHandler = handler
+        return copy
+    }
+
+    /// 监听编辑状态变化，并传入当前 model。
+    public func onEditingChange(
+        _ handler: @escaping @MainActor (Model, Bool, TableListContext) -> Void
+    ) -> Self {
+        let boxedModel = TableMainActorValueBox(value: model)
+        return onEditingChange { isEditing, context in
+            handler(boxedModel.value, isEditing, context)
+        }
+    }
+
     /// 监听 row 移动。
     ///
     /// - Parameter handler: 移动回调，参数为当前 model、源位置和目标位置。
+    public func onMove(_ handler: @escaping @MainActor (IndexPath, IndexPath) -> Void) -> Self {
+        var copy = self
+        copy.rowMoveHandler = handler
+        return copy
+    }
+
+    /// 监听 row 移动，并传入当前 model。
     public func onMove(_ handler: @escaping @MainActor (Model, IndexPath, IndexPath) -> Void) -> Self {
         let boxedModel = TableMainActorValueBox(value: model)
         var copy = self
         copy.rowMoveHandler = { source, destination in
             handler(boxedModel.value, source, destination)
         }
+        return copy
+    }
+
+    /// 调整交互式移动的建议目标位置。
+    public func moveTarget(_ provider: @escaping @MainActor (IndexPath, IndexPath) -> IndexPath) -> Self {
+        var copy = self
+        copy.rowMoveTargetProvider = provider
         return copy
     }
 
@@ -530,14 +750,22 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
             refreshID: rowRefreshID,
             refreshPolicy: rowRefreshPolicy,
             isSelected: rowIsSelected,
+            isSelectionDisabled: rowIsSelectionDisabled,
+            isFocusable: rowIsFocusable,
+            selectionFollowsFocus: rowSelectionFollowsFocus,
+            isSpringLoadingEnabled: rowIsSpringLoadingEnabled,
             height: rowHeight,
             estimatedHeight: rowEstimatedHeight,
+            indentationLevel: rowIndentationLevel,
+            shouldIndentWhileEditing: rowShouldIndentWhileEditing,
             register: { tableView in
                 tableView.lk.register(cellType)
             },
             cellProvider: { tableView, indexPath, context in
                 let cell = tableView.lk.dequeue(cellType, for: indexPath)
                 configure(cell, model, context)
+                if let rowIndentationLevel { cell.indentationLevel = rowIndentationLevel }
+                if let rowShouldIndentWhileEditing { cell.shouldIndentWhileEditing = rowShouldIndentWhileEditing }
                 rowCellEventBinders.forEach { $0(cell, model, context) }
                 if let rowIsSelected, rowIsSelected {
                     tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
@@ -549,19 +777,29 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
             configureVisibleCell: { cell, context in
                 guard let typedCell = cell as? Cell else { return }
                 configure(typedCell, model, context)
+                if let rowIndentationLevel { typedCell.indentationLevel = rowIndentationLevel }
+                if let rowShouldIndentWhileEditing { typedCell.shouldIndentWhileEditing = rowShouldIndentWhileEditing }
                 rowCellEventBinders.forEach { $0(typedCell, model, context) }
             },
             selectHandler: rowSelectHandler,
             deselectHandler: rowDeselectHandler,
             selectionChangeHandler: rowSelectionChangeHandler,
+            highlightChangeHandler: rowHighlightChangeHandler,
+            primaryActionHandler: rowPrimaryActionHandler,
+            accessoryButtonHandler: rowAccessoryButtonHandler,
             displayHandler: displayHandler,
             endDisplayHandler: endDisplayHandler,
             prefetchHandler: rowPrefetchHandler,
             cancelPrefetchHandler: rowCancelPrefetchHandler,
             contextMenuProvider: rowContextMenuProvider,
+            contextMenuHighlightPreviewProvider: rowContextMenuHighlightPreviewProvider,
+            contextMenuDismissalPreviewProvider: rowContextMenuDismissalPreviewProvider,
+            contextMenuCommitHandler: rowContextMenuCommitHandler,
             editingStyle: rowEditingStyle,
             commitEditingHandler: rowCommitEditingHandler,
+            editingChangeHandler: rowEditingChangeHandler,
             moveHandler: rowMoveHandler,
+            moveTargetProvider: rowMoveTargetProvider,
             leadingSwipeActionsProvider: rowLeadingSwipeActionsProvider,
             trailingSwipeActionsProvider: rowTrailingSwipeActionsProvider
         )
@@ -1013,6 +1251,10 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     public var header: AnyTableSectionSupplementary?
     public var footer: AnyTableSectionSupplementary?
     public var selectionMode: ListSelectionMode
+    public var indexTitle: String?
+    public var headerTitle: String?
+    public var footerTitle: String?
+    public var allowsMultipleSelectionInteraction: Bool
 
     /// 创建 table section。
     ///
@@ -1046,6 +1288,10 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
         self.header = header().first { $0.kind == .header }?.makeSupplementary(sectionID: id)
         self.footer = footer().first { $0.kind == .footer }?.makeSupplementary(sectionID: id)
         self.selectionMode = .none
+        self.indexTitle = nil
+        self.headerTitle = nil
+        self.footerTitle = nil
+        self.allowsMultipleSelectionInteraction = false
     }
 
     /// 设置 section 的选择模式。
@@ -1054,6 +1300,34 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     public func selectionMode(_ mode: ListSelectionMode) -> Self {
         var copy = self
         copy.selectionMode = mode
+        return copy
+    }
+
+    /// 设置 table 侧边索引标题。
+    public func indexTitle(_ title: String?) -> Self {
+        var copy = self
+        copy.indexTitle = title
+        return copy
+    }
+
+    /// 使用系统文本 header；自定义 header builder 优先。
+    public func headerTitle(_ title: String?) -> Self {
+        var copy = self
+        copy.headerTitle = title
+        return copy
+    }
+
+    /// 使用系统文本 footer；自定义 footer builder 优先。
+    public func footerTitle(_ title: String?) -> Self {
+        var copy = self
+        copy.footerTitle = title
+        return copy
+    }
+
+    /// 允许系统的多选手势从当前 section 开始。
+    public func multipleSelectionInteraction(_ enabled: Bool = true) -> Self {
+        var copy = self
+        copy.allowsMultipleSelectionInteraction = enabled
         return copy
     }
 }

@@ -252,9 +252,9 @@ final class TableListAdapterTests: XCTestCase {
 
         XCTAssertTrue(tableView.allowsSelection)
         XCTAssertTrue(tableView.allowsMultipleSelection)
-        XCTAssertNil(adapter.tableView(tableView, shouldSelectRowAt: disabled))
-        XCTAssertEqual(adapter.tableView(tableView, shouldSelectRowAt: firstSingle), firstSingle)
-        XCTAssertEqual(adapter.tableView(tableView, shouldSelectRowAt: multiple), multiple)
+        XCTAssertNil(adapter.tableView(tableView, willSelectRowAt: disabled))
+        XCTAssertEqual(adapter.tableView(tableView, willSelectRowAt: firstSingle), firstSingle)
+        XCTAssertEqual(adapter.tableView(tableView, willSelectRowAt: multiple), multiple)
 
         tableView.selectRow(at: firstSingle, animated: false, scrollPosition: .none)
         tableView.selectRow(at: secondSingle, animated: false, scrollPosition: .none)

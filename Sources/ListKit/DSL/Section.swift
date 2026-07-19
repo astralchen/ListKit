@@ -33,6 +33,12 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
     public let id: SectionID
     /// 类型擦除后的 row 描述。
     public var rows: [AnyListRow]
+    /// 层级 section snapshot 的根节点；普通 section 中每个节点都是叶子。
+    public var outlineRoots: [AnyListOutlineNode]
+    /// 是否包含父子层级。
+    public var hasOutlineHierarchy: Bool {
+        outlineRoots.contains { !$0.children.isEmpty }
+    }
     /// 类型擦除后的 supplementary 描述。
     public var supplementaries: [AnySupplementary]
     /// 旧 custom layout provider 用的布局标识。
@@ -45,6 +51,10 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
     public var supplementaryLayouts: [String: ListSupplementaryLayout]
     /// section 选择模式。
     public var selectionMode: ListSelectionMode
+    /// 侧边索引中展示的标题。
+    public var indexTitle: String?
+    /// 是否允许通过二指平移等系统交互进入多选。
+    public var allowsMultipleSelectionInteraction: Bool
     /// 旧 sticky header 快捷标记。
     public var isHeaderSticky: Bool
     /// section 背景装饰描述。
@@ -52,6 +62,12 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
     /// section 背景 decoration kind 快捷读取。
     public var backgroundDecorationKind: String? { backgroundDecorationItem?.kind }
     var layoutDiagnostics: [ListDiagnosticsIssue]
+    var expansionChangeHandler: (@MainActor (AnyListIdentity, Bool) -> Void)?
+    var visibleItemsInvalidationHandler: (@MainActor (
+        [any NSCollectionLayoutVisibleItem],
+        CGPoint,
+        any NSCollectionLayoutEnvironment
+    ) -> Void)?
 
     /// 创建 section，并用 builder 同时声明 rows、layout、supplementary 和背景。
     ///
@@ -75,19 +91,65 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
         @ListSectionBackgroundBuilder background: () -> ListBackgroundDecoration? = { nil }
     ) {
         self.id = id
-        self.rows = rows().flatMap { $0.eraseToAnyListRows(sectionID: id) }
+        let outlineRoots = rows().flatMap { $0.eraseToAnyListOutlineNodes(sectionID: id) }
+        self.outlineRoots = outlineRoots
+        self.rows = outlineRoots.flatMap(\.flattenedRows)
         self.supplementaries = []
         self.layoutID = nil
         self.sectionLayout = nil
         self.customSectionLayout = nil
         self.supplementaryLayouts = [:]
         self.selectionMode = .none
+        self.indexTitle = nil
+        self.allowsMultipleSelectionInteraction = false
         self.isHeaderSticky = false
         self.backgroundDecorationItem = background()
         self.layoutDiagnostics = []
+        self.expansionChangeHandler = nil
+        self.visibleItemsInvalidationHandler = nil
         applyLayoutConfiguration(layout())
         appendSectionSupplementaries(header() + footer() + supplementaries())
         appendSupplementaryLayouts(supplementaryLayouts())
+    }
+
+    /// 设置 section 在 collection view 侧边索引中的标题。
+    public func indexTitle(_ title: String?) -> Self {
+        var copy = self
+        copy.indexTitle = title
+        return copy
+    }
+
+    /// 允许系统的多选手势从当前 section 开始。
+    public func multipleSelectionInteraction(_ enabled: Bool = true) -> Self {
+        var copy = self
+        copy.allowsMultipleSelectionInteraction = enabled
+        return copy
+    }
+
+    /// 监听 disclosure 节点展开状态变化。
+    public func onExpansionChange(
+        _ handler: @escaping @MainActor (AnyListIdentity, Bool) -> Void
+    ) -> Self {
+        var copy = self
+        copy.expansionChangeHandler = handler
+        return copy
+    }
+
+    /// 监听 orthogonal scrolling 或 bounds 变化引起的可见 item 失效。
+    ///
+    /// - Important: UIKit 当前不允许 invalidation handler 修改可见 item，只要同一个
+    ///   compositional layout 中包含 estimated item。此时该闭包应仅用于观察；需要修改
+    ///   `transform`、`alpha` 等属性时，请确保整个 layout 都使用确定尺寸。
+    public func onVisibleItemsInvalidation(
+        _ handler: @escaping @MainActor (
+            [any NSCollectionLayoutVisibleItem],
+            CGPoint,
+            any NSCollectionLayoutEnvironment
+        ) -> Void
+    ) -> Self {
+        var copy = self
+        copy.visibleItemsInvalidationHandler = handler
+        return copy
     }
 
     /// 添加默认 top boundary header。
@@ -493,6 +555,13 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
         )
         if let backgroundDecorationItem {
             section.decorationItems.append(backgroundDecorationItem.makeDecorationItem())
+        }
+        if let visibleItemsInvalidationHandler {
+            section.visibleItemsInvalidationHandler = { items, offset, environment in
+                MainActor.assumeIsolated {
+                    visibleItemsInvalidationHandler(items, offset, environment)
+                }
+            }
         }
         return section
     }

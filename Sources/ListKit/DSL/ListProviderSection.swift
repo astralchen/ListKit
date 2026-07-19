@@ -82,7 +82,11 @@ public struct AnyListCellProvider: Hashable, Sendable {
 
     @MainActor public func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let context = ListContext(
-            sectionID: AnyListID(indexPath.section),
+            identity: AnyListIdentity(
+                sectionID: AnyListID(indexPath.section),
+                rowID: identity,
+                presentationID: presentationID
+            ),
             indexPath: indexPath,
             collectionView: collectionView,
             eventDispatcher: { _, _ in }

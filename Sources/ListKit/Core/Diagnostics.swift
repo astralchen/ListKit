@@ -166,6 +166,8 @@ public enum ListDiagnostics {
             return invalidDimensionIssues(horizontal.itemWidth, label: "horizontal itemWidth", sectionID: sectionID)
                 + invalidDimensionIssues(horizontal.itemHeight, label: "horizontal itemHeight", sectionID: sectionID)
                 + invalidSpacingIssues(horizontal.spacing, label: "horizontal spacing", sectionID: sectionID)
+        case .uiKitListConfiguration:
+            return []
         }
     }
 

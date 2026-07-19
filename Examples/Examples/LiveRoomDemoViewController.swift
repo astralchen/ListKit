@@ -49,6 +49,7 @@ private class LiveRoomDesignScreenViewController: UIViewController {
     let viewModel: LiveRoomViewModel
 
     private let screenIdentifier: String
+    private var renderTask: Task<Void, Never>?
 
     init(screenIdentifier: String, viewModel: LiveRoomViewModel = LiveRoomViewModel()) {
         self.screenIdentifier = screenIdentifier
@@ -73,6 +74,13 @@ private class LiveRoomDesignScreenViewController: UIViewController {
 
     func render(animatingDifferences: Bool) {
         preconditionFailure("Subclasses must render ListKit output.")
+    }
+
+    func scheduleRender(_ operation: @escaping @MainActor () async -> Void) {
+        renderTask?.cancel()
+        renderTask = Task { @MainActor in
+            await operation()
+        }
     }
 
     func makeCollectionView(identifier: String) -> UICollectionView {
@@ -343,7 +351,7 @@ private class LiveRoomDesignScreenViewController: UIViewController {
     }
 
     func configureCollectionEvents(_ adapter: CollectionListAdapter<LiveRoomSection>, onChange: @escaping @MainActor () -> Void) {
-        adapter.onEvent(LiveRoomCollectionEvent.self) { [weak self] event, _ in
+        adapter.onEvent(LiveRoomCollectionEvent.self) { [weak self] event, context in
             guard let self else { return }
             switch event {
             case .addMessage:
@@ -359,8 +367,22 @@ private class LiveRoomDesignScreenViewController: UIViewController {
             case .studioModeChanged(let index):
                 self.viewModel.selectStudioMode(index)
                 onChange()
+            case .activateCapability(let title):
+                guard context.section(as: LiveRoomSection.self) == .apiGuide,
+                      context.item(as: LiveRoomRowID.self) != nil else { return }
+                self.viewModel.activateCapability(title)
+                onChange()
             }
         }
+        adapter
+            .onPrefetchItems { [weak self, weak adapter] contexts in
+                self?.viewModel.recordPrefetch(itemCount: contexts.count)
+                adapter?.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
+            }
+            .onCancelPrefetchingItems { [weak self, weak adapter] contexts in
+                self?.viewModel.recordPrefetch(itemCount: contexts.count, cancelled: true)
+                adapter?.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
+            }
     }
 
     func applyCollection(
@@ -369,16 +391,26 @@ private class LiveRoomDesignScreenViewController: UIViewController {
         sections: [ListSection<LiveRoomSection>],
         animatingDifferences: Bool
     ) {
-        let result = adapter.apply(sections, animatingDifferences: animatingDifferences) { [weak self, weak adapter] in
-            guard let self, let adapter else { return }
-            if self.viewModel.pendingScrollMessageID != nil {
-                adapter.scrollToLastItem(in: .messages, animated: true)
+        scheduleRender { [weak self, weak adapter, weak collectionView] in
+            guard let self, let adapter, let collectionView else { return }
+            let options = ListApplyOptions(
+                animatingDifferences: animatingDifferences,
+                applicationMode: animatingDifferences ? .differences : .reloadData
+            )
+            let result = await adapter.apply(options: options) {
+                sections
+            }
+            guard !Task.isCancelled else { return }
+
+            self.viewModel.recordCollectionApply(result.summary)
+            adapter.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
+
+            if let messageID = self.viewModel.pendingScrollMessageID,
+               let indexPath = adapter.indexPaths(forRowID: messageID).first {
+                collectionView.scrollToItem(at: indexPath, at: .bottom, animated: true)
                 self.viewModel.clearPendingScroll()
             }
         }
-        viewModel.recordCollectionApply(result.summary)
-        adapter.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
-        collectionView.collectionViewLayout.invalidateLayout()
     }
 
     func applyTable(
@@ -386,9 +418,44 @@ private class LiveRoomDesignScreenViewController: UIViewController {
         tableView: UITableView,
         animatingDifferences: Bool
     ) {
-        let result = adapter.apply(viewModel.tableSections, animatingDifferences: animatingDifferences)
-        viewModel.recordTableApply(result.summary)
-        tableView.layoutIfNeeded()
+        scheduleRender { [weak self, weak adapter, weak tableView] in
+            guard let self, let adapter, let tableView else { return }
+            let options = ListApplyOptions(
+                animatingDifferences: animatingDifferences,
+                applicationMode: animatingDifferences ? .differences : .reloadData
+            )
+            let result = await adapter.apply(options: options) {
+                self.viewModel.tableSections
+            }
+            guard !Task.isCancelled else { return }
+            self.viewModel.recordTableApply(result.summary)
+            tableView.layoutIfNeeded()
+        }
+    }
+
+    func configureTableEvents(
+        _ adapter: TableListAdapter<AdminSection>,
+        onChange: @escaping @MainActor () -> Void
+    ) {
+        adapter.onEvent(LiveRoomAdminEvent.self) { [weak self] event, context in
+            guard let self else { return }
+            guard context.section(as: AdminSection.self) == .moderation,
+                  context.item(as: String.self) != nil else { return }
+            switch event {
+            case .select(let id):
+                self.viewModel.selectModeration(id)
+            case .resolve(let id):
+                self.viewModel.handleModeration(id)
+            }
+            onChange()
+        }
+        adapter
+            .onPrefetchRows { [weak self] contexts in
+                self?.viewModel.recordPrefetch(itemCount: contexts.count)
+            }
+            .onCancelPrefetchingRows { [weak self] contexts in
+                self?.viewModel.recordPrefetch(itemCount: contexts.count, cancelled: true)
+            }
     }
 
     func configureBaseView() {
@@ -654,7 +721,12 @@ private final class LiveConsoleDesignViewController: LiveRoomDesignScreenViewCon
 
     override func buildContent() {
         collectionView.alwaysBounceVertical = true
-        collectionView.setCollectionViewLayout(collectionAdapter.makeCompositionalLayout(), animated: false)
+        collectionView.setCollectionViewLayout(
+            collectionAdapter.makeCompositionalLayout(
+                configuration: .init(interSectionSpacing: 4, contentInsetsReference: .none)
+            ),
+            animated: false
+        )
         configureCollectionEvents(collectionAdapter) { [weak self] in
             self?.render(animatingDifferences: true)
         }
@@ -705,7 +777,12 @@ private final class StudioControlDesignViewController: LiveRoomDesignScreenViewC
 
     override func buildContent() {
         collectionView.alwaysBounceVertical = true
-        collectionView.setCollectionViewLayout(collectionAdapter.makeCompositionalLayout(), animated: false)
+        collectionView.setCollectionViewLayout(
+            collectionAdapter.makeCompositionalLayout(
+                configuration: .init(interSectionSpacing: 4, contentInsetsReference: .none)
+            ),
+            animated: false
+        )
         configureCollectionEvents(collectionAdapter) { [weak self] in
             self?.render(animatingDifferences: true)
         }
@@ -741,7 +818,12 @@ private final class RoomToolkitDesignViewController: LiveRoomDesignScreenViewCon
 
     override func buildContent() {
         collectionView.alwaysBounceVertical = true
-        collectionView.setCollectionViewLayout(collectionAdapter.makeCompositionalLayout(), animated: false)
+        collectionView.setCollectionViewLayout(
+            collectionAdapter.makeCompositionalLayout(
+                configuration: .init(interSectionSpacing: 4, contentInsetsReference: .none)
+            ),
+            animated: false
+        )
         configureCollectionEvents(collectionAdapter) { [weak self] in
             self?.render(animatingDifferences: true)
         }
@@ -761,6 +843,8 @@ private final class RoomToolkitDesignViewController: LiveRoomDesignScreenViewCon
 private final class AdminTableDemoViewController: LiveRoomStackDesignScreenViewController {
     private lazy var tableView = makeTableView(identifier: "admin-table-demo-table")
     private lazy var tableAdapter = TableListAdapter<AdminSection>(tableView: tableView)
+    private let tableSummaryDetailLabel = UILabel()
+    private let reorderButton = UIButton(type: .system)
 
     init() {
         super.init(screenIdentifier: "admin-table-screen")
@@ -787,10 +871,16 @@ private final class AdminTableDemoViewController: LiveRoomStackDesignScreenViewC
         tableView.layer.borderWidth = 1
         tableView.layer.borderColor = UIColor.separator.cgColor
         tableView.layer.masksToBounds = true
+        tableView.allowsSelectionDuringEditing = true
+        tableView.dragInteractionEnabled = true
+        configureTableEvents(tableAdapter) { [weak self] in
+            self?.render(animatingDifferences: true)
+        }
         addArrangedView(tableView)
     }
 
     override func render(animatingDifferences: Bool) {
+        tableSummaryDetailLabel.text = "\(viewModel.pendingModerationCount) active actions - swipe, focus, or reorder rows"
         applyTable(tableAdapter, tableView: tableView, animatingDifferences: animatingDifferences)
     }
 
@@ -807,16 +897,26 @@ private final class AdminTableDemoViewController: LiveRoomStackDesignScreenViewC
         title.text = "Moderation Queue"
         title.adjustsFontForContentSizeCategory = true
 
-        let detail = UILabel()
-        detail.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        detail.textColor = .secondaryLabel
-        detail.text = "\(viewModel.pendingModerationCount) active actions - swipe rows or open context menus"
-        detail.adjustsFontForContentSizeCategory = true
-        detail.numberOfLines = 2
+        tableSummaryDetailLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        tableSummaryDetailLabel.textColor = .secondaryLabel
+        tableSummaryDetailLabel.text = "\(viewModel.pendingModerationCount) active actions - swipe, focus, or reorder rows"
+        tableSummaryDetailLabel.adjustsFontForContentSizeCategory = true
+        tableSummaryDetailLabel.numberOfLines = 2
 
-        let stack = UIStackView(arrangedSubviews: [title, detail])
-        stack.axis = .vertical
-        stack.spacing = 6
+        reorderButton.setTitle("Reorder", for: .normal)
+        reorderButton.setImage(UIImage(systemName: "arrow.up.arrow.down"), for: .normal)
+        reorderButton.titleLabel?.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        reorderButton.accessibilityIdentifier = "admin-table-reorder"
+        reorderButton.addTarget(self, action: #selector(toggleTableEditing), for: .touchUpInside)
+
+        let textStack = UIStackView(arrangedSubviews: [title, tableSummaryDetailLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 6
+
+        let stack = UIStackView(arrangedSubviews: [textStack, reorderButton])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(stack)
 
@@ -828,5 +928,10 @@ private final class AdminTableDemoViewController: LiveRoomStackDesignScreenViewC
         ])
 
         return container
+    }
+
+    @objc private func toggleTableEditing() {
+        tableView.setEditing(!tableView.isEditing, animated: true)
+        reorderButton.setTitle(tableView.isEditing ? "Done" : "Reorder", for: .normal)
     }
 }

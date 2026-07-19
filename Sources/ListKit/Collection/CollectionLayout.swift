@@ -2,6 +2,63 @@ import UIKit
 
 // MARK: - Layout Model
 
+/// Compositional layout 的主滚动方向。
+public enum ListLayoutScrollDirection: Hashable, Sendable {
+    case vertical
+    case horizontal
+
+    var uiKitValue: UICollectionView.ScrollDirection {
+        switch self {
+        case .vertical: return .vertical
+        case .horizontal: return .horizontal
+        }
+    }
+}
+
+/// Compositional layout 计算全局内容区域时采用的系统 inset 来源。
+public enum ListContentInsetsReference: Hashable, Sendable {
+    case automatic
+    case none
+    case safeArea
+    case layoutMargins
+    case readableContent
+
+    var uiKitValue: UIContentInsetsReference {
+        switch self {
+        case .automatic: return .automatic
+        case .none: return .none
+        case .safeArea: return .safeArea
+        case .layoutMargins: return .layoutMargins
+        case .readableContent: return .readableContent
+        }
+    }
+}
+
+/// Compositional layout 全局配置。
+public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
+    public var scrollDirection: ListLayoutScrollDirection
+    public var interSectionSpacing: CGFloat
+    public var contentInsetsReference: ListContentInsetsReference
+
+    public init(
+        scrollDirection: ListLayoutScrollDirection = .vertical,
+        interSectionSpacing: CGFloat = 0,
+        contentInsetsReference: ListContentInsetsReference = .safeArea
+    ) {
+        self.scrollDirection = scrollDirection
+        self.interSectionSpacing = interSectionSpacing
+        self.contentInsetsReference = contentInsetsReference
+    }
+
+    @MainActor func makeConfiguration() -> UICollectionViewCompositionalLayoutConfiguration {
+        let configuration = UICollectionViewCompositionalLayoutConfiguration()
+        configuration.scrollDirection = scrollDirection.uiKitValue
+        configuration.interSectionSpacing = interSectionSpacing
+        configuration.contentInsetsReference = contentInsetsReference.uiKitValue
+        return configuration
+    }
+}
+
 /// Compositional layout 的尺寸描述。
 ///
 /// - Note: 这里不用直接保存 `NSCollectionLayoutDimension`，因为 UIKit 类型不是 DSL
@@ -290,9 +347,98 @@ public func HorizontalLayout(
     itemWidth: ListLayoutDimension = .estimated(44),
     itemHeight: ListLayoutDimension = .estimated(44),
     spacing: CGFloat = 0,
-    contentInsets: ListLayoutInsets = .zero
+    contentInsets: ListLayoutInsets = .zero,
+    scrollingBehavior: ListOrthogonalScrollingBehavior = .continuous
 ) -> ListSectionLayout {
-    .horizontal(itemWidth: itemWidth, itemHeight: itemHeight, spacing: spacing, contentInsets: contentInsets)
+    .horizontal(
+        itemWidth: itemWidth,
+        itemHeight: itemHeight,
+        spacing: spacing,
+        contentInsets: contentInsets,
+        scrollingBehavior: scrollingBehavior
+    )
+}
+
+/// 横向 section 的滚动行为，避免页面直接依赖 UIKit 枚举。
+public enum ListOrthogonalScrollingBehavior: Hashable, Sendable {
+    case none
+    case continuous
+    case continuousGroupLeadingBoundary
+    case paging
+    case groupPaging
+    case groupPagingCentered
+
+    var uiKitValue: UICollectionLayoutSectionOrthogonalScrollingBehavior {
+        switch self {
+        case .none: return .none
+        case .continuous: return .continuous
+        case .continuousGroupLeadingBoundary: return .continuousGroupLeadingBoundary
+        case .paging: return .paging
+        case .groupPaging: return .groupPaging
+        case .groupPagingCentered: return .groupPagingCentered
+        }
+    }
+}
+
+/// UIKit 原生 list section 的外观。
+public enum ListUIKitListAppearance: Hashable, Sendable {
+    case plain
+    case grouped
+    case insetGrouped
+    case sidebar
+    case sidebarPlain
+
+    var uiKitValue: UICollectionLayoutListConfiguration.Appearance {
+        switch self {
+        case .plain: return .plain
+        case .grouped: return .grouped
+        case .insetGrouped: return .insetGrouped
+        case .sidebar: return .sidebar
+        case .sidebarPlain: return .sidebarPlain
+        }
+    }
+}
+
+/// UIKit 原生 list section 配置。使用该布局时，Row 的 swipe actions 会真正接入
+/// `UICollectionLayoutListConfiguration`，同时保留 ListKit 的 diffable identity。
+public struct ListUIKitListLayout: Hashable, Sendable {
+    public var appearance: ListUIKitListAppearance
+    public var showsSeparators: Bool
+    public var headerTopPadding: CGFloat?
+
+    public init(
+        appearance: ListUIKitListAppearance = .plain,
+        showsSeparators: Bool = true,
+        headerTopPadding: CGFloat? = nil
+    ) {
+        self.appearance = appearance
+        self.showsSeparators = showsSeparators
+        self.headerTopPadding = headerTopPadding
+    }
+
+    @MainActor func makeConfiguration() -> UICollectionLayoutListConfiguration {
+        var configuration = UICollectionLayoutListConfiguration(appearance: appearance.uiKitValue)
+        configuration.showsSeparators = showsSeparators
+        if #available(iOS 15.0, tvOS 15.0, *), let headerTopPadding {
+            configuration.headerTopPadding = headerTopPadding
+        }
+        return configuration
+    }
+}
+
+/// 创建 UIKit 原生 list section layout。
+public func UIKitListLayout(
+    appearance: ListUIKitListAppearance = .plain,
+    showsSeparators: Bool = true,
+    headerTopPadding: CGFloat? = nil
+) -> ListSectionLayout {
+    .uiKitListConfiguration(
+        ListUIKitListLayout(
+            appearance: appearance,
+            showsSeparators: showsSeparators,
+            headerTopPadding: headerTopPadding
+        )
+    )
 }
 
 /// section 的 list 布局配置。
@@ -363,6 +509,8 @@ public struct ListSectionHorizontalLayout: Hashable, Sendable {
     public var spacing: CGFloat
     /// section 内容 inset。
     public var contentInsets: ListLayoutInsets
+    /// section 横向滚动行为。
+    public var scrollingBehavior: ListOrthogonalScrollingBehavior
 
     /// 创建横向布局配置。
     ///
@@ -375,12 +523,14 @@ public struct ListSectionHorizontalLayout: Hashable, Sendable {
         itemWidth: ListLayoutDimension = .estimated(44),
         itemHeight: ListLayoutDimension = .estimated(44),
         spacing: CGFloat = 0,
-        contentInsets: ListLayoutInsets = .zero
+        contentInsets: ListLayoutInsets = .zero,
+        scrollingBehavior: ListOrthogonalScrollingBehavior = .continuous
     ) {
         self.itemWidth = itemWidth
         self.itemHeight = itemHeight
         self.spacing = spacing
         self.contentInsets = contentInsets
+        self.scrollingBehavior = scrollingBehavior
     }
 }
 
@@ -455,6 +605,8 @@ public enum ListSectionLayout: Hashable, Sendable {
     case gridConfiguration(ListSectionGridLayout)
     /// 横向布局配置。
     case horizontalConfiguration(ListSectionHorizontalLayout)
+    /// UIKit 原生 list 配置。
+    case uiKitListConfiguration(ListUIKitListLayout)
 
     /// 创建 list 布局枚举值。
     ///
@@ -513,14 +665,16 @@ public enum ListSectionLayout: Hashable, Sendable {
         itemWidth: ListLayoutDimension = .estimated(44),
         itemHeight: ListLayoutDimension = .estimated(44),
         spacing: CGFloat = 0,
-        contentInsets: ListLayoutInsets = .zero
+        contentInsets: ListLayoutInsets = .zero,
+        scrollingBehavior: ListOrthogonalScrollingBehavior = .continuous
     ) -> ListSectionLayout {
         .horizontalConfiguration(
             ListSectionHorizontalLayout(
                 itemWidth: itemWidth,
                 itemHeight: itemHeight,
                 spacing: spacing,
-                contentInsets: contentInsets
+                contentInsets: contentInsets,
+                scrollingBehavior: scrollingBehavior
             )
         )
     }
@@ -535,7 +689,14 @@ public enum ListSectionLayout: Hashable, Sendable {
             return configuration.makeCompositionalSection(itemSupplementaries: itemSupplementaries)
         case .horizontalConfiguration(let configuration):
             return configuration.makeCompositionalSection(itemSupplementaries: itemSupplementaries)
+        case .uiKitListConfiguration:
+            preconditionFailure("ListKit: UIKitListLayout requires a compositional layout environment; use CollectionListAdapter.makeCompositionalLayout().")
         }
+    }
+
+    var uiKitListLayout: ListUIKitListLayout? {
+        guard case .uiKitListConfiguration(let configuration) = self else { return nil }
+        return configuration
     }
 }
 
@@ -597,7 +758,7 @@ private extension ListSectionHorizontalLayout {
         group.interItemSpacing = .fixed(spacing)
 
         let section = NSCollectionLayoutSection(group: group)
-        section.orthogonalScrollingBehavior = .continuous
+        section.orthogonalScrollingBehavior = scrollingBehavior.uiKitValue
         section.interGroupSpacing = spacing
         section.contentInsets = contentInsets.directionalEdgeInsets
         return section

@@ -27,6 +27,18 @@ where SectionID: Hashable & Sendable {
     /// `scrollViewDidScroll` 等回调时设置此属性。
     public weak var scrollDelegate: UIScrollViewDelegate?
 
+    /// UIKit delegate 逃生口。ListKit 已处理的回调会先执行声明式 Row 行为，再转发到此对象；
+    /// 其余可选 delegate 方法会通过 Objective-C forwarding 自动转发。
+    public weak var collectionDelegate: UICollectionViewDelegate?
+
+    /// 原生 drag/drop 逃生口；设置后直接安装到 collection view。
+    public weak var dragDelegate: UICollectionViewDragDelegate? {
+        didSet { collectionView?.dragDelegate = dragDelegate }
+    }
+    public weak var dropDelegate: UICollectionViewDropDelegate? {
+        didSet { collectionView?.dropDelegate = dropDelegate }
+    }
+
     /// flow layout 回调转发对象。
     ///
     /// 仅用于仍在使用 `UICollectionViewDelegateFlowLayout` 的页面；使用
@@ -47,13 +59,19 @@ where SectionID: Hashable & Sendable {
     private weak var collectionView: UICollectionView?
     private var sections: [ListSection<SectionID>] = []
     private var layoutSignature: [ListSectionLayoutSignature] = []
-    private var dataSource: UICollectionViewDiffableDataSource<AnyListID, AnyListIdentity>!
+    private var dataSource: CollectionDiffableDataSource<SectionID>!
     var isApplyingSnapshot = false
     private var rowsByIdentity: [AnyListIdentity: AnyListRow] = [:]
     private var supplementariesByKindAndSection: [SupplementaryKey: AnySupplementary] = [:]
     private var displayedRowsByCell: [ObjectIdentifier: AnyListRow] = [:]
     private var displayedSupplementariesByView: [ObjectIdentifier: AnySupplementary] = [:]
     private var prefetchedRowsByIndexPath: [IndexPath: AnyListRow] = [:]
+    private var applyGeneration = 0
+    private var prefetchItemsHandler: (@MainActor ([ListContext]) -> Void)?
+    private var cancelPrefetchingItemsHandler: (@MainActor ([ListContext]) -> Void)?
+    private var contextMenuItemsProvider: (@MainActor ([ListContext], CGPoint) -> UIContextMenuConfiguration?)?
+    private var activeContextMenu: (row: AnyListRow, indexPath: IndexPath)?
+    private var indexTitleEntries: [CollectionIndexTitleEntry] = []
     private let eventRouter = ListEventRouter<ListContext>()
 
     /// 创建 adapter 并接管 collection view 的 data source、delegate 和 prefetch data source。
@@ -63,26 +81,69 @@ where SectionID: Hashable & Sendable {
         self.collectionView = collectionView
         super.init()
 
-        dataSource = UICollectionViewDiffableDataSource<AnyListID, AnyListIdentity>(
+        dataSource = CollectionDiffableDataSource<SectionID>(
             collectionView: collectionView
         ) { [weak self] collectionView, indexPath, identity in
             guard let self, let row = self.rowsByIdentity[identity] else {
                 return UICollectionViewCell()
             }
-            return row.cellProvider(collectionView, indexPath, self.context(for: indexPath, sectionID: identity.sectionID))
+            return row.cellProvider(collectionView, indexPath, self.context(for: indexPath, identity: identity))
         }
+        dataSource.adapter = self
 
         dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
             guard let self else { return nil }
             let sectionID = self.sectionID(at: indexPath.section)
             let key = SupplementaryKey(kind: kind, sectionID: sectionID)
             guard let supplementary = self.supplementariesByKindAndSection[key] else { return nil }
-            return supplementary.viewProvider(collectionView, indexPath, self.context(for: indexPath, sectionID: sectionID))
+            return supplementary.viewProvider(collectionView, indexPath, self.context(for: indexPath, identity: supplementary.identity))
+        }
+
+        dataSource.reorderingHandlers.canReorderItem = { [weak self] identity in
+            self?.rowsByIdentity[identity]?.moveHandler != nil
+        }
+        dataSource.reorderingHandlers.didReorder = { [weak self] transaction in
+            self?.didReorder(transaction)
+        }
+        dataSource.sectionSnapshotHandlers.willExpandItem = { [weak self] identity in
+            self?.notifyExpansionChange(identity: identity, isExpanded: true)
+        }
+        dataSource.sectionSnapshotHandlers.willCollapseItem = { [weak self] identity in
+            self?.notifyExpansionChange(identity: identity, isExpanded: false)
         }
 
         collectionView.dataSource = dataSource
         collectionView.delegate = self
         collectionView.prefetchDataSource = self
+    }
+
+    public override func responds(to aSelector: Selector!) -> Bool {
+        if super.responds(to: aSelector) { return true }
+        return MainActor.assumeIsolated {
+            forwardingDelegates.contains { delegate in
+                (delegate as? NSObjectProtocol)?.responds(to: aSelector) == true
+            }
+        }
+    }
+
+    public override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        if super.responds(to: aSelector) { return super.forwardingTarget(for: aSelector) }
+        let target = MainActor.assumeIsolated {
+            ListUnsafeForwardingTarget(
+                forwardingDelegates.first { delegate in
+                    (delegate as? NSObjectProtocol)?.responds(to: aSelector) == true
+                }
+            )
+        }
+        return target.value
+    }
+
+    private var forwardingDelegates: [AnyObject] {
+        [collectionDelegate, scrollDelegate, layoutDelegate, displayDelegate].compactMap { $0 as AnyObject? }
+    }
+
+    private var resolvedLayoutDelegate: UICollectionViewDelegateFlowLayout? {
+        layoutDelegate ?? (collectionDelegate as? UICollectionViewDelegateFlowLayout)
     }
 
     /// 重建列表描述树并应用到 diffable data source。
@@ -203,6 +264,14 @@ where SectionID: Hashable & Sendable {
         completion: (() -> Void)?,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
     ) -> ListApplyResult<SectionID> {
+        _apply(options: options, completion: { _ in completion?() }, content)
+    }
+
+    private func _apply(
+        options: ListApplyOptions,
+        completion: ((ListApplySummary) -> Void)?,
+        @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
+    ) -> ListApplyResult<SectionID> {
         let newSections = content()
         let newLayoutSignature = Self.makeLayoutSignature(from: newSections)
         let shouldInvalidateLayout = layoutSignature != newLayoutSignature
@@ -219,10 +288,12 @@ where SectionID: Hashable & Sendable {
             lastApplySummary = summary
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options)
-            completion?()
+            completion?(summary)
             return ListApplyResult(adapter: self, summary: summary)
         }
 
+        applyGeneration += 1
+        let generation = applyGeneration
         sections = newSections
         layoutSignature = newLayoutSignature
         rebuildLookupTables()
@@ -233,10 +304,13 @@ where SectionID: Hashable & Sendable {
         for section in newSections {
             let sectionID = AnyListID(section.id)
             snapshot.appendSections([sectionID])
-            snapshot.appendItems(section.rows.map(\.identity), toSection: sectionID)
+            if !section.hasOutlineHierarchy {
+                snapshot.appendItems(section.rows.map(\.identity), toSection: sectionID)
+            }
         }
 
-        let refreshItems = applyPlan.snapshotRefreshItems
+        let snapshotItems = Set(snapshot.itemIdentifiers)
+        let refreshItems = applyPlan.snapshotRefreshItems.filter { snapshotItems.contains($0) }
         if !refreshItems.isEmpty {
             if #available(iOS 15.0, tvOS 15.0, *) {
                 snapshot.reconfigureItems(refreshItems)
@@ -250,8 +324,12 @@ where SectionID: Hashable & Sendable {
         ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
 
         isApplyingSnapshot = true
-        dataSource.apply(snapshot, animatingDifferences: options.animatingDifferences) { [weak self] in
+        let finishApply = { [weak self] in
             guard let self else { return }
+            guard self.applyGeneration == generation else {
+                completion?(summary)
+                return
+            }
             self.isApplyingSnapshot = false
             self.reconcileSelection()
             if shouldInvalidateLayout {
@@ -270,10 +348,60 @@ where SectionID: Hashable & Sendable {
             )
             self.lastApplySummary = completedSummary
             ListApplyLogger.logApplySummary(completedSummary, options: options)
-            completion?()
+            completion?(completedSummary)
+        }
+        let finishApplyBox = ListMainActorCallbackBox(finishApply)
+        // UIKit can invoke this completion from its internal diffing queue before
+        // the global snapshot apply has fully unwound. Defer the outline phase to
+        // the next main-actor turn so section snapshots are never applied reentrantly.
+        let didApplyBox = ListMainActorCallbackBox { [weak self] in
+            guard let self else { return }
+            guard self.applyGeneration == generation else {
+                finishApplyBox.call()
+                return
+            }
+            self.applyOutlineSnapshots(
+                generation: generation,
+                animatingDifferences: options.animatingDifferences,
+                completion: { finishApplyBox.call() }
+            )
+        }
+        let didApply = { didApplyBox.schedule() }
+
+        switch options.applicationMode {
+        case .differences:
+            dataSource.apply(
+                snapshot,
+                animatingDifferences: options.animatingDifferences,
+                completion: didApply
+            )
+        case .reloadData:
+            if #available(iOS 15.0, tvOS 15.0, *) {
+                dataSource.applySnapshotUsingReloadData(snapshot, completion: didApply)
+            } else {
+                dataSource.apply(snapshot, animatingDifferences: false, completion: didApply)
+            }
         }
 
         return ListApplyResult(adapter: self, summary: summary)
+    }
+
+    /// 重建描述树并等待 UIKit 完成 snapshot、selection、layout 和可见刷新。
+    ///
+    /// 返回值包含最终 summary，适合后续滚动、焦点或依赖最终布局的工作。
+    @discardableResult
+    public func apply(
+        options: ListApplyOptions = ListApplyOptions(),
+        @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
+    ) async -> ListApplyResult<SectionID> {
+        let builtSections = content()
+        return await withCheckedContinuation { continuation in
+            _ = _apply(options: options, completion: { [weak self] summary in
+                continuation.resume(returning: ListApplyResult(adapter: self, summary: summary))
+            }) {
+                builtSections
+            }
+        }
     }
 
     /// 迁移兼容入口：新页面优先使用 `apply { ListSection { Row(...) } }`。
@@ -306,6 +434,29 @@ where SectionID: Hashable & Sendable {
         return self
     }
 
+    /// 监听 UIKit 一次批量预取请求。
+    @discardableResult
+    public func onPrefetchItems(_ handler: @escaping @MainActor ([ListContext]) -> Void) -> Self {
+        prefetchItemsHandler = handler
+        return self
+    }
+
+    /// 监听 UIKit 一次批量取消预取请求。
+    @discardableResult
+    public func onCancelPrefetchingItems(_ handler: @escaping @MainActor ([ListContext]) -> Void) -> Self {
+        cancelPrefetchingItemsHandler = handler
+        return self
+    }
+
+    /// 为 iOS 16+ 多选 item 提供一个批量 context menu。
+    @discardableResult
+    public func contextMenuForItems(
+        _ provider: @escaping @MainActor ([ListContext], CGPoint) -> UIContextMenuConfiguration?
+    ) -> Self {
+        contextMenuItemsProvider = provider
+        return self
+    }
+
     public func numberOfSections(in collectionView: UICollectionView) -> Int {
         sections.count
     }
@@ -316,7 +467,7 @@ where SectionID: Hashable & Sendable {
 
     public func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         guard let row = row(at: indexPath) else { return UICollectionViewCell() }
-        return row.cellProvider(collectionView, indexPath, context(for: indexPath, sectionID: row.identity.sectionID))
+        return row.cellProvider(collectionView, indexPath, context(for: indexPath, identity: row.identity))
     }
 
     public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
@@ -324,24 +475,104 @@ where SectionID: Hashable & Sendable {
         if selectionMode(at: indexPath) == .single {
             deselectOtherItems(in: indexPath.section, keeping: indexPath, collectionView: collectionView)
         }
-        let context = context(for: indexPath, sectionID: row.identity.sectionID)
+        let context = context(for: indexPath, identity: row.identity)
         row.selectHandler?(context)
         row.selectionChangeHandler?(true, context)
+        collectionDelegate?.collectionView?(collectionView, didSelectItemAt: indexPath)
     }
 
     public func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
         guard let row = row(at: indexPath) else { return }
-        let context = context(for: indexPath, sectionID: row.identity.sectionID)
+        let context = context(for: indexPath, identity: row.identity)
         row.deselectHandler?(context)
         row.selectionChangeHandler?(false, context)
+        collectionDelegate?.collectionView?(collectionView, didDeselectItemAt: indexPath)
     }
 
     public func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
-        selectionMode(at: indexPath) != .none
+        guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true else {
+            return false
+        }
+        return collectionDelegate?.collectionView?(collectionView, shouldSelectItemAt: indexPath) ?? true
     }
 
     public func collectionView(_ collectionView: UICollectionView, shouldDeselectItemAt indexPath: IndexPath) -> Bool {
-        selectionMode(at: indexPath) != .none
+        guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true else {
+            return false
+        }
+        return collectionDelegate?.collectionView?(collectionView, shouldDeselectItemAt: indexPath) ?? true
+    }
+
+    public func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
+        guard row(at: indexPath)?.isSelectionDisabled != true else { return false }
+        return collectionDelegate?.collectionView?(collectionView, shouldHighlightItemAt: indexPath) ?? true
+    }
+
+    public func collectionView(_ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath) {
+        if let row = row(at: indexPath) {
+            row.highlightChangeHandler?(true, context(for: indexPath, identity: row.identity))
+        }
+        collectionDelegate?.collectionView?(collectionView, didHighlightItemAt: indexPath)
+    }
+
+    public func collectionView(_ collectionView: UICollectionView, didUnhighlightItemAt indexPath: IndexPath) {
+        if let row = row(at: indexPath) {
+            row.highlightChangeHandler?(false, context(for: indexPath, identity: row.identity))
+        }
+        collectionDelegate?.collectionView?(collectionView, didUnhighlightItemAt: indexPath)
+    }
+
+    @available(iOS 16.0, tvOS 16.0, *)
+    public func collectionView(_ collectionView: UICollectionView, performPrimaryActionForItemAt indexPath: IndexPath) {
+        if let row = row(at: indexPath) {
+            row.primaryActionHandler?(context(for: indexPath, identity: row.identity))
+        }
+        collectionDelegate?.collectionView?(collectionView, performPrimaryActionForItemAt: indexPath)
+    }
+
+    public func collectionView(_ collectionView: UICollectionView, canFocusItemAt indexPath: IndexPath) -> Bool {
+        row(at: indexPath)?.isFocusable
+            ?? collectionDelegate?.collectionView?(collectionView, canFocusItemAt: indexPath)
+            ?? true
+    }
+
+    @available(iOS 15.0, tvOS 15.0, *)
+    public func collectionView(_ collectionView: UICollectionView, selectionFollowsFocusForItemAt indexPath: IndexPath) -> Bool {
+        row(at: indexPath)?.selectionFollowsFocus
+            ?? collectionDelegate?.collectionView?(collectionView, selectionFollowsFocusForItemAt: indexPath)
+            ?? collectionView.selectionFollowsFocus
+    }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        shouldSpringLoadItemAt indexPath: IndexPath,
+        with context: any UISpringLoadedInteractionContext
+    ) -> Bool {
+        row(at: indexPath)?.isSpringLoadingEnabled
+            ?? collectionDelegate?.collectionView?(collectionView, shouldSpringLoadItemAt: indexPath, with: context)
+            ?? true
+    }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath
+    ) -> Bool {
+        guard sections[safe: indexPath.section]?.allowsMultipleSelectionInteraction == true else { return false }
+        return collectionDelegate?.collectionView?(
+            collectionView,
+            shouldBeginMultipleSelectionInteractionAt: indexPath
+        ) ?? true
+    }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        didBeginMultipleSelectionInteractionAt indexPath: IndexPath
+    ) {
+        collectionDelegate?.collectionView?(collectionView, didBeginMultipleSelectionInteractionAt: indexPath)
+    }
+
+    public func collectionViewDidEndMultipleSelectionInteraction(_ collectionView: UICollectionView) {
+        collectionDelegate?.collectionViewDidEndMultipleSelectionInteraction?(collectionView)
     }
 
     public func collectionView(
@@ -351,9 +582,12 @@ where SectionID: Hashable & Sendable {
     ) {
         if let row = row(at: indexPath) {
             displayedRowsByCell[ObjectIdentifier(cell)] = row
-            row.displayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+            row.displayHandler?(cell, context(for: indexPath, identity: row.identity))
         }
         displayDelegate?.collectionView?(collectionView, willDisplay: cell, forItemAt: indexPath)
+        if !sameObject(displayDelegate, collectionDelegate) {
+            collectionDelegate?.collectionView?(collectionView, willDisplay: cell, forItemAt: indexPath)
+        }
     }
 
     public func collectionView(
@@ -363,9 +597,12 @@ where SectionID: Hashable & Sendable {
     ) {
         let row = displayedRowsByCell.removeValue(forKey: ObjectIdentifier(cell)) ?? row(at: indexPath)
         if let row {
-            row.endDisplayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+            row.endDisplayHandler?(cell, context(for: indexPath, identity: row.identity))
         }
         displayDelegate?.collectionView?(collectionView, didEndDisplaying: cell, forItemAt: indexPath)
+        if !sameObject(displayDelegate, collectionDelegate) {
+            collectionDelegate?.collectionView?(collectionView, didEndDisplaying: cell, forItemAt: indexPath)
+        }
     }
 
     public func collectionView(
@@ -376,7 +613,7 @@ where SectionID: Hashable & Sendable {
     ) {
         if let supplementary = supplementary(kind: elementKind, at: indexPath) {
             displayedSupplementariesByView[ObjectIdentifier(view)] = supplementary
-            supplementary.displayHandler?(view, context(for: indexPath, sectionID: supplementary.identity.sectionID))
+            supplementary.displayHandler?(view, context(for: indexPath, identity: supplementary.identity))
         }
         displayDelegate?.collectionView?(
             collectionView,
@@ -384,6 +621,14 @@ where SectionID: Hashable & Sendable {
             forElementKind: elementKind,
             at: indexPath
         )
+        if !sameObject(displayDelegate, collectionDelegate) {
+            collectionDelegate?.collectionView?(
+                collectionView,
+                willDisplaySupplementaryView: view,
+                forElementKind: elementKind,
+                at: indexPath
+            )
+        }
     }
 
     public func collectionView(
@@ -395,7 +640,7 @@ where SectionID: Hashable & Sendable {
         let supplementary = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
             ?? supplementary(kind: elementKind, at: indexPath)
         if let supplementary {
-            supplementary.endDisplayHandler?(view, context(for: indexPath, sectionID: supplementary.identity.sectionID))
+            supplementary.endDisplayHandler?(view, context(for: indexPath, identity: supplementary.identity))
         }
         displayDelegate?.collectionView?(
             collectionView,
@@ -403,29 +648,45 @@ where SectionID: Hashable & Sendable {
             forElementOfKind: elementKind,
             at: indexPath
         )
+        if !sameObject(displayDelegate, collectionDelegate) {
+            collectionDelegate?.collectionView?(
+                collectionView,
+                didEndDisplayingSupplementaryView: view,
+                forElementOfKind: elementKind,
+                at: indexPath
+            )
+        }
     }
 
     public func collectionView(
         _ collectionView: UICollectionView,
         prefetchItemsAt indexPaths: [IndexPath]
     ) {
+        var contexts: [ListContext] = []
         for indexPath in indexPaths {
             guard let row = row(at: indexPath) else { continue }
             prefetchedRowsByIndexPath[indexPath] = row
-            row.prefetchHandler?(context(for: indexPath, sectionID: row.identity.sectionID))
+            let rowContext = context(for: indexPath, identity: row.identity)
+            contexts.append(rowContext)
+            row.prefetchHandler?(rowContext)
         }
+        if !contexts.isEmpty { prefetchItemsHandler?(contexts) }
     }
 
     public func collectionView(
         _ collectionView: UICollectionView,
         cancelPrefetchingForItemsAt indexPaths: [IndexPath]
     ) {
+        var contexts: [ListContext] = []
         for indexPath in indexPaths {
             guard let row = prefetchedRowsByIndexPath.removeValue(forKey: indexPath) ?? row(at: indexPath) else {
                 continue
             }
-            row.cancelPrefetchHandler?(context(for: indexPath, sectionID: row.identity.sectionID))
+            let rowContext = context(for: indexPath, identity: row.identity)
+            contexts.append(rowContext)
+            row.cancelPrefetchHandler?(rowContext)
         }
+        if !contexts.isEmpty { cancelPrefetchingItemsHandler?(contexts) }
     }
 
     public func collectionView(
@@ -434,7 +695,131 @@ where SectionID: Hashable & Sendable {
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
         guard let row = row(at: indexPath) else { return nil }
-        return row.contextMenuProvider?(context(for: indexPath, sectionID: row.identity.sectionID))
+        let configuration = row.contextMenuProvider?(context(for: indexPath, identity: row.identity))
+            ?? collectionDelegate?.collectionView?(
+                collectionView,
+                contextMenuConfigurationForItemAt: indexPath,
+                point: point
+            )
+        if configuration != nil { activeContextMenu = (row, indexPath) }
+        return configuration
+    }
+
+    @available(iOS 16.0, tvOS 17.0, *)
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        contextMenuConfigurationForItemsAt indexPaths: [IndexPath],
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        let targets = indexPaths.compactMap { indexPath -> (row: AnyListRow, context: ListContext)? in
+            guard let row = row(at: indexPath) else { return nil }
+            return (row, context(for: indexPath, identity: row.identity))
+        }
+        let rowConfiguration = targets.first.flatMap { target in
+            target.row.contextMenuProvider?(target.context)
+        }
+        let delegateConfiguration = collectionDelegate?.collectionView?(
+            collectionView,
+            contextMenuConfigurationForItemsAt: indexPaths,
+            point: point
+        ) ?? indexPaths.first.flatMap { firstIndexPath in
+            collectionDelegate?.collectionView?(
+                collectionView,
+                contextMenuConfigurationForItemAt: firstIndexPath,
+                point: point
+            )
+        }
+        let configuration = contextMenuItemsProvider?(targets.map(\.context), point)
+            ?? rowConfiguration
+            ?? delegateConfiguration
+        if configuration != nil, let first = indexPaths.first, let row = row(at: first) {
+            activeContextMenu = (row, first)
+        }
+        return configuration
+    }
+
+    @available(iOS 16.0, tvOS 17.0, *)
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        contextMenuConfiguration configuration: UIContextMenuConfiguration,
+        highlightPreviewForItemAt indexPath: IndexPath
+    ) -> UITargetedPreview? {
+        guard let row = row(at: indexPath) else { return nil }
+        return row.contextMenuHighlightPreviewProvider?(context(for: indexPath, identity: row.identity))
+            ?? collectionDelegate?.collectionView?(
+                collectionView,
+                contextMenuConfiguration: configuration,
+                highlightPreviewForItemAt: indexPath
+            )
+    }
+
+    @available(iOS 16.0, tvOS 17.0, *)
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        contextMenuConfiguration configuration: UIContextMenuConfiguration,
+        dismissalPreviewForItemAt indexPath: IndexPath
+    ) -> UITargetedPreview? {
+        guard let row = row(at: indexPath) else { return nil }
+        return row.contextMenuDismissalPreviewProvider?(context(for: indexPath, identity: row.identity))
+            ?? collectionDelegate?.collectionView?(
+                collectionView,
+                contextMenuConfiguration: configuration,
+                dismissalPreviewForItemAt: indexPath
+            )
+    }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
+        animator: any UIContextMenuInteractionCommitAnimating
+    ) {
+        if let activeContextMenu {
+            activeContextMenu.row.contextMenuCommitHandler?(
+                context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity),
+                animator
+            )
+        }
+        collectionDelegate?.collectionView?(
+            collectionView,
+            willPerformPreviewActionForMenuWith: configuration,
+            animator: animator
+        )
+    }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
+    ) -> UITargetedPreview? {
+        guard let activeContextMenu else {
+            return collectionDelegate?.collectionView?(
+                collectionView,
+                previewForHighlightingContextMenuWithConfiguration: configuration
+            )
+        }
+        return activeContextMenu.row.contextMenuHighlightPreviewProvider?(
+            context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity)
+        ) ?? collectionDelegate?.collectionView?(
+            collectionView,
+            previewForHighlightingContextMenuWithConfiguration: configuration
+        )
+    }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
+    ) -> UITargetedPreview? {
+        guard let activeContextMenu else {
+            return collectionDelegate?.collectionView?(
+                collectionView,
+                previewForDismissingContextMenuWithConfiguration: configuration
+            )
+        }
+        return activeContextMenu.row.contextMenuDismissalPreviewProvider?(
+            context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity)
+        ) ?? collectionDelegate?.collectionView?(
+            collectionView,
+            previewForDismissingContextMenuWithConfiguration: configuration
+        )
     }
 
     public func collectionView(
@@ -442,7 +827,7 @@ where SectionID: Hashable & Sendable {
         leadingSwipeActionsConfigurationForItemAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         guard let row = row(at: indexPath) else { return nil }
-        return row.leadingSwipeActionsProvider?(context(for: indexPath, sectionID: row.identity.sectionID))
+        return row.leadingSwipeActionsProvider?(context(for: indexPath, identity: row.identity))
     }
 
     public func collectionView(
@@ -450,24 +835,82 @@ where SectionID: Hashable & Sendable {
         trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         guard let row = row(at: indexPath) else { return nil }
-        return row.trailingSwipeActionsProvider?(context(for: indexPath, sectionID: row.identity.sectionID))
+        return row.trailingSwipeActionsProvider?(context(for: indexPath, identity: row.identity))
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard !isApplyingSnapshot else { return }
         scrollDelegate?.scrollViewDidScroll?(scrollView)
+        if !sameObject(scrollDelegate, collectionDelegate) {
+            collectionDelegate?.scrollViewDidScroll?(scrollView)
+        }
     }
 
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewWillBeginDragging?(scrollView)
+        if !sameObject(scrollDelegate, collectionDelegate) {
+            collectionDelegate?.scrollViewWillBeginDragging?(scrollView)
+        }
     }
 
     public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         scrollDelegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
+        if !sameObject(scrollDelegate, collectionDelegate) {
+            collectionDelegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
+        }
     }
 
     public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewDidEndDecelerating?(scrollView)
+        if !sameObject(scrollDelegate, collectionDelegate) {
+            collectionDelegate?.scrollViewDidEndDecelerating?(scrollView)
+        }
+    }
+
+    public func indexTitles(for collectionView: UICollectionView) -> [String]? {
+        indexTitleEntries = makeIndexTitleEntries()
+        let titles = indexTitleEntries.map(\.title)
+        return titles.isEmpty ? nil : titles
+    }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        indexPathForIndexTitle title: String,
+        at index: Int
+    ) -> IndexPath {
+        if let entry = indexTitleEntries[safe: index],
+           entry.title == title,
+           let indexPath = dataSource.indexPath(for: entry.identity) {
+            return indexPath
+        }
+
+        indexTitleEntries = makeIndexTitleEntries()
+        if let entry = indexTitleEntries.first(where: { $0.title == title }),
+           let indexPath = dataSource.indexPath(for: entry.identity) {
+            return indexPath
+        }
+
+        return firstVisibleItemIndexPath() ?? IndexPath(item: 0, section: 0)
+    }
+
+    private func makeIndexTitleEntries() -> [CollectionIndexTitleEntry] {
+        sections.compactMap { section in
+            guard let title = section.indexTitle,
+                  let row = section.rows.first,
+                  dataSource.indexPath(for: row.identity) != nil else { return nil }
+            return CollectionIndexTitleEntry(title: title, identity: row.identity)
+        }
+    }
+
+    private func firstVisibleItemIndexPath() -> IndexPath? {
+        for section in sections {
+            for row in section.rows {
+                if let indexPath = dataSource.indexPath(for: row.identity) {
+                    return indexPath
+                }
+            }
+        }
+        return nil
     }
 
     public func collectionView(
@@ -475,7 +918,7 @@ where SectionID: Hashable & Sendable {
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        layoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, sizeForItemAt: indexPath)
+        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, sizeForItemAt: indexPath)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.itemSize
             ?? UICollectionViewFlowLayout.automaticSize
     }
@@ -485,7 +928,7 @@ where SectionID: Hashable & Sendable {
         layout collectionViewLayout: UICollectionViewLayout,
         insetForSectionAt section: Int
     ) -> UIEdgeInsets {
-        layoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, insetForSectionAt: section)
+        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, insetForSectionAt: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.sectionInset
             ?? .zero
     }
@@ -495,7 +938,7 @@ where SectionID: Hashable & Sendable {
         layout collectionViewLayout: UICollectionViewLayout,
         minimumLineSpacingForSectionAt section: Int
     ) -> CGFloat {
-        layoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, minimumLineSpacingForSectionAt: section)
+        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, minimumLineSpacingForSectionAt: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.minimumLineSpacing
             ?? 0
     }
@@ -505,7 +948,7 @@ where SectionID: Hashable & Sendable {
         layout collectionViewLayout: UICollectionViewLayout,
         minimumInteritemSpacingForSectionAt section: Int
     ) -> CGFloat {
-        layoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, minimumInteritemSpacingForSectionAt: section)
+        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, minimumInteritemSpacingForSectionAt: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.minimumInteritemSpacing
             ?? 0
     }
@@ -515,7 +958,7 @@ where SectionID: Hashable & Sendable {
         layout collectionViewLayout: UICollectionViewLayout,
         referenceSizeForHeaderInSection section: Int
     ) -> CGSize {
-        layoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, referenceSizeForHeaderInSection: section)
+        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, referenceSizeForHeaderInSection: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.headerReferenceSize
             ?? .zero
     }
@@ -525,7 +968,7 @@ where SectionID: Hashable & Sendable {
         layout collectionViewLayout: UICollectionViewLayout,
         referenceSizeForFooterInSection section: Int
     ) -> CGSize {
-        layoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, referenceSizeForFooterInSection: section)
+        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, referenceSizeForFooterInSection: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.footerReferenceSize
             ?? .zero
     }
@@ -552,6 +995,38 @@ where SectionID: Hashable & Sendable {
     /// - Returns: section 内 row 数量；不存在时返回 0。
     public func itemCount(in sectionID: SectionID) -> Int {
         sections.first { $0.id == sectionID }?.rows.count ?? 0
+    }
+
+    /// 返回业务 section 当前所在位置。
+    public func sectionIndex(for sectionID: SectionID) -> Int? {
+        sections.firstIndex { $0.id == sectionID }
+    }
+
+    /// 返回当前位置对应的稳定展示身份。
+    public func itemIdentity(at indexPath: IndexPath) -> AnyListIdentity? {
+        row(at: indexPath)?.identity
+    }
+
+    /// 返回当前位置对应的强类型 row id。
+    public func rowIdentifier<RowID>(
+        at indexPath: IndexPath,
+        as type: RowID.Type = RowID.self
+    ) -> RowID? where RowID: Hashable & Sendable {
+        itemIdentity(at: indexPath)?.rowID.typed(type)
+    }
+
+    /// 根据完整展示身份查询当前位置。
+    public func indexPath(for identity: AnyListIdentity) -> IndexPath? {
+        guard
+            let sectionIndex = sections.firstIndex(where: { AnyListID($0.id) == identity.sectionID }),
+            let itemIndex = sections[sectionIndex].rows.firstIndex(where: { $0.identity == identity })
+        else { return nil }
+        return IndexPath(item: itemIndex, section: sectionIndex)
+    }
+
+    /// 判断当前描述树是否仍包含指定展示身份。
+    public func contains(_ identity: AnyListIdentity) -> Bool {
+        indexPath(for: identity) != nil
     }
 
     /// 根据业务 row id 查询当前 indexPath。
@@ -621,9 +1096,8 @@ where SectionID: Hashable & Sendable {
             guard let row = row(at: indexPath), let cell = collectionView.cellForItem(at: indexPath) else {
                 continue
             }
-            let context = context(for: indexPath, sectionID: row.identity.sectionID)
+            let context = context(for: indexPath, identity: row.identity)
             row.configureVisibleCell(cell, context)
-            row.displayHandler?(cell, context)
             reconfiguredCount += 1
         }
 
@@ -696,6 +1170,7 @@ where SectionID: Hashable & Sendable {
     /// - Returns: 可直接赋值给 collection view 的 compositional layout。
     /// - Note: 页面仍需要显式把返回的 layout 赋给 `collectionView.collectionViewLayout`。
     public func makeCompositionalLayout(
+        configuration: ListCompositionalLayoutConfiguration = .init(),
         fallback: ((
             ListSection<SectionID>,
             Int,
@@ -704,7 +1179,7 @@ where SectionID: Hashable & Sendable {
         diagnostics: ListDiagnosticsOptions = .debugDefault
     ) -> UICollectionViewCompositionalLayout {
         lastLayoutDiagnostics = []
-        let layout = UICollectionViewCompositionalLayout { [weak self] sectionIndex, environment in
+        let sectionProvider: UICollectionViewCompositionalLayoutSectionProvider = { [weak self] sectionIndex, environment in
             MainActor.assumeIsolated {
                 guard let self else { return nil }
                 return self.makeCompositionalSection(
@@ -715,6 +1190,10 @@ where SectionID: Hashable & Sendable {
                 )
             }
         }
+        let layout = UICollectionViewCompositionalLayout(
+            sectionProvider: sectionProvider,
+            configuration: configuration.makeConfiguration()
+        )
         registerBackgroundDecorations(on: layout, sections: sections)
         return layout
     }
@@ -750,6 +1229,18 @@ where SectionID: Hashable & Sendable {
             )
             return nil
         }
+        if section.sectionLayout?.uiKitListLayout != nil {
+            recordLayoutDiagnostics(
+                [
+                    ListDiagnosticsIssue(
+                        kind: .invalidLayout,
+                        message: "ListKit: UIKitListLayout needs a layout environment; use makeCompositionalLayout() instead of makeCompositionalSection(for:)."
+                    )
+                ],
+                options: diagnostics
+            )
+            return nil
+        }
         return section.makeCompositionalLayoutSection()
     }
 
@@ -767,6 +1258,26 @@ where SectionID: Hashable & Sendable {
         let fallbackSection: NSCollectionLayoutSection?
         if let customSectionLayout = section.customSectionLayout {
             fallbackSection = customSectionLayout.makeSection(section, sectionIndex, environment)
+        } else if let listLayout = section.sectionLayout?.uiKitListLayout {
+            var configuration = listLayout.makeConfiguration()
+            configuration.leadingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+                guard let self, let collectionView = self.collectionView else { return nil }
+                return self.collectionView(
+                    collectionView,
+                    leadingSwipeActionsConfigurationForItemAt: indexPath
+                )
+            }
+            configuration.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+                guard let self, let collectionView = self.collectionView else { return nil }
+                return self.collectionView(
+                    collectionView,
+                    trailingSwipeActionsConfigurationForItemAt: indexPath
+                )
+            }
+            fallbackSection = NSCollectionLayoutSection.list(
+                using: configuration,
+                layoutEnvironment: environment
+            )
         } else if section.layoutID != nil {
             fallbackSection = fallback?(section, sectionIndex, environment)
             if fallbackSection == nil {
@@ -778,7 +1289,15 @@ where SectionID: Hashable & Sendable {
         } else {
             fallbackSection = nil
         }
-        return section.makeCompositionalLayoutSection(fallback: fallbackSection)
+        let layoutSection = section.makeCompositionalLayoutSection(fallback: fallbackSection)
+        if section.visibleItemsInvalidationHandler != nil {
+            layoutSection.visibleItemsInvalidationHandler = { [weak self] items, offset, environment in
+                MainActor.assumeIsolated {
+                    self?.sections[safe: sectionIndex]?.visibleItemsInvalidationHandler?(items, offset, environment)
+                }
+            }
+        }
+        return layoutSection
     }
 
     private func recordLayoutDiagnostics(
@@ -840,6 +1359,131 @@ where SectionID: Hashable & Sendable {
         registerBackgroundDecorations(on: layout, sections: sections)
     }
 
+    private func didReorder(
+        _ transaction: NSDiffableDataSourceTransaction<AnyListID, AnyListIdentity>
+    ) {
+        let initialSnapshot = transaction.initialSnapshot
+        let finalSnapshot = transaction.finalSnapshot
+        let movedIdentities = transaction.difference.compactMap { change -> AnyListIdentity? in
+            guard case let .remove(_, identity, associatedWith: destination) = change,
+                  destination != nil
+            else { return nil }
+            return identity
+        }
+        let moves = movedIdentities.compactMap { identity -> (AnyListRow, IndexPath, IndexPath)? in
+            guard
+                let row = rowsByIdentity[identity],
+                let source = Self.indexPath(for: identity, in: initialSnapshot),
+                let destination = Self.indexPath(for: identity, in: finalSnapshot),
+                source != destination
+            else { return nil }
+            return (row, source, destination)
+        }
+
+        for sectionIndex in sections.indices {
+            let sectionID = AnyListID(sections[sectionIndex].id)
+            sections[sectionIndex].rows = finalSnapshot.itemIdentifiers(inSection: sectionID).compactMap {
+                rowsByIdentity[$0]
+            }
+        }
+        moves.forEach { row, source, destination in
+            row.moveHandler?(source, destination)
+        }
+    }
+
+    private func applyOutlineSnapshots(
+        generation: Int,
+        animatingDifferences: Bool,
+        completion: @escaping @MainActor () -> Void
+    ) {
+        let applications = sections.compactMap { section -> ListOutlineSnapshotApplication? in
+            guard section.hasOutlineHierarchy else { return nil }
+            return ListOutlineSnapshotApplication(
+                sectionID: AnyListID(section.id),
+                snapshot: Self.makeOutlineSnapshot(from: section.outlineRoots)
+            )
+        }
+        guard !applications.isEmpty else {
+            completion()
+            return
+        }
+        applyOutlineSnapshots(
+            applications,
+            at: 0,
+            generation: generation,
+            animatingDifferences: animatingDifferences,
+            completion: completion
+        )
+    }
+
+    private func applyOutlineSnapshots(
+        _ applications: [ListOutlineSnapshotApplication],
+        at index: Int,
+        generation: Int,
+        animatingDifferences: Bool,
+        completion: @escaping @MainActor () -> Void
+    ) {
+        guard applyGeneration == generation, let application = applications[safe: index] else {
+            completion()
+            return
+        }
+        // Each section snapshot must also finish unwinding before the next one starts.
+        let nextApply = ListMainActorCallbackBox { [weak self] in
+            guard let self else {
+                completion()
+                return
+            }
+            self.applyOutlineSnapshots(
+                applications,
+                at: index + 1,
+                generation: generation,
+                animatingDifferences: animatingDifferences,
+                completion: completion
+            )
+        }
+        dataSource.apply(
+            application.snapshot,
+            to: application.sectionID,
+            animatingDifferences: animatingDifferences
+        ) {
+            nextApply.schedule()
+        }
+    }
+
+    private static func makeOutlineSnapshot(
+        from roots: [AnyListOutlineNode]
+    ) -> NSDiffableDataSourceSectionSnapshot<AnyListIdentity> {
+        var snapshot = NSDiffableDataSourceSectionSnapshot<AnyListIdentity>()
+
+        func append(_ nodes: [AnyListOutlineNode], to parent: AnyListIdentity?) {
+            let identities = nodes.map { $0.row.identity }
+            snapshot.append(identities, to: parent)
+            for node in nodes where !node.children.isEmpty {
+                append(node.children, to: node.row.identity)
+                if node.isExpanded { snapshot.expand([node.row.identity]) }
+            }
+        }
+        append(roots, to: nil)
+        return snapshot
+    }
+
+    private func notifyExpansionChange(identity: AnyListIdentity, isExpanded: Bool) {
+        guard let section = sections.first(where: { AnyListID($0.id) == identity.sectionID }) else { return }
+        section.expansionChangeHandler?(identity, isExpanded)
+    }
+
+    private static func indexPath(
+        for identity: AnyListIdentity,
+        in snapshot: NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>
+    ) -> IndexPath? {
+        guard
+            let sectionID = snapshot.sectionIdentifier(containingItem: identity),
+            let section = snapshot.indexOfSection(sectionID),
+            let item = snapshot.itemIdentifiers(inSection: sectionID).firstIndex(of: identity)
+        else { return nil }
+        return IndexPath(item: item, section: section)
+    }
+
     private func registerBackgroundDecorations(
         on layout: UICollectionViewLayout,
         sections: [ListSection<SectionID>]
@@ -856,6 +1500,7 @@ where SectionID: Hashable & Sendable {
                 layoutID: section.layoutID,
                 sectionLayout: section.sectionLayout,
                 customLayoutID: section.customSectionLayout?.id,
+                hasVisibleItemsInvalidationHandler: section.visibleItemsInvalidationHandler != nil,
                 supplementarySignatures: section.supplementaries.map { supplementary in
                     ListSupplementaryLayoutSignature(
                         identity: supplementary.identity,
@@ -904,8 +1549,7 @@ where SectionID: Hashable & Sendable {
             else { continue }
 
             if let cell = collectionView.cellForItem(at: indexPath) {
-                row.configureVisibleCell(cell, context(for: indexPath, sectionID: row.identity.sectionID))
-                row.displayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+                row.configureVisibleCell(cell, context(for: indexPath, identity: row.identity))
                 refreshedCount += 1
             }
         }
@@ -954,9 +1598,8 @@ where SectionID: Hashable & Sendable {
         supplementary: AnySupplementary
     ) -> Int {
         guard let configureVisibleView = supplementary.configureVisibleView else { return 0 }
-        let context = context(for: target.indexPath, sectionID: supplementary.identity.sectionID)
+        let context = context(for: target.indexPath, identity: supplementary.identity)
         configureVisibleView(target.view, context)
-        supplementary.displayHandler?(target.view, context)
         return 1
     }
 
@@ -1010,6 +1653,7 @@ where SectionID: Hashable & Sendable {
         collectionView.allowsSelection = !selectableSections.isEmpty
         collectionView.allowsMultipleSelection = selectableSections.contains { $0.selectionMode == .multiple }
             || selectableSections.count > 1
+            || selectableSections.contains { $0.allowsMultipleSelectionInteraction }
     }
 
     private func reconcileSelection() {
@@ -1094,17 +1738,22 @@ where SectionID: Hashable & Sendable {
         return AnyListID(section.id)
     }
 
-    private func context(for indexPath: IndexPath, sectionID: AnyListID) -> ListContext {
+    private func context(for indexPath: IndexPath, identity: AnyListIdentity) -> ListContext {
         guard let collectionView else {
             fatalError("CollectionListAdapter collectionView was released")
         }
-        return ListContext(sectionID: sectionID, indexPath: indexPath, collectionView: collectionView) { [weak self] event, context in
+        return ListContext(identity: identity, indexPath: indexPath, collectionView: collectionView) { [weak self] event, context in
             self?.dispatch(event, context: context)
         }
     }
 
     private func dispatch(_ event: any ListEvent, context: ListContext) {
         eventRouter.dispatch(event, context: context)
+    }
+
+    private func sameObject(_ lhs: AnyObject?, _ rhs: AnyObject?) -> Bool {
+        guard let lhs, let rhs else { return false }
+        return lhs === rhs
     }
 }
 
@@ -1159,6 +1808,7 @@ private struct ListSectionLayoutSignature: Hashable {
     let layoutID: AnyListID?
     let sectionLayout: ListSectionLayout?
     let customLayoutID: AnyListID?
+    let hasVisibleItemsInvalidationHandler: Bool
     let supplementarySignatures: [ListSupplementaryLayoutSignature]
     let backgroundDecoration: ListBackgroundDecoration?
 }
@@ -1167,6 +1817,63 @@ private struct ListSupplementaryLayoutSignature: Hashable {
     let identity: AnyListIdentity
     let kind: String
     let layout: ListSupplementaryLayout?
+}
+
+private struct ListOutlineSnapshotApplication: Sendable {
+    let sectionID: AnyListID
+    let snapshot: NSDiffableDataSourceSectionSnapshot<AnyListIdentity>
+}
+
+private final class ListMainActorCallbackBox: @unchecked Sendable {
+    private let callback: () -> Void
+
+    init(_ callback: @escaping () -> Void) {
+        self.callback = callback
+    }
+
+    @MainActor func call() {
+        callback()
+    }
+
+    nonisolated func schedule() {
+        DispatchQueue.main.async { [self] in
+            MainActor.assumeIsolated {
+                callback()
+            }
+        }
+    }
+}
+
+private final class ListUnsafeForwardingTarget: @unchecked Sendable {
+    let value: AnyObject?
+
+    init(_ value: AnyObject?) {
+        self.value = value
+    }
+}
+
+private struct CollectionIndexTitleEntry {
+    let title: String
+    let identity: AnyListIdentity
+}
+
+private final class CollectionDiffableDataSource<SectionID>:
+    UICollectionViewDiffableDataSource<AnyListID, AnyListIdentity>
+where SectionID: Hashable & Sendable {
+    weak var adapter: CollectionListAdapter<SectionID>?
+
+    override func indexTitles(for collectionView: UICollectionView) -> [String]? {
+        adapter?.indexTitles(for: collectionView)
+    }
+
+    override func collectionView(
+        _ collectionView: UICollectionView,
+        indexPathForIndexTitle title: String,
+        at index: Int
+    ) -> IndexPath {
+        adapter?.collectionView(collectionView, indexPathForIndexTitle: title, at: index)
+            ?? IndexPath(item: 0, section: 0)
+    }
 }
 
 private extension Array {

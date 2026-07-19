@@ -587,14 +587,124 @@ ListSection(.users) {
 }
 ```
 
-## Delegate Forwarding
+## SwiftUI 风格交互、原生 List 与层级
 
-`CollectionListAdapter` 会接管 `collectionView.delegate`。页面需要滚动或 flow layout 回调时，设置转发对象：
+Row 行为通过值语义 modifier 组合；section 决定整体选择模式，单行可以继续细化：
 
 ```swift
+Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
+    cell.configure(user)
+}
+.selectionDisabled(user.isUnavailable)
+.focusable()
+.selectionFollowsFocus()
+.springLoadingEnabled()
+.onHighlightChange { user, highlighted, _ in
+    analytics.highlight(user.id, highlighted)
+}
+.onPrimaryAction { user, _ in
+    router.open(user)
+}
+```
+
+Collection swipe 必须使用 UIKit 原生 list layout。`leadingSwipeActions` / `trailingSwipeActions`
+会被安装到 `UICollectionLayoutListConfiguration`，不是伪装成 collection delegate 方法：
+
+```swift
+collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
+    configuration: .init(interSectionSpacing: 12)
+)
+
+adapter.apply {
+    ListSection(.inbox) {
+        Row(model: message, id: \.id, cell: MessageListCell.self) { cell, message, _ in
+            cell.configure(message)
+        }
+        .trailingSwipeActions { context in
+            UISwipeActionsConfiguration(actions: [deleteAction(context.itemID)])
+        }
+    } layout: {
+        UIKitListLayout(appearance: .insetGrouped, showsSeparators: true)
+    }
+}
+```
+
+层级列表使用 `DisclosureGroup` 构建 section snapshot。父节点 cell 应使用
+`UICollectionViewListCell` 并显式添加 `.outlineDisclosure()`：
+
+```swift
+ListSection(.files) {
+    DisclosureGroup(
+        Row(folder.id, model: folder, cell: FolderCell.self) { cell, folder, _ in
+            cell.configure(folder)
+        }
+        .outlineDisclosure(),
+        isExpanded: expandedFolderIDs.contains(folder.id)
+    ) {
+        ForEach(folder.files, id: \.id) { file in
+            Row(model: file, cell: FileCell.self) { cell, file, _ in
+                cell.configure(file)
+            }
+        }
+    }
+} layout: {
+    UIKitListLayout(appearance: .sidebar)
+}
+.onExpansionChange { identity, isExpanded in
+    store.setExpanded(identity.rowID, isExpanded: isExpanded)
+}
+```
+
+需要等待 diffable、层级 snapshot、selection 和可见刷新全部完成时，使用 async apply；
+需要无动画整体替换时选择 `.reloadData`：
+
+```swift
+let result = await adapter.apply(
+    options: .init(applicationMode: .reloadData)
+) {
+    makeSections()
+}
+print(result.summary)
+```
+
+`ListContext.identity` / `itemID` 是稳定身份，`indexPath` 只代表事件发生时的位置。adapter
+也提供 `itemIdentity(at:)`、`indexPath(for:)`、`rowIdentifier(at:as:)` 和 `contains(_:)` 做双向查询。
+
+## Delegate Forwarding
+
+Adapter 会接管 UIKit delegate/data source。声明式 API 未覆盖的方法会动态转发；已覆盖的方法会先执行
+ListKit 行为再调用转发对象：
+
+```swift
+adapter.collectionDelegate = self
 adapter.scrollDelegate = self
 adapter.layoutDelegate = self
+
+tableAdapter.tableDelegate = self
+tableAdapter.tableDataSource = self
 ```
+
+原生 drag/drop 不强制包装进 DSL，可直接设置 `dragDelegate` / `dropDelegate`。
+
+## iOS 模拟器测试
+
+仓库提供只包含 `ExamplesTests` 的共享 Scheme，默认关闭测试并行和代码覆盖，避免运行单元测试时
+额外构建 `ExamplesUITests`。测试脚本会优先复用已经启动的 iPhone/iPad；仅在没有可用的已启动设备时
+启动一次模拟器，并在测试结束后保留它供下一次运行复用：
+
+```bash
+# 增量构建并运行全部 ExamplesTests
+scripts/test-ios.sh
+
+# 只运行一个 suite
+scripts/test-ios.sh ExamplesTests/ListKitLayoutTests
+
+# 代码没有变化时复用上一次构建产物
+scripts/test-ios.sh --no-build ExamplesTests/ListKitLayoutTests
+```
+
+需要预构建后反复运行时，先执行 `scripts/test-ios.sh --prepare`，后续使用 `--no-build`。
+可通过 `LISTKIT_SIMULATOR_ID=<UUID>` 固定设备；脚本不会主动 shutdown 或 erase 模拟器。
 
 ## CellKit 迁移对照
 

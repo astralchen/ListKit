@@ -12,10 +12,21 @@ public enum ListApplyRefreshStrategy: Equatable, Sendable {
     case forceReload
 }
 
+/// diffable snapshot 的提交方式。
+public enum ListSnapshotApplicationMode: Equatable, Sendable {
+    /// 计算新旧 snapshot 差异，并按 `animatingDifferences` 决定是否显示动画。
+    case differences
+    /// 跳过 diff，使用 UIKit 的 reload-data 路径重置列表。
+    ///
+    /// - Note: UIKit 从 iOS 15 开始提供原生实现；iOS 14 会退化为无动画 diff apply。
+    case reloadData
+}
+
 /// `apply` 的可选参数，保留旧入口兼容，同时把全局刷新策略和 diagnostics 放到一个对象里。
 public struct ListApplyOptions: Sendable {
     public var animatingDifferences: Bool
     public var refreshStrategy: ListApplyRefreshStrategy
+    public var applicationMode: ListSnapshotApplicationMode
     public var diagnostics: ListDiagnosticsOptions
 
     /// 创建 apply options。
@@ -23,14 +34,17 @@ public struct ListApplyOptions: Sendable {
     /// - Parameters:
     ///   - animatingDifferences: 是否使用 diffable 动画应用 snapshot。
     ///   - refreshStrategy: apply 级刷新策略。
+    ///   - applicationMode: diff 或 reload-data 提交方式。
     ///   - diagnostics: diagnostics 处理方式。
     public init(
         animatingDifferences: Bool = true,
         refreshStrategy: ListApplyRefreshStrategy = .automatic,
+        applicationMode: ListSnapshotApplicationMode = .differences,
         diagnostics: ListDiagnosticsOptions = .debugDefault
     ) {
         self.animatingDifferences = animatingDifferences
         self.refreshStrategy = refreshStrategy
+        self.applicationMode = applicationMode
         self.diagnostics = diagnostics
     }
 }

@@ -260,7 +260,11 @@ final class ListKitCoreTests: XCTestCase {
     func testVisibleReconfigureUsesExistingCell() {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let context = ListContext(
-            sectionID: AnyListID(0),
+            identity: AnyListIdentity(
+                sectionID: AnyListID(0),
+                rowID: AnyListID(1),
+                presentationID: ObjectIdentifier(NormalUserCell.self)
+            ),
             indexPath: IndexPath(item: 0, section: 0),
             collectionView: collectionView
         ) { _, _ in }
@@ -279,7 +283,11 @@ final class ListKitCoreTests: XCTestCase {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         var receivedEvent: UserEvent?
         let context = ListContext(
-            sectionID: AnyListID(0),
+            identity: AnyListIdentity(
+                sectionID: AnyListID(0),
+                rowID: AnyListID("header"),
+                presentationID: ObjectIdentifier(HeaderView.self)
+            ),
             indexPath: IndexPath(item: 0, section: 0),
             collectionView: collectionView
         ) { event, _ in
@@ -1308,7 +1316,7 @@ final class ListKitCoreTests: XCTestCase {
 
         let displayCountBeforeRefresh = displayCount
         XCTAssertEqual(adapter.reconfigureVisibleRows(forRowID: "first", in: 0), 1)
-        XCTAssertEqual(displayCount, displayCountBeforeRefresh + 1)
+        XCTAssertEqual(displayCount, displayCountBeforeRefresh)
         XCTAssertEqual(adapter.reconfigureVisibleRows(forRowID: "missing", in: 0), 0)
         XCTAssertEqual(adapter.reloadVisibleRows(forRowID: "first", in: 0), 1)
         XCTAssertEqual(adapter.reloadVisibleRows(forRowID: "missing", in: 0), 0)

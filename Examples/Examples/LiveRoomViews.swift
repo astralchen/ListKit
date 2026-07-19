@@ -851,6 +851,8 @@ final class LiveMessageCell: UICollectionViewCell {
     private let likeLabel = UILabel()
     private let giftImageView = UIImageView()
     private let giftBadgeLabel = UILabel()
+    private var giftImageWidthConstraint: NSLayoutConstraint!
+    private var giftImageHeightConstraint: NSLayoutConstraint!
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -933,6 +935,10 @@ final class LiveMessageCell: UICollectionViewCell {
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
 
+        giftImageWidthConstraint = giftImageView.widthAnchor.constraint(equalToConstant: 86)
+        giftImageWidthConstraint.priority = .defaultHigh
+        giftImageHeightConstraint = giftImageView.heightAnchor.constraint(equalToConstant: 76)
+
         NSLayoutConstraint.activate([
             avatarContainer.widthAnchor.constraint(equalToConstant: 48),
             avatarContainer.heightAnchor.constraint(equalToConstant: 48),
@@ -944,10 +950,9 @@ final class LiveMessageCell: UICollectionViewCell {
             onlineDot.heightAnchor.constraint(equalToConstant: 12),
             onlineDot.trailingAnchor.constraint(equalTo: avatarLabel.trailingAnchor),
             onlineDot.bottomAnchor.constraint(equalTo: avatarLabel.bottomAnchor),
-            giftImageView.widthAnchor.constraint(equalToConstant: 86),
-            giftImageView.heightAnchor.constraint(equalToConstant: 76),
+            giftImageWidthConstraint,
+            giftImageHeightConstraint,
             likeLabel.widthAnchor.constraint(equalToConstant: 44),
-            giftBadgeLabel.widthAnchor.constraint(equalToConstant: 94),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
             stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
@@ -968,9 +973,18 @@ final class LiveMessageCell: UICollectionViewCell {
         messageLabel.numberOfLines = model.tone == "gift" ? 2 : 0
         likeLabel.text = model.tone == "hot" ? "12" : (model.tone == "gift" ? "x 10" : "7")
         likeLabel.textColor = model.tone == "gift" ? .systemPurple : (model.tone == "hot" ? .systemRed : .secondaryLabel)
-        giftImageView.isHidden = model.tone != "gift"
-        giftBadgeLabel.isHidden = model.tone != "gift"
-        replyLabel.isHidden = model.tone == "gift"
+        let isGift = model.tone == "gift"
+        giftImageWidthConstraint.isActive = false
+        giftImageHeightConstraint.isActive = false
+        giftImageView.isHidden = !isGift
+        giftBadgeLabel.isHidden = !isGift
+        replyLabel.isHidden = isGift
+        if isGift {
+            NSLayoutConstraint.activate([
+                giftImageWidthConstraint,
+                giftImageHeightConstraint
+            ])
+        }
         accessibilityIdentifier = "live-message-\(model.id)"
     }
 

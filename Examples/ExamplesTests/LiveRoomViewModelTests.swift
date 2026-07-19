@@ -11,7 +11,7 @@ struct LiveRoomViewModelTests {
         #expect(viewModel.collectionSections.map(\.id) == [.status, .micSeats, .messages, .gifts, .diagnostics])
         #expect(viewModel.tableSections.map(\.id) == [.moderation])
         #expect(viewModel.liveActivitySections.map(\.id) == [.roomActivity])
-        #expect(viewModel.roomToolkitSections.map(\.id) == [.roomHero, .roomMetrics, .roomActivityTitle, .roomActivity])
+        #expect(viewModel.roomToolkitSections.map(\.id) == [.roomHero, .roomMetrics, .apiGuide, .roomActivityTitle, .roomActivity])
         #expect(viewModel.peopleSections.map(\.id) == [.micSeats])
         #expect(viewModel.toolkitSections.map(\.id) == [.status, .gifts, .diagnostics])
         #expect(viewModel.studioControlSections.map(\.id) == [.studioHeader, .studioControls, .messages])
@@ -51,6 +51,52 @@ struct LiveRoomViewModelTests {
         #expect(viewModel.visibleModerationEventIDs.contains(firstEventID) == false)
         #expect(viewModel.pendingModerationCount == 6)
         #expect(viewModel.tableSections.first { $0.id == .moderation }?.rows.count == 6)
+    }
+
+    @Test func roomToolkitUsesNativeExpandableAPIGuide() {
+        let viewModel = LiveRoomViewModel()
+        let section = viewModel.roomToolkitSections.first { $0.id == .apiGuide }
+
+        #expect(section?.hasOutlineHierarchy == true)
+        #expect(section?.rows.count == 4)
+        #expect(section?.outlineRoots.first?.isExpanded == true)
+        #expect(section?.rows.first?.showsOutlineDisclosure == true)
+        #expect(section?.rows.dropFirst().allSatisfy { $0.isFocusable == true } == true)
+        #expect(section?.indexTitle == "API")
+        #expect(section?.sectionLayout == .uiKitListConfiguration(.init(appearance: .insetGrouped, headerTopPadding: 0)))
+    }
+
+    @Test func micSeatsUseCenteredPagingForFocusedInteraction() {
+        let viewModel = LiveRoomViewModel()
+        let section = viewModel.collectionSections.first { $0.id == .micSeats }
+
+        guard case .horizontalConfiguration(let layout) = section?.sectionLayout else {
+            Issue.record("Expected horizontal mic-seat layout")
+            return
+        }
+        #expect(layout.scrollingBehavior == .groupPagingCentered)
+        #expect(section?.rows.allSatisfy { $0.isFocusable == true } == true)
+    }
+
+    @Test func moderationMovePersistsBusinessOrder() {
+        let viewModel = LiveRoomViewModel()
+        let firstID = viewModel.visibleModerationEventIDs[0]
+
+        viewModel.moveModeration(
+            from: IndexPath(row: 0, section: 0),
+            to: IndexPath(row: 2, section: 0)
+        )
+
+        #expect(viewModel.visibleModerationEventIDs[2] == firstID)
+    }
+
+    @Test func capabilityActivationUsesStableMessageIdentity() {
+        let viewModel = LiveRoomViewModel()
+
+        viewModel.activateCapability("Async snapshot apply")
+
+        #expect(viewModel.pendingScrollMessageID == viewModel.latestMessageID)
+        #expect(viewModel.messageCount == 5)
     }
 
     @Test func sectionBackgroundsUseSameHorizontalInsetsAsContent() {
@@ -97,6 +143,8 @@ private extension ListSectionLayout {
             return configuration.contentInsets
         case .horizontalConfiguration(let configuration):
             return configuration.contentInsets
+        case .uiKitListConfiguration:
+            return .zero
         }
     }
 }

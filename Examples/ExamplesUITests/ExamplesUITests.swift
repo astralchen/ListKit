@@ -35,11 +35,13 @@ final class ExamplesUITests: XCTestCase {
         roomToolkitTab.tap()
         XCTAssertTrue(app.collectionViews["room-toolkit-screen"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.otherElements["room-toolkit-hero"].exists)
+        XCTAssertTrue(app.staticTexts["SwiftUI-style API guide"].exists)
 
         adminTableTab.tap()
         XCTAssertTrue(app.otherElements["admin-table-screen"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.tables["admin-table-demo-table"].exists)
         XCTAssertTrue(app.tables["admin-table-demo-table"].isHittable)
+        XCTAssertTrue(app.buttons["admin-table-reorder"].exists)
     }
 
     @MainActor

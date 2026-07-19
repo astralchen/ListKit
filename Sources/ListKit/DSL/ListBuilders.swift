@@ -9,6 +9,12 @@ private struct InheritedIDRowScope: ListRowRepresentable {
     {
         row.eraseToAnyListRows(sectionID: sectionID, inheritedID: inheritedID)
     }
+
+    @MainActor func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
+        where SectionID: Hashable & Sendable
+    {
+        row.eraseToAnyListOutlineNodes(sectionID: sectionID, inheritedID: inheritedID)
+    }
 }
 
 /// 在 `ListSection` 中遍历数据并把外层 id 传给内部 Row。

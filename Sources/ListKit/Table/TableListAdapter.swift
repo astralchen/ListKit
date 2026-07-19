@@ -28,8 +28,25 @@ where SectionID: Hashable & Sendable {
     /// table delegate 转发对象。
     public weak var tableDelegate: UITableViewDelegate?
 
+    /// UIKit data source 逃生口，仅用于 ListKit 未声明的可选能力。
+    public weak var tableDataSource: UITableViewDataSource?
+
+    /// 原生 drag/drop 逃生口；设置后直接安装到 table view。
+    public weak var dragDelegate: UITableViewDragDelegate? {
+        didSet { tableView?.dragDelegate = dragDelegate }
+    }
+    public weak var dropDelegate: UITableViewDropDelegate? {
+        didSet { tableView?.dropDelegate = dropDelegate }
+    }
+
     /// 最近一次 `apply` 的摘要。
     public private(set) var lastApplySummary = ListApplySummary()
+
+    /// Table diffable data source 在差异提交时使用的默认行动画。
+    public var defaultRowAnimation: UITableView.RowAnimation {
+        get { dataSource.defaultRowAnimation }
+        set { dataSource.defaultRowAnimation = newValue }
+    }
 
     private weak var tableView: UITableView?
     private var sections: [TableSection<SectionID>] = []
@@ -38,6 +55,10 @@ where SectionID: Hashable & Sendable {
     private var displayedRowsByCell: [ObjectIdentifier: AnyTableRow] = [:]
     private var displayedSupplementariesByView: [ObjectIdentifier: AnyTableSectionSupplementary] = [:]
     private var prefetchedRowsByIndexPath: [IndexPath: AnyTableRow] = [:]
+    private var applyGeneration = 0
+    private var prefetchRowsHandler: (@MainActor ([TableListContext]) -> Void)?
+    private var cancelPrefetchingRowsHandler: (@MainActor ([TableListContext]) -> Void)?
+    private var activeContextMenu: (row: AnyTableRow, indexPath: IndexPath)?
     private let eventRouter = ListEventRouter<TableListContext>()
 
     /// 创建 adapter 并接管 table view 的 data source、delegate 和 prefetch data source。
@@ -53,13 +74,38 @@ where SectionID: Hashable & Sendable {
             guard let self, let row = self.rowsByIdentity[identity] else {
                 return UITableViewCell()
             }
-            return row.cellProvider(tableView, indexPath, self.context(for: indexPath, sectionID: identity.sectionID))
+            return row.cellProvider(tableView, indexPath, self.context(for: indexPath, identity: identity))
         }
         dataSource.adapter = self
 
         tableView.dataSource = dataSource
         tableView.delegate = self
         tableView.prefetchDataSource = self
+    }
+
+    public override func responds(to aSelector: Selector!) -> Bool {
+        if super.responds(to: aSelector) { return true }
+        return MainActor.assumeIsolated {
+            forwardingDelegates.contains { delegate in
+                (delegate as? NSObjectProtocol)?.responds(to: aSelector) == true
+            }
+        }
+    }
+
+    public override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        if super.responds(to: aSelector) { return super.forwardingTarget(for: aSelector) }
+        let target = MainActor.assumeIsolated {
+            TableUnsafeForwardingTarget(
+                forwardingDelegates.first { delegate in
+                    (delegate as? NSObjectProtocol)?.responds(to: aSelector) == true
+                }
+            )
+        }
+        return target.value
+    }
+
+    private var forwardingDelegates: [AnyObject] {
+        [tableDelegate, tableDataSource, scrollDelegate].compactMap { $0 as AnyObject? }
     }
 
     /// 重建 table 描述树并应用到 diffable data source。
@@ -164,6 +210,14 @@ where SectionID: Hashable & Sendable {
         completion: (() -> Void)?,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
     ) -> TableApplyResult<SectionID> {
+        _apply(options: options, completion: { _ in completion?() }, content)
+    }
+
+    private func _apply(
+        options: ListApplyOptions,
+        completion: ((ListApplySummary) -> Void)?,
+        @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
+    ) -> TableApplyResult<SectionID> {
         let newSections = content()
         let applyPlan = ListApplyPlanner.makePlan(
             old: Self.makeCoreSnapshots(from: sections),
@@ -178,10 +232,12 @@ where SectionID: Hashable & Sendable {
             lastApplySummary = summary
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options, prefix: "ListKit table apply summary")
-            completion?()
+            completion?(summary)
             return TableApplyResult(adapter: self, summary: summary)
         }
 
+        applyGeneration += 1
+        let generation = applyGeneration
         sections = newSections
         rebuildLookupTables()
         configureSelectionBehavior()
@@ -202,8 +258,13 @@ where SectionID: Hashable & Sendable {
         lastApplySummary = summary
         ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
 
-        dataSource.apply(snapshot, animatingDifferences: options.animatingDifferences) { [weak self] in
+        // Normalize UIKit's diffable completion onto a fresh main-actor turn.
+        let didApplyBox = TableMainActorCallbackBox { [weak self] in
             guard let self else { return }
+            guard self.applyGeneration == generation else {
+                completion?(summary)
+                return
+            }
             self.reconcileSelection()
             let visibleRefreshCount = applyPlan.shouldRunVisibleRefresh
                 ? self.refreshVisibleRowsIfNeeded(applyPlan: applyPlan)
@@ -217,10 +278,42 @@ where SectionID: Hashable & Sendable {
             )
             self.lastApplySummary = completedSummary
             ListApplyLogger.logApplySummary(completedSummary, options: options, prefix: "ListKit table apply summary")
-            completion?()
+            completion?(completedSummary)
+        }
+        let didApply = { didApplyBox.schedule() }
+
+        switch options.applicationMode {
+        case .differences:
+            dataSource.apply(
+                snapshot,
+                animatingDifferences: options.animatingDifferences,
+                completion: didApply
+            )
+        case .reloadData:
+            if #available(iOS 15.0, tvOS 15.0, *) {
+                dataSource.applySnapshotUsingReloadData(snapshot, completion: didApply)
+            } else {
+                dataSource.apply(snapshot, animatingDifferences: false, completion: didApply)
+            }
         }
 
         return TableApplyResult(adapter: self, summary: summary)
+    }
+
+    /// 重建描述树并等待 UIKit 完成 snapshot、selection 和可见刷新。
+    @discardableResult
+    public func apply(
+        options: ListApplyOptions = ListApplyOptions(),
+        @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
+    ) async -> TableApplyResult<SectionID> {
+        let builtSections = content()
+        return await withCheckedContinuation { continuation in
+            _ = _apply(options: options, completion: { [weak self] summary in
+                continuation.resume(returning: TableApplyResult(adapter: self, summary: summary))
+            }) {
+                builtSections
+            }
+        }
     }
 
     /// 绑定自定义业务事件。
@@ -238,6 +331,20 @@ where SectionID: Hashable & Sendable {
         return self
     }
 
+    /// 监听 UIKit 一次批量预取请求。
+    @discardableResult
+    public func onPrefetchRows(_ handler: @escaping @MainActor ([TableListContext]) -> Void) -> Self {
+        prefetchRowsHandler = handler
+        return self
+    }
+
+    /// 监听 UIKit 一次批量取消预取请求。
+    @discardableResult
+    public func onCancelPrefetchingRows(_ handler: @escaping @MainActor ([TableListContext]) -> Void) -> Self {
+        cancelPrefetchingRowsHandler = handler
+        return self
+    }
+
     public func numberOfSections(in tableView: UITableView) -> Int {
         sections.count
     }
@@ -248,7 +355,7 @@ where SectionID: Hashable & Sendable {
 
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         guard let row = row(at: indexPath) else { return UITableViewCell() }
-        return row.cellProvider(tableView, indexPath, context(for: indexPath, sectionID: row.identity.sectionID))
+        return row.cellProvider(tableView, indexPath, context(for: indexPath, identity: row.identity))
     }
 
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -256,7 +363,7 @@ where SectionID: Hashable & Sendable {
         if selectionMode(at: indexPath) == .single {
             deselectOtherRows(in: indexPath.section, keeping: indexPath, tableView: tableView)
         }
-        let context = context(for: indexPath, sectionID: row.identity.sectionID)
+        let context = context(for: indexPath, identity: row.identity)
         row.selectHandler?(context)
         row.selectionChangeHandler?(true, context)
         tableDelegate?.tableView?(tableView, didSelectRowAt: indexPath)
@@ -264,24 +371,112 @@ where SectionID: Hashable & Sendable {
 
     public func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
         guard let row = row(at: indexPath) else { return }
-        let context = context(for: indexPath, sectionID: row.identity.sectionID)
+        let context = context(for: indexPath, identity: row.identity)
         row.deselectHandler?(context)
         row.selectionChangeHandler?(false, context)
         tableDelegate?.tableView?(tableView, didDeselectRowAt: indexPath)
     }
 
-    public func tableView(_ tableView: UITableView, shouldSelectRowAt indexPath: IndexPath) -> IndexPath? {
-        selectionMode(at: indexPath) == .none ? nil : indexPath
+    public func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true else {
+            return nil
+        }
+        return tableDelegate?.tableView?(tableView, willSelectRowAt: indexPath) ?? indexPath
     }
 
+    public func tableView(_ tableView: UITableView, willDeselectRowAt indexPath: IndexPath) -> IndexPath? {
+        guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true else {
+            return nil
+        }
+        return tableDelegate?.tableView?(tableView, willDeselectRowAt: indexPath) ?? indexPath
+    }
+
+    @available(*, deprecated, renamed: "tableView(_:willSelectRowAt:)")
+    public func tableView(_ tableView: UITableView, shouldSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        self.tableView(tableView, willSelectRowAt: indexPath)
+    }
+
+    @available(*, deprecated, renamed: "tableView(_:willDeselectRowAt:)")
     public func tableView(_ tableView: UITableView, shouldDeselectRowAt indexPath: IndexPath) -> IndexPath? {
-        selectionMode(at: indexPath) == .none ? nil : indexPath
+        self.tableView(tableView, willDeselectRowAt: indexPath)
+    }
+
+    public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
+        guard row(at: indexPath)?.isSelectionDisabled != true else { return false }
+        return tableDelegate?.tableView?(tableView, shouldHighlightRowAt: indexPath) ?? true
+    }
+
+    public func tableView(_ tableView: UITableView, didHighlightRowAt indexPath: IndexPath) {
+        if let row = row(at: indexPath) {
+            row.highlightChangeHandler?(true, context(for: indexPath, identity: row.identity))
+        }
+        tableDelegate?.tableView?(tableView, didHighlightRowAt: indexPath)
+    }
+
+    public func tableView(_ tableView: UITableView, didUnhighlightRowAt indexPath: IndexPath) {
+        if let row = row(at: indexPath) {
+            row.highlightChangeHandler?(false, context(for: indexPath, identity: row.identity))
+        }
+        tableDelegate?.tableView?(tableView, didUnhighlightRowAt: indexPath)
+    }
+
+    @available(iOS 16.0, tvOS 16.0, *)
+    public func tableView(_ tableView: UITableView, performPrimaryActionForRowAt indexPath: IndexPath) {
+        if let row = row(at: indexPath) {
+            row.primaryActionHandler?(context(for: indexPath, identity: row.identity))
+        }
+        tableDelegate?.tableView?(tableView, performPrimaryActionForRowAt: indexPath)
+    }
+
+    public func tableView(_ tableView: UITableView, canFocusRowAt indexPath: IndexPath) -> Bool {
+        row(at: indexPath)?.isFocusable
+            ?? tableDelegate?.tableView?(tableView, canFocusRowAt: indexPath)
+            ?? true
+    }
+
+    @available(iOS 15.0, tvOS 15.0, *)
+    public func tableView(_ tableView: UITableView, selectionFollowsFocusForRowAt indexPath: IndexPath) -> Bool {
+        row(at: indexPath)?.selectionFollowsFocus
+            ?? tableDelegate?.tableView?(tableView, selectionFollowsFocusForRowAt: indexPath)
+            ?? tableView.selectionFollowsFocus
+    }
+
+    public func tableView(
+        _ tableView: UITableView,
+        shouldSpringLoadRowAt indexPath: IndexPath,
+        with context: any UISpringLoadedInteractionContext
+    ) -> Bool {
+        row(at: indexPath)?.isSpringLoadingEnabled
+            ?? tableDelegate?.tableView?(tableView, shouldSpringLoadRowAt: indexPath, with: context)
+            ?? true
+    }
+
+    public func tableView(
+        _ tableView: UITableView,
+        shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath
+    ) -> Bool {
+        guard sections[safe: indexPath.section]?.allowsMultipleSelectionInteraction == true else { return false }
+        return tableDelegate?.tableView?(
+            tableView,
+            shouldBeginMultipleSelectionInteractionAt: indexPath
+        ) ?? true
+    }
+
+    public func tableView(
+        _ tableView: UITableView,
+        didBeginMultipleSelectionInteractionAt indexPath: IndexPath
+    ) {
+        tableDelegate?.tableView?(tableView, didBeginMultipleSelectionInteractionAt: indexPath)
+    }
+
+    public func tableViewDidEndMultipleSelectionInteraction(_ tableView: UITableView) {
+        tableDelegate?.tableViewDidEndMultipleSelectionInteraction?(tableView)
     }
 
     public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         if let row = row(at: indexPath) {
             displayedRowsByCell[ObjectIdentifier(cell)] = row
-            row.displayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+            row.displayHandler?(cell, context(for: indexPath, identity: row.identity))
         }
         tableDelegate?.tableView?(tableView, willDisplay: cell, forRowAt: indexPath)
     }
@@ -289,7 +484,7 @@ where SectionID: Hashable & Sendable {
     public func tableView(_ tableView: UITableView, didEndDisplaying cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         let row = displayedRowsByCell.removeValue(forKey: ObjectIdentifier(cell)) ?? row(at: indexPath)
         if let row {
-            row.endDisplayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+            row.endDisplayHandler?(cell, context(for: indexPath, identity: row.identity))
         }
         tableDelegate?.tableView?(tableView, didEndDisplaying: cell, forRowAt: indexPath)
     }
@@ -302,7 +497,7 @@ where SectionID: Hashable & Sendable {
         displayedSupplementariesByView[ObjectIdentifier(view)] = header
         header.displayHandler?(
             headerView,
-            context(for: IndexPath(row: 0, section: section), sectionID: header.identity.sectionID)
+            context(for: IndexPath(row: 0, section: section), identity: header.identity)
         )
         tableDelegate?.tableView?(tableView, willDisplayHeaderView: view, forSection: section)
     }
@@ -315,7 +510,7 @@ where SectionID: Hashable & Sendable {
         displayedSupplementariesByView[ObjectIdentifier(view)] = footer
         footer.displayHandler?(
             footerView,
-            context(for: IndexPath(row: 0, section: section), sectionID: footer.identity.sectionID)
+            context(for: IndexPath(row: 0, section: section), identity: footer.identity)
         )
         tableDelegate?.tableView?(tableView, willDisplayFooterView: view, forSection: section)
     }
@@ -329,7 +524,7 @@ where SectionID: Hashable & Sendable {
         }
         header.endDisplayHandler?(
             headerView,
-            context(for: IndexPath(row: 0, section: section), sectionID: header.identity.sectionID)
+            context(for: IndexPath(row: 0, section: section), identity: header.identity)
         )
         tableDelegate?.tableView?(tableView, didEndDisplayingHeaderView: view, forSection: section)
     }
@@ -343,26 +538,34 @@ where SectionID: Hashable & Sendable {
         }
         footer.endDisplayHandler?(
             footerView,
-            context(for: IndexPath(row: 0, section: section), sectionID: footer.identity.sectionID)
+            context(for: IndexPath(row: 0, section: section), identity: footer.identity)
         )
         tableDelegate?.tableView?(tableView, didEndDisplayingFooterView: view, forSection: section)
     }
 
     public func tableView(_ tableView: UITableView, prefetchRowsAt indexPaths: [IndexPath]) {
+        var contexts: [TableListContext] = []
         for indexPath in indexPaths {
             guard let row = row(at: indexPath) else { continue }
             prefetchedRowsByIndexPath[indexPath] = row
-            row.prefetchHandler?(context(for: indexPath, sectionID: row.identity.sectionID))
+            let rowContext = context(for: indexPath, identity: row.identity)
+            contexts.append(rowContext)
+            row.prefetchHandler?(rowContext)
         }
+        if !contexts.isEmpty { prefetchRowsHandler?(contexts) }
     }
 
     public func tableView(_ tableView: UITableView, cancelPrefetchingForRowsAt indexPaths: [IndexPath]) {
+        var contexts: [TableListContext] = []
         for indexPath in indexPaths {
             guard let row = prefetchedRowsByIndexPath.removeValue(forKey: indexPath) ?? row(at: indexPath) else {
                 continue
             }
-            row.cancelPrefetchHandler?(context(for: indexPath, sectionID: row.identity.sectionID))
+            let rowContext = context(for: indexPath, identity: row.identity)
+            contexts.append(rowContext)
+            row.cancelPrefetchHandler?(rowContext)
         }
+        if !contexts.isEmpty { cancelPrefetchingRowsHandler?(contexts) }
     }
 
     public func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
@@ -371,7 +574,7 @@ where SectionID: Hashable & Sendable {
         }
         return header.viewProvider(
             tableView,
-            context(for: IndexPath(row: 0, section: section), sectionID: header.identity.sectionID)
+            context(for: IndexPath(row: 0, section: section), identity: header.identity)
         )
     }
 
@@ -381,8 +584,32 @@ where SectionID: Hashable & Sendable {
         }
         return footer.viewProvider(
             tableView,
-            context(for: IndexPath(row: 0, section: section), sectionID: footer.identity.sectionID)
+            context(for: IndexPath(row: 0, section: section), identity: footer.identity)
         )
+    }
+
+    public func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        guard sections[safe: section]?.header == nil else { return nil }
+        return sections[safe: section]?.headerTitle
+            ?? tableDataSource?.tableView?(tableView, titleForHeaderInSection: section)
+    }
+
+    public func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        guard sections[safe: section]?.footer == nil else { return nil }
+        return sections[safe: section]?.footerTitle
+            ?? tableDataSource?.tableView?(tableView, titleForFooterInSection: section)
+    }
+
+    public func sectionIndexTitles(for tableView: UITableView) -> [String]? {
+        let titles = sections.compactMap(\.indexTitle)
+        return titles.isEmpty ? tableDataSource?.sectionIndexTitles?(for: tableView) : titles
+    }
+
+    public func tableView(_ tableView: UITableView, sectionForSectionIndexTitle title: String, at index: Int) -> Int {
+        let titledSections = sections.indices.filter { sections[$0].indexTitle != nil }
+        return titledSections[safe: index]
+            ?? tableDataSource?.tableView?(tableView, sectionForSectionIndexTitle: title, at: index)
+            ?? 0
     }
 
     public func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
@@ -429,8 +656,64 @@ where SectionID: Hashable & Sendable {
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
         guard let row = row(at: indexPath) else { return nil }
-        return row.contextMenuProvider?(context(for: indexPath, sectionID: row.identity.sectionID))
+        let configuration = row.contextMenuProvider?(context(for: indexPath, identity: row.identity))
             ?? tableDelegate?.tableView?(tableView, contextMenuConfigurationForRowAt: indexPath, point: point)
+        if configuration != nil { activeContextMenu = (row, indexPath) }
+        return configuration
+    }
+
+    public func tableView(
+        _ tableView: UITableView,
+        previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
+    ) -> UITargetedPreview? {
+        guard let activeContextMenu else {
+            return tableDelegate?.tableView?(
+                tableView,
+                previewForHighlightingContextMenuWithConfiguration: configuration
+            )
+        }
+        return activeContextMenu.row.contextMenuHighlightPreviewProvider?(
+            context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity)
+        ) ?? tableDelegate?.tableView?(
+            tableView,
+            previewForHighlightingContextMenuWithConfiguration: configuration
+        )
+    }
+
+    public func tableView(
+        _ tableView: UITableView,
+        previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
+    ) -> UITargetedPreview? {
+        guard let activeContextMenu else {
+            return tableDelegate?.tableView?(
+                tableView,
+                previewForDismissingContextMenuWithConfiguration: configuration
+            )
+        }
+        return activeContextMenu.row.contextMenuDismissalPreviewProvider?(
+            context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity)
+        ) ?? tableDelegate?.tableView?(
+            tableView,
+            previewForDismissingContextMenuWithConfiguration: configuration
+        )
+    }
+
+    public func tableView(
+        _ tableView: UITableView,
+        willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
+        animator: any UIContextMenuInteractionCommitAnimating
+    ) {
+        if let activeContextMenu {
+            activeContextMenu.row.contextMenuCommitHandler?(
+                context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity),
+                animator
+            )
+        }
+        tableDelegate?.tableView?(
+            tableView,
+            willPerformPreviewActionForMenuWith: configuration,
+            animator: animator
+        )
     }
 
     public func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
@@ -438,6 +721,7 @@ where SectionID: Hashable & Sendable {
         return row.commitEditingHandler != nil
             || row.leadingSwipeActionsProvider != nil
             || row.trailingSwipeActionsProvider != nil
+            || tableDataSource?.tableView?(tableView, canEditRowAt: indexPath) == true
     }
 
     public func tableView(
@@ -455,16 +739,55 @@ where SectionID: Hashable & Sendable {
         forRowAt indexPath: IndexPath
     ) {
         guard let row = row(at: indexPath) else { return }
-        row.commitEditingHandler?(editingStyle, context(for: indexPath, sectionID: row.identity.sectionID))
+        row.commitEditingHandler?(editingStyle, context(for: indexPath, identity: row.identity))
+        tableDataSource?.tableView?(tableView, commit: editingStyle, forRowAt: indexPath)
     }
 
     public func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
         guard let row = row(at: indexPath) else { return false }
-        return row.moveHandler != nil
+        return row.moveHandler != nil || tableDataSource?.tableView?(tableView, canMoveRowAt: indexPath) == true
     }
 
     public func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
-        row(at: sourceIndexPath)?.moveHandler?(sourceIndexPath, destinationIndexPath)
+        guard let movedRow = row(at: sourceIndexPath) else { return }
+        moveRowDescription(from: sourceIndexPath, to: destinationIndexPath)
+        movedRow.moveHandler?(sourceIndexPath, destinationIndexPath)
+        tableDataSource?.tableView?(tableView, moveRowAt: sourceIndexPath, to: destinationIndexPath)
+    }
+
+    public func tableView(
+        _ tableView: UITableView,
+        targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
+        toProposedIndexPath proposedDestinationIndexPath: IndexPath
+    ) -> IndexPath {
+        row(at: sourceIndexPath)?.moveTargetProvider?(sourceIndexPath, proposedDestinationIndexPath)
+            ?? tableDelegate?.tableView?(
+                tableView,
+                targetIndexPathForMoveFromRowAt: sourceIndexPath,
+                toProposedIndexPath: proposedDestinationIndexPath
+            )
+            ?? proposedDestinationIndexPath
+    }
+
+    public func tableView(_ tableView: UITableView, accessoryButtonTappedForRowWith indexPath: IndexPath) {
+        if let row = row(at: indexPath) {
+            row.accessoryButtonHandler?(context(for: indexPath, identity: row.identity))
+        }
+        tableDelegate?.tableView?(tableView, accessoryButtonTappedForRowWith: indexPath)
+    }
+
+    public func tableView(_ tableView: UITableView, willBeginEditingRowAt indexPath: IndexPath) {
+        if let row = row(at: indexPath) {
+            row.editingChangeHandler?(true, context(for: indexPath, identity: row.identity))
+        }
+        tableDelegate?.tableView?(tableView, willBeginEditingRowAt: indexPath)
+    }
+
+    public func tableView(_ tableView: UITableView, didEndEditingRowAt indexPath: IndexPath?) {
+        if let indexPath, let row = row(at: indexPath) {
+            row.editingChangeHandler?(false, context(for: indexPath, identity: row.identity))
+        }
+        tableDelegate?.tableView?(tableView, didEndEditingRowAt: indexPath)
     }
 
     public func tableView(
@@ -472,7 +795,7 @@ where SectionID: Hashable & Sendable {
         leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         guard let row = row(at: indexPath) else { return nil }
-        return row.leadingSwipeActionsProvider?(context(for: indexPath, sectionID: row.identity.sectionID))
+        return row.leadingSwipeActionsProvider?(context(for: indexPath, identity: row.identity))
             ?? tableDelegate?.tableView?(tableView, leadingSwipeActionsConfigurationForRowAt: indexPath)
     }
 
@@ -481,28 +804,30 @@ where SectionID: Hashable & Sendable {
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         guard let row = row(at: indexPath) else { return nil }
-        return row.trailingSwipeActionsProvider?(context(for: indexPath, sectionID: row.identity.sectionID))
+        return row.trailingSwipeActionsProvider?(context(for: indexPath, identity: row.identity))
             ?? tableDelegate?.tableView?(tableView, trailingSwipeActionsConfigurationForRowAt: indexPath)
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewDidScroll?(scrollView)
-        tableDelegate?.scrollViewDidScroll?(scrollView)
+        if !sameObject(scrollDelegate, tableDelegate) { tableDelegate?.scrollViewDidScroll?(scrollView) }
     }
 
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewWillBeginDragging?(scrollView)
-        tableDelegate?.scrollViewWillBeginDragging?(scrollView)
+        if !sameObject(scrollDelegate, tableDelegate) { tableDelegate?.scrollViewWillBeginDragging?(scrollView) }
     }
 
     public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         scrollDelegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
-        tableDelegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
+        if !sameObject(scrollDelegate, tableDelegate) {
+            tableDelegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
+        }
     }
 
     public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewDidEndDecelerating?(scrollView)
-        tableDelegate?.scrollViewDidEndDecelerating?(scrollView)
+        if !sameObject(scrollDelegate, tableDelegate) { tableDelegate?.scrollViewDidEndDecelerating?(scrollView) }
     }
 
     /// 返回指定 section index 当前对应的业务 section id。
@@ -527,6 +852,38 @@ where SectionID: Hashable & Sendable {
     /// - Returns: 当前 item 数量。UITableView 中 item 等同于 row。
     public func itemCount(in sectionID: SectionID) -> Int {
         rowCount(in: sectionID)
+    }
+
+    /// 返回业务 section 当前所在位置。
+    public func sectionIndex(for sectionID: SectionID) -> Int? {
+        sections.firstIndex { $0.id == sectionID }
+    }
+
+    /// 返回当前位置对应的稳定展示身份。
+    public func itemIdentity(at indexPath: IndexPath) -> AnyListIdentity? {
+        row(at: indexPath)?.identity
+    }
+
+    /// 返回当前位置对应的强类型 row id。
+    public func rowIdentifier<RowID>(
+        at indexPath: IndexPath,
+        as type: RowID.Type = RowID.self
+    ) -> RowID? where RowID: Hashable & Sendable {
+        itemIdentity(at: indexPath)?.rowID.typed(type)
+    }
+
+    /// 根据完整展示身份查询当前位置。
+    public func indexPath(for identity: AnyListIdentity) -> IndexPath? {
+        guard
+            let sectionIndex = sections.firstIndex(where: { AnyListID($0.id) == identity.sectionID }),
+            let rowIndex = sections[sectionIndex].rows.firstIndex(where: { $0.identity == identity })
+        else { return nil }
+        return IndexPath(row: rowIndex, section: sectionIndex)
+    }
+
+    /// 判断当前描述树是否仍包含指定展示身份。
+    public func contains(_ identity: AnyListIdentity) -> Bool {
+        indexPath(for: identity) != nil
     }
 
     /// 根据业务 row id 查询当前 indexPath。
@@ -592,14 +949,12 @@ where SectionID: Hashable & Sendable {
 
         for indexPath in visibleIndexPaths(matching: rowID, in: sectionID) {
             guard let row = row(at: indexPath) else { continue }
-            let context = context(for: indexPath, sectionID: row.identity.sectionID)
+            let context = context(for: indexPath, identity: row.identity)
             if let cell = tableView.cellForRow(at: indexPath) {
                 row.configureVisibleCell(cell, context)
-                row.displayHandler?(cell, context)
             } else if tableView.window == nil {
                 let cell = row.cellProvider(tableView, indexPath, context)
                 row.configureVisibleCell(cell, context)
-                row.displayHandler?(cell, context)
             } else {
                 continue
             }
@@ -695,8 +1050,7 @@ where SectionID: Hashable & Sendable {
                 let cell = tableView.cellForRow(at: indexPath)
             else { continue }
 
-            row.configureVisibleCell(cell, context(for: indexPath, sectionID: row.identity.sectionID))
-            row.displayHandler?(cell, context(for: indexPath, sectionID: row.identity.sectionID))
+            row.configureVisibleCell(cell, context(for: indexPath, identity: row.identity))
             refreshedCount += 1
         }
         return refreshedCount
@@ -743,10 +1097,9 @@ where SectionID: Hashable & Sendable {
 
         let context = context(
             for: IndexPath(row: 0, section: sectionIndex),
-            sectionID: supplementary.identity.sectionID
+            identity: supplementary.identity
         )
         supplementary.configureVisibleView(view, context)
-        supplementary.displayHandler?(view, context)
         return 1
     }
 
@@ -756,6 +1109,7 @@ where SectionID: Hashable & Sendable {
         tableView.allowsSelection = !selectableSections.isEmpty
         tableView.allowsMultipleSelection = selectableSections.contains { $0.selectionMode == .multiple }
             || selectableSections.count > 1
+            || selectableSections.contains { $0.allowsMultipleSelectionInteraction }
     }
 
     private func reconcileSelection() {
@@ -793,6 +1147,17 @@ where SectionID: Hashable & Sendable {
 
     private func selectionMode(at indexPath: IndexPath) -> ListSelectionMode {
         sections[safe: indexPath.section]?.selectionMode ?? .none
+    }
+
+    private func moveRowDescription(from source: IndexPath, to destination: IndexPath) {
+        guard
+            sections.indices.contains(source.section),
+            sections[source.section].rows.indices.contains(source.row),
+            sections.indices.contains(destination.section)
+        else { return }
+        let movedRow = sections[source.section].rows.remove(at: source.row)
+        let insertionIndex = min(destination.row, sections[destination.section].rows.count)
+        sections[destination.section].rows.insert(movedRow, at: insertionIndex)
     }
 
     private func row(at indexPath: IndexPath) -> AnyTableRow? {
@@ -833,11 +1198,11 @@ where SectionID: Hashable & Sendable {
             }
     }
 
-    private func context(for indexPath: IndexPath, sectionID: AnyListID) -> TableListContext {
+    private func context(for indexPath: IndexPath, identity: AnyListIdentity) -> TableListContext {
         guard let tableView else {
             fatalError("TableListAdapter tableView was released")
         }
-        return TableListContext(sectionID: sectionID, indexPath: indexPath, tableView: tableView) { [weak self] event, context in
+        return TableListContext(identity: identity, indexPath: indexPath, tableView: tableView) { [weak self] event, context in
             self?.dispatch(event, context: context)
         }
     }
@@ -845,11 +1210,32 @@ where SectionID: Hashable & Sendable {
     private func dispatch(_ event: any ListEvent, context: TableListContext) {
         eventRouter.dispatch(event, context: context)
     }
+
+    private func sameObject(_ lhs: AnyObject?, _ rhs: AnyObject?) -> Bool {
+        guard let lhs, let rhs else { return false }
+        return lhs === rhs
+    }
 }
 
 private final class TableDiffableDataSource<SectionID>: UITableViewDiffableDataSource<AnyListID, AnyListIdentity>
 where SectionID: Hashable & Sendable {
     weak var adapter: TableListAdapter<SectionID>?
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        adapter?.tableView(tableView, titleForHeaderInSection: section)
+    }
+
+    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        adapter?.tableView(tableView, titleForFooterInSection: section)
+    }
+
+    override func sectionIndexTitles(for tableView: UITableView) -> [String]? {
+        adapter?.sectionIndexTitles(for: tableView)
+    }
+
+    override func tableView(_ tableView: UITableView, sectionForSectionIndexTitle title: String, at index: Int) -> Int {
+        adapter?.tableView(tableView, sectionForSectionIndexTitle: title, at: index) ?? 0
+    }
 
     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
         adapter?.tableView(tableView, canEditRowAt: indexPath) ?? false
@@ -873,6 +1259,30 @@ where SectionID: Hashable & Sendable {
         to destinationIndexPath: IndexPath
     ) {
         adapter?.tableView(tableView, moveRowAt: sourceIndexPath, to: destinationIndexPath)
+    }
+}
+
+private final class TableUnsafeForwardingTarget: @unchecked Sendable {
+    let value: AnyObject?
+
+    init(_ value: AnyObject?) {
+        self.value = value
+    }
+}
+
+private final class TableMainActorCallbackBox: @unchecked Sendable {
+    private let callback: () -> Void
+
+    init(_ callback: @escaping () -> Void) {
+        self.callback = callback
+    }
+
+    nonisolated func schedule() {
+        DispatchQueue.main.async { [self] in
+            MainActor.assumeIsolated {
+                callback()
+            }
+        }
     }
 }
 

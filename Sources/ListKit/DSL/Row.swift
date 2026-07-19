@@ -34,6 +34,11 @@ public struct AnyListRow {
     public let refreshID: AnyListID?
     public let refreshPolicy: RowRefreshPolicy
     public let isSelected: Bool?
+    public let isSelectionDisabled: Bool
+    public let isFocusable: Bool?
+    public let selectionFollowsFocus: Bool?
+    public let isSpringLoadingEnabled: Bool?
+    public let showsOutlineDisclosure: Bool
 
     let register: @MainActor (UICollectionView) -> Void
     let cellProvider: @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionViewCell
@@ -41,13 +46,19 @@ public struct AnyListRow {
     let selectHandler: (@MainActor (ListContext) -> Void)?
     let deselectHandler: (@MainActor (ListContext) -> Void)?
     let selectionChangeHandler: (@MainActor (Bool, ListContext) -> Void)?
+    let highlightChangeHandler: (@MainActor (Bool, ListContext) -> Void)?
+    let primaryActionHandler: (@MainActor (ListContext) -> Void)?
     let displayHandler: (@MainActor (UICollectionViewCell, ListContext) -> Void)?
     let endDisplayHandler: (@MainActor (UICollectionViewCell, ListContext) -> Void)?
     let prefetchHandler: (@MainActor (ListContext) -> Void)?
     let cancelPrefetchHandler: (@MainActor (ListContext) -> Void)?
     let contextMenuProvider: (@MainActor (ListContext) -> UIContextMenuConfiguration?)?
+    let contextMenuHighlightPreviewProvider: (@MainActor (ListContext) -> UITargetedPreview?)?
+    let contextMenuDismissalPreviewProvider: (@MainActor (ListContext) -> UITargetedPreview?)?
+    let contextMenuCommitHandler: (@MainActor (ListContext, any UIContextMenuInteractionCommitAnimating) -> Void)?
     let leadingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let trailingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
+    let moveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
 }
 
 /// 可以放入 `ListSection` row builder 的元素协议。
@@ -62,6 +73,14 @@ public protocol ListRowRepresentable {
         sectionID: SectionID,
         inheritedID: AnyListID?
     ) -> [AnyListRow] where SectionID: Hashable & Sendable
+
+    @MainActor func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
+        where SectionID: Hashable & Sendable
+
+    @MainActor func eraseToAnyListOutlineNodes<SectionID>(
+        sectionID: SectionID,
+        inheritedID: AnyListID?
+    ) -> [AnyListOutlineNode] where SectionID: Hashable & Sendable
 }
 
 public extension ListRowRepresentable {
@@ -73,6 +92,36 @@ public extension ListRowRepresentable {
         inheritedID: AnyListID?
     ) -> [AnyListRow] where SectionID: Hashable & Sendable {
         eraseToAnyListRows(sectionID: sectionID)
+    }
+
+    @MainActor func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
+        where SectionID: Hashable & Sendable
+    {
+        eraseToAnyListRows(sectionID: sectionID).map { AnyListOutlineNode(row: $0) }
+    }
+
+    @MainActor func eraseToAnyListOutlineNodes<SectionID>(
+        sectionID: SectionID,
+        inheritedID: AnyListID?
+    ) -> [AnyListOutlineNode] where SectionID: Hashable & Sendable {
+        eraseToAnyListRows(sectionID: sectionID, inheritedID: inheritedID).map { AnyListOutlineNode(row: $0) }
+    }
+}
+
+/// Section snapshot 使用的层级节点。叶子节点与普通 Row 完全一致。
+public struct AnyListOutlineNode {
+    public var row: AnyListRow
+    public var children: [AnyListOutlineNode]
+    public var isExpanded: Bool
+
+    public init(row: AnyListRow, children: [AnyListOutlineNode] = [], isExpanded: Bool = false) {
+        self.row = row
+        self.children = children
+        self.isExpanded = isExpanded
+    }
+
+    var flattenedRows: [AnyListRow] {
+        [row] + children.flatMap(\.flattenedRows)
     }
 }
 
@@ -115,16 +164,27 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     private var rowRefreshID: AnyListID?
     private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
     private var rowIsSelected: Bool?
+    private var rowIsSelectionDisabled = false
+    private var rowIsFocusable: Bool?
+    private var rowSelectionFollowsFocus: Bool?
+    private var rowIsSpringLoadingEnabled: Bool?
+    private var rowShowsOutlineDisclosure = false
     private var rowSelectHandler: (@MainActor (ListContext) -> Void)?
     private var rowDeselectHandler: (@MainActor (ListContext) -> Void)?
     private var rowSelectionChangeHandler: (@MainActor (Bool, ListContext) -> Void)?
+    private var rowHighlightChangeHandler: (@MainActor (Bool, ListContext) -> Void)?
+    private var rowPrimaryActionHandler: (@MainActor (ListContext) -> Void)?
     private var rowDisplayHandler: (@MainActor (Cell, ListContext) -> Void)?
     private var rowEndDisplayHandler: (@MainActor (Cell, ListContext) -> Void)?
     private var rowPrefetchHandler: (@MainActor (ListContext) -> Void)?
     private var rowCancelPrefetchHandler: (@MainActor (ListContext) -> Void)?
     private var rowContextMenuProvider: (@MainActor (ListContext) -> UIContextMenuConfiguration?)?
+    private var rowContextMenuHighlightPreviewProvider: (@MainActor (ListContext) -> UITargetedPreview?)?
+    private var rowContextMenuDismissalPreviewProvider: (@MainActor (ListContext) -> UITargetedPreview?)?
+    private var rowContextMenuCommitHandler: (@MainActor (ListContext, any UIContextMenuInteractionCommitAnimating) -> Void)?
     private var rowLeadingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     private var rowTrailingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
+    private var rowMoveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
     private var rowCellEventBinders: [CellEventBinder] = []
 
     /// 创建带显式 id 的 Row。
@@ -270,6 +330,41 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
+    /// 禁止当前 Row 被选择，同时保留 section 级选择策略。
+    public func selectionDisabled(_ disabled: Bool = true) -> Self {
+        var copy = self
+        copy.rowIsSelectionDisabled = disabled
+        return copy
+    }
+
+    /// 控制键盘、遥控器等焦点系统是否可以聚焦当前 Row。
+    public func focusable(_ isFocusable: Bool = true) -> Self {
+        var copy = self
+        copy.rowIsFocusable = isFocusable
+        return copy
+    }
+
+    /// 控制焦点移动到当前 Row 时是否同步 UIKit 选择状态。
+    public func selectionFollowsFocus(_ enabled: Bool = true) -> Self {
+        var copy = self
+        copy.rowSelectionFollowsFocus = enabled
+        return copy
+    }
+
+    /// 控制当前 Row 是否响应 spring loading。
+    public func springLoadingEnabled(_ enabled: Bool = true) -> Self {
+        var copy = self
+        copy.rowIsSpringLoadingEnabled = enabled
+        return copy
+    }
+
+    /// 在 `UICollectionViewListCell` 上展示系统 outline disclosure accessory。
+    public func outlineDisclosure(_ visible: Bool = true) -> Self {
+        var copy = self
+        copy.rowShowsOutlineDisclosure = visible
+        return copy
+    }
+
     /// 绑定选中态变化事件。
     ///
     /// - Parameter handler: 选中态变化时收到新状态和 context 的闭包。
@@ -288,6 +383,36 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         let boxedModel = MainActorValueBox(value: model)
         return onSelectionChange { isSelected, context in
             handler(boxedModel.value, isSelected, context)
+        }
+    }
+
+    /// 监听高亮状态变化。
+    public func onHighlightChange(_ handler: @escaping @MainActor (Bool, ListContext) -> Void) -> Self {
+        var copy = self
+        copy.rowHighlightChangeHandler = handler
+        return copy
+    }
+
+    /// 监听高亮状态变化，并传入当前 model。
+    public func onHighlightChange(_ handler: @escaping @MainActor (Model, Bool, ListContext) -> Void) -> Self {
+        let boxedModel = MainActorValueBox(value: model)
+        return onHighlightChange { highlighted, context in
+            handler(boxedModel.value, highlighted, context)
+        }
+    }
+
+    /// 监听键盘回车、遥控器等触发的主操作。
+    public func onPrimaryAction(_ handler: @escaping @MainActor (ListContext) -> Void) -> Self {
+        var copy = self
+        copy.rowPrimaryActionHandler = handler
+        return copy
+    }
+
+    /// 监听主操作，并传入当前 model。
+    public func onPrimaryAction(_ handler: @escaping @MainActor (Model, ListContext) -> Void) -> Self {
+        let boxedModel = MainActorValueBox(value: model)
+        return onPrimaryAction { context in
+            handler(boxedModel.value, context)
         }
     }
 
@@ -382,6 +507,26 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
+    /// 自定义 context menu 的高亮和消失预览。
+    public func contextMenuPreview(
+        highlighting: (@MainActor (ListContext) -> UITargetedPreview?)? = nil,
+        dismissal: (@MainActor (ListContext) -> UITargetedPreview?)? = nil
+    ) -> Self {
+        var copy = self
+        copy.rowContextMenuHighlightPreviewProvider = highlighting
+        copy.rowContextMenuDismissalPreviewProvider = dismissal
+        return copy
+    }
+
+    /// 监听 context menu preview commit。
+    public func onContextMenuCommit(
+        _ handler: @escaping @MainActor (ListContext, any UIContextMenuInteractionCommitAnimating) -> Void
+    ) -> Self {
+        var copy = self
+        copy.rowContextMenuCommitHandler = handler
+        return copy
+    }
+
     /// 提供左侧滑动操作配置。
     ///
     /// - Parameter provider: 返回当前 Row 左滑操作配置的闭包。
@@ -399,6 +544,23 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     public func trailingSwipeActions(_ provider: @escaping @MainActor (ListContext) -> UISwipeActionsConfiguration?) -> Self {
         var copy = self
         copy.rowTrailingSwipeActionsProvider = provider
+        return copy
+    }
+
+    /// 允许当前 Row 参与交互式重排，并在位置改变后回调。
+    public func onMove(_ handler: @escaping @MainActor (IndexPath, IndexPath) -> Void) -> Self {
+        var copy = self
+        copy.rowMoveHandler = handler
+        return copy
+    }
+
+    /// 允许当前 Row 参与交互式重排，并在位置改变后回调当前 model。
+    public func onMove(_ handler: @escaping @MainActor (Model, IndexPath, IndexPath) -> Void) -> Self {
+        let boxedModel = MainActorValueBox(value: model)
+        var copy = self
+        copy.rowMoveHandler = { source, destination in
+            handler(boxedModel.value, source, destination)
+        }
         return copy
     }
 
@@ -449,12 +611,20 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
             refreshID: rowRefreshID,
             refreshPolicy: rowRefreshPolicy,
             isSelected: rowIsSelected,
+            isSelectionDisabled: rowIsSelectionDisabled,
+            isFocusable: rowIsFocusable,
+            selectionFollowsFocus: rowSelectionFollowsFocus,
+            isSpringLoadingEnabled: rowIsSpringLoadingEnabled,
+            showsOutlineDisclosure: rowShowsOutlineDisclosure,
             register: { collectionView in
                 collectionView.lk.register(cellType)
             },
             cellProvider: { collectionView, indexPath, context in
                 let cell = collectionView.lk.dequeue(cellType, for: indexPath)
                 configure(cell, model, context)
+                if rowShowsOutlineDisclosure, let listCell = cell as? UICollectionViewListCell {
+                    listCell.accessories = [.outlineDisclosure()]
+                }
                 rowCellEventBinders.forEach { $0(cell, model, context) }
                 if let rowIsSelected, rowIsSelected {
                     collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
@@ -466,18 +636,27 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
             configureVisibleCell: { cell, context in
                 guard let typedCell = cell as? Cell else { return }
                 configure(typedCell, model, context)
+                if rowShowsOutlineDisclosure, let listCell = typedCell as? UICollectionViewListCell {
+                    listCell.accessories = [.outlineDisclosure()]
+                }
                 rowCellEventBinders.forEach { $0(typedCell, model, context) }
             },
             selectHandler: rowSelectHandler,
             deselectHandler: rowDeselectHandler,
             selectionChangeHandler: rowSelectionChangeHandler,
+            highlightChangeHandler: rowHighlightChangeHandler,
+            primaryActionHandler: rowPrimaryActionHandler,
             displayHandler: displayHandler,
             endDisplayHandler: endDisplayHandler,
             prefetchHandler: rowPrefetchHandler,
             cancelPrefetchHandler: rowCancelPrefetchHandler,
             contextMenuProvider: rowContextMenuProvider,
+            contextMenuHighlightPreviewProvider: rowContextMenuHighlightPreviewProvider,
+            contextMenuDismissalPreviewProvider: rowContextMenuDismissalPreviewProvider,
+            contextMenuCommitHandler: rowContextMenuCommitHandler,
             leadingSwipeActionsProvider: rowLeadingSwipeActionsProvider,
-            trailingSwipeActionsProvider: rowTrailingSwipeActionsProvider
+            trailingSwipeActionsProvider: rowTrailingSwipeActionsProvider,
+            moveHandler: rowMoveHandler
         )
     }
 
@@ -625,6 +804,97 @@ public struct RowGroup: ListRowRepresentable {
     ) -> [AnyListRow] where SectionID: Hashable & Sendable {
         rows.flatMap { $0.eraseToAnyListRows(sectionID: sectionID, inheritedID: inheritedID) }
     }
+
+    @MainActor public func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
+        where SectionID: Hashable & Sendable
+    {
+        rows.flatMap { $0.eraseToAnyListOutlineNodes(sectionID: sectionID) }
+    }
+
+    @MainActor public func eraseToAnyListOutlineNodes<SectionID>(
+        sectionID: SectionID,
+        inheritedID: AnyListID?
+    ) -> [AnyListOutlineNode] where SectionID: Hashable & Sendable {
+        rows.flatMap { $0.eraseToAnyListOutlineNodes(sectionID: sectionID, inheritedID: inheritedID) }
+    }
+}
+
+/// 使用 diffable section snapshot 表达父子层级，语义接近 SwiftUI `DisclosureGroup`。
+public struct ListDisclosureGroup: ListRowRepresentable {
+    private let parent: any ListRowRepresentable
+    private let children: [any ListRowRepresentable]
+    private let isExpanded: Bool
+
+    init(
+        parent: any ListRowRepresentable,
+        children: [any ListRowRepresentable],
+        isExpanded: Bool
+    ) {
+        self.parent = parent
+        self.children = children
+        self.isExpanded = isExpanded
+    }
+
+    @MainActor public func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
+        where SectionID: Hashable & Sendable
+    {
+        eraseToAnyListOutlineNodes(sectionID: sectionID).flatMap(\.flattenedRows)
+    }
+
+    @MainActor public func eraseToAnyListRows<SectionID>(
+        sectionID: SectionID,
+        inheritedID: AnyListID?
+    ) -> [AnyListRow] where SectionID: Hashable & Sendable {
+        eraseToAnyListOutlineNodes(sectionID: sectionID, inheritedID: inheritedID).flatMap(\.flattenedRows)
+    }
+
+    @MainActor public func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
+        where SectionID: Hashable & Sendable
+    {
+        makeNodes(
+            parents: parent.eraseToAnyListOutlineNodes(sectionID: sectionID),
+            children: children.flatMap { $0.eraseToAnyListOutlineNodes(sectionID: sectionID) }
+        )
+    }
+
+    @MainActor public func eraseToAnyListOutlineNodes<SectionID>(
+        sectionID: SectionID,
+        inheritedID: AnyListID?
+    ) -> [AnyListOutlineNode] where SectionID: Hashable & Sendable {
+        makeNodes(
+            parents: parent.eraseToAnyListOutlineNodes(sectionID: sectionID, inheritedID: inheritedID),
+            children: children.flatMap { $0.eraseToAnyListOutlineNodes(sectionID: sectionID) }
+        )
+    }
+
+    private func makeNodes(
+        parents: [AnyListOutlineNode],
+        children: [AnyListOutlineNode]
+    ) -> [AnyListOutlineNode] {
+        precondition(parents.count == 1, "ListKit: DisclosureGroup parent must produce exactly one Row.")
+        guard var parent = parents.first else { return [] }
+        parent.children = children
+        parent.isExpanded = isExpanded
+        return [parent]
+    }
+}
+
+/// 创建一个可展开的层级节点。
+@MainActor public func DisclosureGroup(
+    _ parent: any ListRowRepresentable,
+    isExpanded: Bool = false,
+    @ListRowBuilder children: () -> [any ListRowRepresentable]
+) -> ListDisclosureGroup {
+    ListDisclosureGroup(parent: parent, children: children(), isExpanded: isExpanded)
+}
+
+/// `DisclosureGroup` 的 outline 语义别名。
+@MainActor public func OutlineGroup(
+    _ parent: any ListRowRepresentable,
+    isExpanded: Bool = false,
+    @ListRowBuilder children: () -> [any ListRowRepresentable]
+) -> ListDisclosureGroup {
+    DisclosureGroup(parent, isExpanded: isExpanded, children: children)
 }
 
 /// Provider-backed Row escape hatch for migration-heavy or mixed-cell sections.
@@ -769,19 +1039,30 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
                 refreshID: rowRefreshID,
                 refreshPolicy: rowRefreshPolicy,
                 isSelected: nil,
+                isSelectionDisabled: false,
+                isFocusable: nil,
+                selectionFollowsFocus: nil,
+                isSpringLoadingEnabled: nil,
+                showsOutlineDisclosure: false,
                 register: registerProvider,
                 cellProvider: cellProvider,
                 configureVisibleCell: visibleCellConfigurator,
                 selectHandler: rowSelectHandler,
                 deselectHandler: nil,
                 selectionChangeHandler: nil,
+                highlightChangeHandler: nil,
+                primaryActionHandler: nil,
                 displayHandler: rowDisplayHandler,
                 endDisplayHandler: rowEndDisplayHandler,
                 prefetchHandler: nil,
                 cancelPrefetchHandler: nil,
                 contextMenuProvider: nil,
+                contextMenuHighlightPreviewProvider: nil,
+                contextMenuDismissalPreviewProvider: nil,
+                contextMenuCommitHandler: nil,
                 leadingSwipeActionsProvider: nil,
-                trailingSwipeActionsProvider: nil
+                trailingSwipeActionsProvider: nil,
+                moveHandler: nil
             )
         ]
     }

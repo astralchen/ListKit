@@ -69,6 +69,28 @@ struct DemoVisualStyleTests {
         #expect(cell.contentView.backgroundColor == .clear)
     }
 
+    @Test func giftMessageCellFitsPhoneWidthWithoutFixedBadgeColumn() {
+        let cell = LiveMessageCell(frame: CGRect(x: 0, y: 0, width: 390, height: 106))
+        cell.configure(
+            LiveMessage(
+                id: "gift-layout",
+                sender: "System",
+                text: "Rocket sent to Alex.",
+                tone: "gift",
+                version: 0
+            )
+        )
+
+        cell.setNeedsLayout()
+        cell.layoutIfNeeded()
+        cell.contentView.layoutIfNeeded()
+
+        let bounds = cell.contentView.bounds
+        let descendantBounds = descendantUnionBounds(in: cell.contentView)
+        #expect(descendantBounds.minX >= bounds.minX - 0.5)
+        #expect(descendantBounds.maxX <= bounds.maxX + 0.5)
+    }
+
     @Test func sectionHeadersUseCardContentInsets() {
         let header = SectionHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 36))
 
