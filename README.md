@@ -1,12 +1,59 @@
 # ListKit
 
-ListKit 提供 `UICollectionView` 和 `UITableView` 列表适配器。它不要求业务 model conform 框架协议，页面每次数据变化后 rebuild 列表描述树，由框架根据 identity、`refreshID` 和 refresh policy 决定 diff、重配或保持不动。
+用声明式 DSL 驱动 `UICollectionView` 与 `UITableView` 的 UIKit 列表框架。
 
-Swift Doc 注释面向 Xcode Quick Help，保留短摘要、参数说明和少量核心 Usage；完整迁移路径、组合示例和设计取舍仍以本文档与 `.kiro` 规格为准。
+ListKit 让页面在数据变化时重新描述列表结构，再由 adapter 负责 diffable snapshot、复用视图注册、内容刷新和事件分发。业务 model 不需要遵守框架协议，也不需要手动维护 index path。
+
+```swift
+adapter.apply {
+    ListSection(.users) {
+        ForEach(users, id: \.id) { user in
+            Row(model: user, cell: UserCell.self) { cell, user, _ in
+                cell.configure(with: user)
+            }
+            .refreshID(user.version)
+        }
+    }
+}
+```
+
+## 特性
+
+- 同时支持 `UICollectionView` 和 `UITableView`，共享一致的 identity、刷新、事件与 apply 语义。
+- 基于 diffable data source；用稳定业务 ID 描述变化，不让业务逻辑依赖位置。
+- Swift result builder DSL，支持 `if`、`switch`、`ForEach`、状态 Row 和层级列表。
+- 自动注册并类型安全地 dequeue cell、header 和 footer；同名 nib 会被自动发现。
+- Collection 内置 list、grid、横向滚动、自定义 compositional layout、supplementary 和 section decoration。
+- 支持 selection、prefetch、swipe、context menu、editing、move、focus、display 等 UIKit 交互。
+- 支持 typed event、可见节点刷新、稳定身份查询、async apply、滚动事务和 diagnostics。
+
+## 目录
+
+- [安装](#安装)
+- [UICollectionView 快速开始](#uicollectionview-快速开始)
+- [UITableView 快速开始](#uitableview-快速开始)
+- [Identity 与刷新](#identity-与刷新)
+- [条件内容与页面状态](#条件内容与页面状态)
+- [Selection](#selection)
+- [Layout 与 Supplementary](#layout-与-supplementary)
+- [事件](#事件)
+- [实时列表查询与可见刷新](#实时列表查询与可见刷新)
+- [层级列表](#层级列表)
+- [Apply、动画与滚动](#apply动画与滚动)
+- [Diagnostics](#diagnostics)
+- [自动注册与手写 Data Source](#自动注册与手写-data-source)
+- [Adapter 所有权](#adapter-所有权)
+- [示例与测试](#示例与测试)
+
+## 环境要求
+
+- iOS 14+
+- Swift 6.0+
+- Swift Package Manager
 
 ## 安装
 
-ListKit 支持 iOS 14+，使用 Swift 6 Package Manager。在 Xcode 的 Package Dependencies 中添加：
+在 Xcode 的 **Package Dependencies** 中添加：
 
 ```text
 https://github.com/astralchen/ListKit.git
@@ -17,478 +64,377 @@ https://github.com/astralchen/ListKit.git
 ```swift
 dependencies: [
     .package(url: "https://github.com/astralchen/ListKit.git", from: "1.0.0")
+],
+targets: [
+    .target(
+        name: "YourApp",
+        dependencies: [
+            .product(name: "ListKit", package: "ListKit")
+        ]
+    )
 ]
 ```
 
-Kiro 规格文件位于 ListKit package 内：
-
-- `.kiro/specs/listkit-cellkit-migration/`：CellKit 到 ListKit 的迁移边界和验收规则
-- `.kiro/specs/listkit-adaptation-optimization/`：adapter ownership、稳定 identity、迁移兼容 API 标记
-- `.kiro/specs/listkit-conditional-layout-metadata/`：条件 layout、supplementary builder、section 背景装饰
-- `.kiro/specs/listkit-api-hardening/`：实时列表定位/可见刷新 API、迁移桥接层退场
-- `.kiro/specs/listkit-table-adapter/`：UITableView adapter 独立 Table DSL 和完整 UIKit table 能力边界
-- `.kiro/specs/listkit-adapter-core-refactor/`：Collection/Table adapter apply、diagnostics、summary、refresh 和 event core 去重
-
-## 源码目录
-
-ListKit 按职责分成几层，`UICollectionView` 和 `UITableView` adapter 共享 Core/Reusable 和稳定语义：
-
-- `Core/`：identity、diagnostics、events、apply options、apply planner、summary 和 refresh decision 等跨列表核心能力。
-- `DSL/`：`Row`、`ListSection`、`Supplementary`、builder 和 modifier。
-- `Reusable/`：UICollectionView/UITableView 可复用的注册和 dequeue 基础工具。
-- `Collection/`：`CollectionListAdapter` 和 UICollectionView compositional layout DSL。
-- `Table/`：`TableListAdapter` 和独立 Table DSL。
-
-## 基础用法
-
-### UICollectionView
+然后在需要使用的文件中导入：
 
 ```swift
-private lazy var adapter = CollectionListAdapter<Section>(collectionView: collectionView)
+import ListKit
+```
 
-adapter.apply(transaction: .disabled) {
-    ListSection(.users) {
-        ForEach(users, id: \.userID) { user in
-            if user.isVIP {
-                Row(model: user, cell: VIPUserCell.self) { cell, user, context in
-                    cell.configure(user)
+## UICollectionView 快速开始
+
+先创建 collection view 和 adapter。Adapter 会接管 data source、delegate 与 prefetch data source：
+
+```swift
+enum Section: Hashable, Sendable {
+    case users
+}
+
+private let collectionView = UICollectionView(
+    frame: .zero,
+    collectionViewLayout: UICollectionViewFlowLayout()
+)
+
+private lazy var adapter = CollectionListAdapter<Section>(
+    collectionView: collectionView
+)
+```
+
+如果使用 ListKit 的 layout DSL，将 adapter 生成的 compositional layout 显式赋给 collection view：
+
+```swift
+collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
+```
+
+每次状态变化后重新构建列表描述：
+
+```swift
+func render(users: [User]) {
+    adapter.apply {
+        ListSection(.users) {
+            ForEach(users, id: \.id) { user in
+                Row(model: user, cell: UserCell.self) { cell, user, _ in
+                    cell.configure(with: user)
                 }
-                .refreshID(user.profileVersion)
-            } else {
-                Row(model: user, cell: NormalUserCell.self) { cell, user, context in
-                    cell.configure(user)
+                .refreshID(user.version)
+                .onSelect { user, _ in
+                    openProfile(user)
                 }
-                .refreshID(user.profileVersion)
             }
         }
-    }
-    .header(TitleHeaderView.self, id: "users-header") { view, _ in
-        view.titleLabel.text = "用户"
+        .header(UsersHeaderView.self, id: "users-header") { header, _ in
+            header.titleLabel.text = "Users"
+        }
+        .layout(.list(spacing: 8))
     }
 }
 ```
 
-### UITableView
+`ForEach` 会把自己的 ID 传给内部 `Row`，因此上例不需要在 `Row` 上重复写 `id`。
 
-Table DSL 与 Collection DSL 保持同一套 identity、`refreshID`、refresh policy、diagnostics 和 event 语义，但使用独立 public 类型：
+### 完整 View Controller 骨架
+
+下面展示 adapter 的持有方式、layout 初始化和 render 生命周期：
 
 ```swift
+import UIKit
+import ListKit
+
+@MainActor
+final class UsersViewController: UIViewController {
+    enum Section: Hashable, Sendable {
+        case users
+    }
+
+    private let collectionView = UICollectionView(
+        frame: .zero,
+        collectionViewLayout: UICollectionViewFlowLayout()
+    )
+
+    private lazy var adapter = CollectionListAdapter<Section>(
+        collectionView: collectionView
+    )
+
+    private var users: [User] = [] {
+        didSet {
+            if isViewLoaded {
+                render()
+            }
+        }
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(collectionView)
+        NSLayoutConstraint.activate([
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+
+        collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
+        render()
+        loadUsers()
+    }
+
+    private func render() {
+        adapter.apply {
+            ListSection(.users) {
+                ForEach(users, id: \.id) { user in
+                    Row(model: user, cell: UserCell.self) { cell, user, _ in
+                        cell.configure(with: user)
+                    }
+                    .refreshID(user.version)
+                    .onSelect { [weak self] user, _ in
+                        self?.showUser(user)
+                    }
+                }
+            }
+            .layout(.list(itemHeight: .estimated(64), spacing: 8))
+        }
+    }
+}
+```
+
+关键点是 adapter 必须由页面强引用；列表数据变化时只更新业务状态并再次调用 `render()`。
+
+## UITableView 快速开始
+
+Table 使用独立 DSL，避免把 collection-only API 暴露给 table 页面：
+
+```swift
+enum Section: Hashable, Sendable {
+    case messages
+}
+
+private let tableView = UITableView(frame: .zero, style: .insetGrouped)
 private lazy var adapter = TableListAdapter<Section>(tableView: tableView)
 
-adapter.apply(transaction: .disabled) {
-    TableSection(.messages) {
-        TableForEach(messages, id: \.messageID) { message in
-            TableRow(model: message, cell: MessageCell.self) { cell, message, context in
-                cell.configure(message)
+func render(messages: [Message]) {
+    adapter.apply {
+        TableSection(.messages) {
+            TableForEach(messages, id: \.id) { message in
+                TableRow(model: message, cell: MessageCell.self) { cell, message, _ in
+                    cell.configure(with: message)
+                }
+                .refreshID(message.version)
+                .height(.automatic(estimated: 64))
+                .onSelect { message, _ in
+                    openMessage(message)
+                }
             }
-            .refreshID(message.contentVersion)
-            .height(.automatic(estimated: 64))
-            .onSelect { message, _ in
-                router.open(message)
+        }
+        .headerTitle("Messages")
+    }
+}
+```
+
+`TableRow` 还提供原生 table 能力，例如高度、editing、move、swipe actions、context menu 和 accessory button 回调。
+
+### 自定义 Table Header / Footer
+
+系统文字标题适合简单页面；需要自定义视图时使用 header/footer builder：
+
+```swift
+TableSection(.messages) {
+    makeMessageRows()
+} header: {
+    TableHeader(MessagesHeaderView.self, id: "messages-header") { view, _ in
+        view.configure(title: "Messages", unreadCount: unreadCount)
+    }
+    .refreshID(unreadCount)
+    .height(.estimated(48))
+} footer: {
+    if hasMore {
+        TableFooter(LoadingFooterView.self, id: "loading-footer") { view, _ in
+            view.startAnimating()
+        }
+        .height(.fixed(44))
+    }
+}
+```
+
+### Table 编辑、移动与滑动操作
+
+原生 table 行为可以直接声明在 `TableRow` 上：
+
+```swift
+TableRow(model: message, id: \.id, cell: MessageCell.self) { cell, message, _ in
+    cell.configure(with: message)
+}
+.height(.automatic(estimated: 72))
+.editing(.delete) { message, _, _ in
+    store.delete(message.id)
+}
+.onMove { message, source, destination in
+    store.move(message.id, from: source, to: destination)
+}
+.trailingSwipeActions { _ in
+    let delete = UIContextualAction(style: .destructive, title: "删除") { _, _, finish in
+        store.delete(message.id)
+        finish(true)
+    }
+    return UISwipeActionsConfiguration(actions: [delete])
+}
+.contextMenu { _ in
+    UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+        UIMenu(children: [
+            UIAction(title: "复制") { _ in
+                copyMessage(message)
             }
-        }
-    } header: {
-        TableHeader(TitleHeaderView.self, id: "messages-title") { view, _ in
-            view.titleLabel.text = "消息"
-        }
-        .height(.estimated(44))
+        ])
     }
 }
 ```
 
-## 身份和刷新规则
-
-Row 的展示身份是：
+启用 reordering 时，页面仍需切换 table view 的 editing 状态：
 
 ```swift
-sectionID + rowID + ObjectIdentifier(Cell.self) + variant
+tableView.setEditing(true, animated: true)
 ```
 
-`refreshID` 不参与 identity。这样同一个用户从普通态变成 VIP 时，不需要手动传 `kind`：
+## Identity 与刷新
 
-```swift
-ForEach(users, id: \.userID) { user in
-    if user.isVIP {
-        Row(model: user, cell: VIPUserCell.self) { cell, user, _ in
-            cell.configure(user)
-        }
-    } else {
-        Row(model: user, cell: NormalUserCell.self) { cell, user, _ in
-            cell.configure(user)
-        }
-    }
-}
+一个 Row 的展示身份由以下内容组成：
+
+```text
+sectionID + rowID + Cell.self + variant
 ```
 
-因为 `Cell.self` 参与 identity，`NormalUserCell` 和 `VIPUserCell` 会被视为不同展示节点，diffable 会执行 delete + insert。
-
-## Row ID 写法
-
-`ForEach` 内部的 Row 默认继承外层 id，不需要重复写一遍：
+`refreshID` 不参与 identity。它只表示“同一个 Row 的内容版本”，因此内容变化不会被误判成删除再插入：
 
 ```swift
-ForEach(users, id: \.userID) { user in
-    Row(model: user, cell: UserCell.self) { cell, user, _ in
-        cell.configure(user)
-    }
-}
-```
-
-单个固定功能 Row 仍建议用语义 id：
-
-```swift
-Row("banner", model: banners, cell: BannerCell.self) { cell, banners, _ in
-    cell.configure(banners)
-}
-```
-
-单个业务 model 可以用 `Identifiable` 自动 id，或者用 keyPath/闭包显式声明身份：
-
-```swift
-Row(model: user, cell: UserCell.self) { cell, user, _ in
-    cell.configure(user)
-}
-
-Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
-    cell.configure(user)
-}
-
-Row(model: user, id: { $0.userID.isEmpty ? $0.accountID : $0.userID }, cell: UserCell.self) { cell, user, _ in
-    cell.configure(user)
-}
-```
-
-当 `rowID` 和 `Cell.self` 不变但数据变化时：
-
-```swift
-Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
-    cell.configure(user)
+Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
+    cell.configure(with: user)
 }
 .refreshID(user.profileVersion)
 .refreshPolicy(.whenRefreshIDChanges)
 ```
 
-iOS 15+ 使用 `reconfigureItems`，iOS 14 使用 `reloadItems` 兜底。默认 `.automaticVisible` 只重配当前可见 cell；未提供 `refreshID` 时每次 apply 都会重配，提供后只在标识变化时重配。`.alwaysVisible` 用于明确要求每次重配。
+同一个业务 ID 切换 cell 类型时，`Cell.self` 的变化会自然产生 delete + insert。需要用同一个 cell 类型表达多个展示分支时，可以用 `.variant(...)` 显式区分。
 
-apply 级策略中，`.automatic` 按 Row policy 选择 diffable 或可见刷新；`.visibleOnly` 不修改 snapshot refresh 标记，其中 `.whenRefreshIDChanges` 会在标识变化时改为重配可见 cell；`.diffableOnly` 不执行额外可见重配；`.forceReload` 会 reload 所有新旧 snapshot 中都存在的 Row。
+### Row ID 的几种写法
 
-`ListApplyRefreshStrategy.forceReload` 只对新旧 snapshot 都存在的 row identity 执行 diffable refresh；新插入的 row 交给 diffable insert 处理，不再被重复 reload/reconfigure。Table header/footer 和 Collection supplementary 的 `refreshID` 变化会进入 `supplementaryRefreshIDChangedCount`，并按 supplementary 可见刷新策略在 apply completion 后轻刷当前可见 view。
-
-## 事件
-
-标准 Row 事件：
+在 `ForEach` 内，Row 默认继承外层 ID，这是列表页面最常用的写法：
 
 ```swift
-Row(model: channel, id: \.channelID, cell: RoomCell.self) { cell, channel, _ in
-    cell.configure(channel)
-}
-.onSelect { context in
-    // 跳转或进入房间
-}
-.onSelect { channel, context in
-    // 需要 model 时直接使用强类型重载
-}
-.onDisplay { cell, context in
-    // 曝光
-}
-.onPrefetch { channel, context in
-    // 预取图片、房间封面等资源
-}
-```
-
-自定义事件：
-
-```swift
-enum UserListEvent: ListEvent {
-    case avatarTap(userID: String)
-}
-
-adapter.apply {
-    ListSection(.users) {
-        Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, context in
-            cell.onAvatarTap = {
-                context.send(UserListEvent.avatarTap(userID: user.userID))
-            }
-        }
+ForEach(users, id: \.userID) { user in
+    Row(model: user, cell: UserCell.self) { cell, user, _ in
+        cell.configure(with: user)
     }
 }
-.onEvent(UserListEvent.self) { event, context in
-    // 页面统一处理业务事件
+```
+
+单个固定功能 Row 可以直接使用语义 ID：
+
+```swift
+Row("banner", model: banners, cell: BannerCell.self) { cell, banners, _ in
+    cell.configure(with: banners)
 }
 ```
 
-cell 内部事件也可以用少样板绑定：
+如果 model 遵守 `Identifiable`，可以自动使用 `model.id`：
+
+```swift
+Row(model: user, cell: UserCell.self) { cell, user, _ in
+    cell.configure(with: user)
+}
+```
+
+也可以通过 key path 或闭包明确指定业务身份：
 
 ```swift
 Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
-    cell.configure(user)
+    cell.configure(with: user)
 }
-.onCellEvent({ cell, send in
-    cell.onAvatarTap = send
-}, send: { user in
-    UserListEvent.avatarTap(userID: user.userID)
-})
+
+Row(
+    model: user,
+    id: { $0.userID.isEmpty ? $0.accountID : $0.userID },
+    cell: UserCell.self
+) { cell, user, _ in
+    cell.configure(with: user)
+}
 ```
 
-## 实时列表定位与可见刷新
+不要使用数组下标、随机 UUID 或每次 render 都变化的值作为 Row ID，否则 diffable 无法判断移动和内容更新。
 
-实时页面不需要保存第二套 `sections` 才能查行或刷新可见 cell，优先读取 adapter 当前描述树：
+### 根据状态切换 Cell 类型
+
+`Cell.self` 是 identity 的一部分，所以同一个用户从普通状态切换为 VIP 时，不需要手动拼接 ID：
 
 ```swift
-let count = adapter.itemCount(in: .messages)
-let indexPaths = adapter.indexPaths(forRowID: messageID, in: .messages)
+ForEach(users, id: \.userID) { user in
+    if user.isVIP {
+        Row(model: user, cell: VIPUserCell.self) { cell, user, _ in
+            cell.configure(with: user)
+        }
+    } else {
+        Row(model: user, cell: NormalUserCell.self) { cell, user, _ in
+            cell.configure(with: user)
+        }
+    }
+}
+```
 
-let transaction = ListTransaction.automatic.scrollBehavior(
-    .scrollToLast(in: Section.messages, position: .bottom)
+如果两个分支使用同一种 Cell，但仍希望切换时执行 delete + insert，可以增加展示变体：
+
+```swift
+Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
+    cell.configure(with: user)
+}
+.variant(user.isVIP ? "vip" : "normal")
+```
+
+### Refresh Policy
+
+| Policy | 行为 |
+| --- | --- |
+| `.automaticVisible` | 默认策略；无 `refreshID` 时每次 apply 重配可见 cell，有 `refreshID` 时仅在版本变化后重配。 |
+| `.whenRefreshIDChanges` | `refreshID` 变化时通过 diffable reconfigure/reload 刷新。 |
+| `.never` | identity 不变时不主动刷新。 |
+| `.alwaysVisible` | 每次 apply 都重配当前可见 cell。 |
+
+iOS 15+ 使用 `reconfigureItems`；iOS 14 自动回退到 `reloadItems`。请保证同一 section 内的 Row ID 唯一，debug diagnostics 会报告重复身份。
+
+Apply 级别还可以覆盖整批列表的刷新行为：
+
+| Strategy | 行为 |
+| --- | --- |
+| `.automatic` | 根据每个 Row 的 policy 自动选择 diffable 或可见刷新。 |
+| `.visibleOnly` | 不向 snapshot 写入 refresh 标记，只重配符合条件的可见节点。 |
+| `.diffableOnly` | 只执行 `refreshID` 驱动的 diffable refresh。 |
+| `.forceReload` | reload 所有新旧 snapshot 中都存在的 Row。 |
+
+```swift
+let options = ListApplyOptions(
+    transaction: .automatic,
+    refreshStrategy: .diffableOnly
 )
-let result = await adapter.applyAndWait(transaction: transaction) {
-    ListSection(.messages) {
-        ForEach(messages, id: \.messageID) { message in
-            Row(model: message, cell: MessageCell.self) { cell, message, _ in
-                cell.configure(message)
-            }
-            .refreshID(message.layoutVersion)
-        }
-    }
-}
 
-print(result.summary.animation.scrollAnimated)
+adapter.apply(options: options) {
+    makeSections()
+}
 ```
 
-动态高度变化用 `reloadVisibleRows`，它通过 diffable snapshot reload 当前可见 identity，适合公屏消息展开、图片加载后重新量高：
+### 内容过渡
+
+同一个 identity 的可见 Cell 可以在重配时加入轻量淡入淡出：
 
 ```swift
-adapter.reloadVisibleRows(forRowID: messageID, in: .messages)
+Row(model: score, id: \.playerID, cell: ScoreCell.self) { cell, score, _ in
+    cell.configure(with: score)
+}
+.refreshID(score.version)
+.contentTransition(.opacity(duration: 0.18))
 ```
 
-不需要重新布局的状态轻刷新用 `reconfigureVisibleRows`，适合麦位发言动画、工具栏倒计时、PK 状态：
+## 条件内容与页面状态
 
-```swift
-adapter.reconfigureVisibleRows(forRowID: seatID, in: .seats)
-```
-
-Header/Footer 可以在 view 内部发送事件，也可以使用 section 级点击：
-
-```swift
-ListSection(.history) {
-    Row(model: keyword, id: \.self, cell: SearchHistoryCell.self) { cell, keyword, _ in
-        cell.titleLabel.text = keyword
-    }
-}
-.header(SearchHeaderView.self, id: "history-header") { view, context in
-    view.titleLabel.text = "搜索记录:"
-    view.onTapped = {
-        context.send(SearchEvent.clearHistory)
-    }
-}
-.onHeaderTap { context in
-    context.send(SearchEvent.clearHistory)
-}
-```
-
-### 手写 Data Source 的 Registration Helper
-
-常规 ListKit DSL 不需要手动注册 cell、header、footer 或 supplementary；`Row`、`Header`、
-`Footer` 和 `SectionSupplementary` 会继续使用 ListKit 内部的 register + dequeue 流程。
-
-如果页面仍在使用手写 `UICollectionViewDataSource`，或在 `ProviderRow` /
-`ProviderSupplementary` 迁移逃生口中需要 UIKit registration object，可以使用 `.lk`
-命名空间下的 helper。它们沿用 ListKit 的同名 nib 优先、否则 class fallback 规则：
-
-```swift
-let cellRegistration = collectionView.lk.cellRegistration(UserCell.self) { cell, _, user in
-    cell.configure(user)
-}
-
-let headerRegistration = collectionView.lk.supplementaryRegistration(
-    TitleHeaderView.self,
-    ofKind: UICollectionView.elementKindSectionHeader
-) { view, _, _ in
-    view.titleLabel.text = "用户"
-}
-```
-
-## 条件 Layout、Header/Footer 和背景装饰
-
-`makeCompositionalLayout()` 只需要设置一次。后续通过 `apply` 条件切换 layout、
-header/footer/supplementary 和背景装饰，ListKit 会自动注册 typed decoration 并在布局
-metadata 变化后 invalidate 当前 layout：
-
-```swift
-collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
-
-adapter.apply {
-    ListSection(.main) {
-        ForEach(items, id: \.id) { item in
-            Row(model: item, cell: ItemCell.self) { cell, item, _ in
-                cell.configure(item)
-            }
-        }
-    } layout: {
-        if isGrid {
-            GridLayout(columns: 2, spacing: 12)
-        } else {
-            ListLayout(spacing: 8)
-        }
-    } header: {
-        if showHeader {
-            Header(TitleHeaderView.self, id: "title") { view, _ in
-                view.titleLabel.text = title
-            }
-            .layout(
-                height: isCompact ? .absolute(36) : .estimated(64),
-                pinned: isPinned
-            )
-        }
-    } footer: {
-        if showFooter {
-            Footer(FooterView.self, id: "footer") { view, _ in
-                view.configure()
-            }
-        }
-    } background: {
-        if showBackground {
-            BackgroundDecoration(
-                GroupBackgroundView.self,
-                contentInsets: .init(top: 8, leading: 16, bottom: 8, trailing: 16)
-            )
-        }
-    }
-}
-```
-
-已有 header/footer 或自定义 supplementary 需要单独配置 layout 时，用 `supplementaryLayouts:` builder。新页面优先把 header/footer 的布局直接写在 `Header(...).layout(...)` 上；`supplementaryLayouts:` 主要用于旧调用逐步迁移或多个 kind 统一配置：
-
-```swift
-ListSection(.main) {
-    Row(...)
-} header: {
-    Header(TitleHeaderView.self, id: "title") { view, _ in
-        view.titleLabel.text = title
-    }
-} supplementaries: {
-    SectionSupplementary("badge", BadgeView.self, id: "badge") { view, _ in
-        view.configure()
-    }
-} supplementaryLayouts: {
-    if isPinned {
-        BoundarySupplementaryLayout(
-            kind: UICollectionView.elementKindSectionHeader,
-            height: .absolute(36),
-            pinned: true
-        )
-    }
-    if showBadge {
-        ItemSupplementaryLayout(
-            kind: "badge",
-            anchor: .topTrailing,
-            width: .absolute(16),
-            height: .absolute(16)
-        )
-    }
-}
-```
-
-需要复用已有 decoration kind 时，用 raw kind 入口；这种写法不自动注册 view：
-
-```swift
-ListSection(.main) { ... } background: {
-    if showBackground {
-        BackgroundDecoration(
-            kind: UICollectionView.elementKindSectionBackgroundDecoration,
-            contentInsets: .init(top: 8, leading: 16, bottom: 8, trailing: 16)
-        )
-    }
-}
-```
-
-简单固定背景也可以继续使用 modifier：
-
-```swift
-ListSection(.main) { ... }
-    .backgroundDecoration(
-        GroupBackgroundView.self,
-        contentInsets: .init(top: 8, leading: 16, bottom: 8, trailing: 16)
-    )
-```
-
-## Diagnostics 和 Apply Options
-
-增强入口适合调试刷新问题：
-
-```swift
-let result = adapter.apply(
-    options: ListApplyOptions(
-        transaction: .disabled,
-        refreshStrategy: .diffableOnly,
-        diagnostics: .init(mode: .warning)
-    )
-) {
-    ListSection(.users) {
-        ...
-    }
-}
-
-print(result.summary.insertedSectionCount)
-print(result.summary.deletedSectionCount)
-print(result.summary.movedSectionCount)
-print(result.summary.refreshIDChangedCount)
-```
-
-`insertedSectionCount`、`deletedSectionCount`、`movedSectionCount`、`keptSectionCount` 描述 Section 变化；不带 `Section` 的 `insertedCount`、`deletedCount`、`movedCount`、`keptCount` 只统计 Row。同一 Row 随 Section 整体移动不会重复计为 Row move；Row 跨 Section 则按原 Section delete、新 Section insert 统计。
-
-## 动画事务
-
-一次更新的 snapshot、outline、layout、Row 内容和滚动动画统一由 `ListTransaction` 描述。默认 `.automatic` 遵循系统 Reduce Motion；`.enabled` 表示明确强制动画，`.disabled` 则关闭动画。UIKit diffable 的具体 duration 和 curve 仍由系统决定：
-
-```swift
-let transaction = ListTransaction()
-    .snapshotAnimation(.automatic)
-    .outlineAnimation(.automatic)
-    .layoutAnimation(.disabled)
-    .contentAnimation(.automatic)
-    .scrollAnimation(.automatic)
-    .updatePolicy(.coalesceLatest)
-    .scrollBehavior(
-        .preserveVisiblePosition(
-            of: ListScrollTarget(RowID.activityTitle, in: Section.activityTitle)
-        )
-    )
-
-let result = await adapter.applyAndWait(transaction: transaction) {
-    sections
-}
-
-print(result.summary.animation.completionState)
-print(result.summary.animation.anchorCompensation)
-```
-
-高频状态更新可用 `.coalesceLatest`，旧的未完成更新会以 `.superseded` 结束；必须逐次提交时使用 `.serial`。相同 identity 的可见 Row 如需局部过渡，可在 Row 上声明：
-
-```swift
-Row(model: message, cell: MessageCell.self) { cell, message, _ in
-    cell.configure(message)
-}
-.refreshID(message.version)
-.refreshPolicy(.automaticVisible)
-.contentTransition(.opacity)
-```
-
-需要等待 diffable、outline、layout、内容过渡全部结束时使用 `applyAndWait`；普通同步提交继续使用 `apply`。`ListApplySummary.animation` 会报告实际动画范围、内容过渡数量、滚动补偿、Reduce Motion 和最终完成状态。
-
-DEBUG 默认会输出 apply summary。重复 section/row/supplementary identity 会先由 `ListDiagnostics` 报告，避免 diffable 抛出更难定位的异常。
-
-Layout 相关 diagnostics 也会在 `apply` 或 compositional layout provider 期间暴露：
-
-- 同一个 section 内同 kind supplementary view 多次声明会报告，因为 adapter 按 `kind + section` 查找，后声明的 view 会覆盖前者。
-- 配置了 `boundarySupplementaryLayout` / `itemSupplementaryLayout` 但没有同 kind supplementary view 会报告；反过来 view 没有 layout 是合法配置，会使用默认 boundary layout。
-- 同 kind 同时配置 boundary 和 item-level layout 会报告，最后一次 layout 配置获胜。
-- grid columns 小于 1、尺寸非正数、spacing 为负数等不稳定 layout 参数会报告。
-- `.layout("legacyID")` 使用 `makeCompositionalLayout()` 时需要提供 `fallback`；未提供或 `fallback` 返回 `nil` 会报告，并临时使用默认 list section 兜底，避免 layout provider 直接崩溃。
-
-## 状态 Row 和 Selection
-
-空态、加载态、错误态只描述 UI：
+Result builder 支持 `if`、`if let`、`switch` 和数组表达式。页面状态仍由业务层管理，ListKit 只负责描述当前应该显示什么：
 
 ```swift
 ListSection(.users) {
@@ -496,249 +442,563 @@ ListSection(.users) {
         ListStateRow.loading(LoadingCell.self) { cell, _ in
             cell.startAnimating()
         }
+    } else if let error {
+        ListStateRow.failure(ErrorCell.self) { cell, _ in
+            cell.configure(message: error.localizedDescription)
+        }
+        .onSelect { _ in
+            retry()
+        }
     } else if users.isEmpty {
         ListStateRow.empty(EmptyCell.self) { cell, _ in
             cell.titleLabel.text = "暂无用户"
+        }
+    } else {
+        ForEach(users, id: \.id) { user in
+            Row(model: user, cell: UserCell.self) { cell, user, _ in
+                cell.configure(with: user)
+            }
         }
     }
 }
 ```
 
-选择态适合礼物、标签、用户选择：
+Section 本身也可以按条件出现：
+
+```swift
+adapter.apply {
+    if !pinnedUsers.isEmpty {
+        ListSection(.pinned) {
+            makeUserRows(pinnedUsers)
+        }
+    }
+
+    ListSection(.allUsers) {
+        makeUserRows(users)
+    }
+}
+```
+
+## Selection
+
+Section 决定整体选择模式，Row 描述受控选择状态和回调：
 
 ```swift
 ListSection(.gifts) {
     ForEach(gifts, id: \.id) { gift in
         Row(model: gift, cell: GiftCell.self) { cell, gift, _ in
-            cell.configure(gift)
+            cell.configure(with: gift)
         }
         .selected(selectedGiftID == gift.id)
+        .selectionDisabled(!gift.isAvailable)
         .onSelectionChange { gift, isSelected, _ in
-            store.updateSelection(gift.id, isSelected: isSelected)
+            if isSelected {
+                selectedGiftID = gift.id
+            }
         }
     }
 }
 .selectionMode(.single)
 ```
 
-## Layout DSL 和 Supplementary Layout
+多选时使用 `.selectionMode(.multiple)`；只展示点击事件、不保留系统选中态时使用 `.selectionMode(.none)` 和 `.onSelect(...)`。键盘、鼠标和 tvOS 风格交互还可以组合 `.focusable()`、`.selectionFollowsFocus()`、`.onHighlightChange(...)` 与 `.onPrimaryAction(...)`。
 
-ListKit 可以根据 section DSL 生成 compositional layout helper。adapter 不会自动接管
-`collectionView.collectionViewLayout`，页面显式设置：
+## Layout 与 Supplementary
 
-```swift
-collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
-```
-
-常见两列网格：
+Collection section 可以直接声明常见布局：
 
 ```swift
-ListSection(.users) {
-    ForEach(users, id: \.userID) { user in
-        Row(model: user, cell: UserCell.self) { cell, user, _ in
-            cell.configure(user)
+ListSection(.photos) {
+    ForEach(photos, id: \.id) { photo in
+        Row(model: photo, cell: PhotoCell.self) { cell, photo, _ in
+            cell.configure(with: photo)
         }
     }
 }
-.layout(.grid(columns: 2, spacing: 12))
+.layout(.grid(
+    columns: 2,
+    spacing: 12,
+    itemHeight: .estimated(180),
+    contentInsets: .init(12)
+))
+```
+
+内置布局包括：
+
+- `.list(...)`：纵向列表。
+- `.grid(...)`：固定列数网格。
+- `.horizontal(...)`：横向滚动 section。
+- `UIKitListLayout(...)`：原生 `UICollectionLayoutListConfiguration`，适合 swipe 与 outline。
+- `.custom(...)`：直接生成 `NSCollectionLayoutSection` 的逃生口。
+
+Header、footer 和自定义 supplementary 都属于 section 描述的一部分：
+
+```swift
+ListSection(.users) {
+    makeUserRows()
+}
+.header(UsersHeaderView.self, id: "header") { view, _ in
+    view.titleLabel.text = "Users"
+}
+.footer(LoadingFooterView.self, id: "footer") { view, _ in
+    view.isLoading = isLoadingMore
+}
 .stickyHeader()
 ```
 
-横向自适应标签：
+### 横向滚动 Section
+
+标签、推荐卡片和最近访问记录可以使用横向布局：
 
 ```swift
-ListSection(.history) {
-    ForEach(history, id: \.self) { keyword in
-        Row(model: keyword, cell: SearchHistoryCell.self) { cell, keyword, _ in
+ListSection(.recentSearches) {
+    ForEach(keywords, id: \.self) { keyword in
+        Row(model: keyword, cell: KeywordCell.self) { cell, keyword, _ in
             cell.titleLabel.text = keyword
         }
     }
 }
 .layout(.horizontal(
-    itemWidth: .estimated(20),
-    itemHeight: .absolute(20),
+    itemWidth: .estimated(80),
+    itemHeight: .absolute(36),
     spacing: 8,
-    contentInsets: .init(top: 0, leading: 14, bottom: 0, trailing: 14)
+    contentInsets: .init(top: 0, leading: 16, bottom: 0, trailing: 16),
+    scrollingBehavior: .continuous
 ))
 ```
 
-复杂布局逃生口：
+### 条件 Layout、Header 与背景
+
+需要让布局元数据和页面状态一起变化时，可以使用 `ListSection` 的 builders：
 
 ```swift
-ListSection(.custom) {
-    ...
+ListSection(.dashboard) {
+    ForEach(items, id: \.id) { item in
+        Row(model: item, cell: DashboardCell.self) { cell, item, _ in
+            cell.configure(with: item)
+        }
+    }
+} layout: {
+    if isGrid {
+        GridLayout(columns: 2, spacing: 12)
+    } else {
+        ListLayout(itemHeight: .estimated(64), spacing: 8)
+    }
+} header: {
+    if showHeader {
+        Header(DashboardHeaderView.self, id: "dashboard-header") { view, _ in
+            view.titleLabel.text = title
+        }
+        .layout(height: .estimated(52), pinned: true)
+    }
+} background: {
+    if showBackground {
+        BackgroundDecoration(
+            CardBackgroundView.self,
+            contentInsets: .init(top: 8, leading: 12, bottom: 8, trailing: 12)
+        )
+    }
 }
-.layout(.custom(id: "custom-layout") { section, index, environment in
-    makeCustomCompositionalSection()
-})
 ```
 
-同一个 section 的 layout 来源是互斥的，最后一次 layout API 调用获胜：`.layout("legacyID")`、
-`.layout(.grid(...))` 和 `.layout(.custom(...))` 会互相清空旧来源。`layout: { ... }`
-builder 也会用返回的 configuration 覆盖当前 section layout 来源。
+Typed background decoration 会由 adapter 自动注册。使用 raw decoration kind 时，需要调用方先向 compositional layout 注册对应 view。
 
-旧的 `.layout("two-column-grid")` 仍保留，只写入 `layoutID`，适合复杂页面继续在外部做映射。
-这类 section 需要使用 `adapter.makeCompositionalLayout(fallback:)`：
+### Supplementary 的刷新与事件
+
+Header/footer 也可以拥有独立的 `refreshID`、刷新策略和点击事件：
 
 ```swift
-collectionView.collectionViewLayout = adapter.makeCompositionalLayout { section, index, environment in
+let header = Supplementary(
+    UICollectionView.elementKindSectionHeader,
+    id: "users-header",
+    view: UsersHeaderView.self
+) { view, _ in
+    view.configure(title: title, onlineCount: onlineCount)
+}
+.refreshID(headerVersion)
+.refreshPolicy(.whenRefreshIDChanges)
+.onTap { _ in
+    showAllUsers()
+}
+
+ListSection(.users) {
+    makeUserRows()
+}
+.supplementary(header)
+```
+
+自定义 kind 默认可以作为 boundary supplementary；下面把角标挂到每个 item 的右上角：
+
+```swift
+ListSection(.users) {
+    makeUserRows()
+} supplementaries: {
+    SectionSupplementary("online-badge", OnlineBadgeView.self, id: "online") { view, context in
+        let user = users[context.indexPath.item]
+        view.isOnline = user.isOnline
+    }
+    .refreshID(presenceVersion)
+    .itemSupplementaryLayout(
+        anchor: .topTrailing,
+        width: .absolute(16),
+        height: .absolute(16),
+        fractionalOffset: CGPoint(x: 0.25, y: -0.25),
+        zIndex: 2
+    )
+}
+```
+
+### 原生 UIKit List
+
+Collection swipe actions、sidebar appearance 和 outline 应使用原生 list layout：
+
+```swift
+ListSection(.inbox) {
+    ForEach(messages, id: \.id) { message in
+        Row(model: message, cell: MessageListCell.self) { cell, message, _ in
+            cell.configure(with: message)
+        }
+        .trailingSwipeActions { _ in
+            let delete = UIContextualAction(style: .destructive, title: "删除") { _, _, finish in
+                deleteMessage(id: message.id)
+                finish(true)
+            }
+            return UISwipeActionsConfiguration(actions: [delete])
+        }
+    }
+} layout: {
+    UIKitListLayout(appearance: .insetGrouped, showsSeparators: true)
+}
+```
+
+### 接入已有 Layout Provider
+
+旧页面可以继续用 `.layout("legacy-id")` 保存布局标识，并在 fallback 中返回原来的 `NSCollectionLayoutSection`：
+
+```swift
+adapter.apply {
+    ListSection(.products) {
+        makeProductRows()
+    }
+    .layout("two-column-products")
+}
+
+collectionView.collectionViewLayout = adapter.makeCompositionalLayout { section, _, environment in
     switch section.layoutID?.typed(String.self) {
-    case "two-column-grid":
-        return makeTwoColumnGridSection(environment: environment)
+    case "two-column-products":
+        return makeProductLayout(environment: environment)
     default:
         return nil
     }
 }
 ```
 
-`adapter.makeCompositionalSection(for:)` 只支持内建 `ListSectionLayout` 和默认 list layout。
-如果 section 使用 legacy `layoutID` 或 custom layout，请改用 `makeCompositionalLayout(fallback:)`。
+新页面优先使用 `.list(...)`、`.grid(...)`、`.horizontal(...)` 或 `.custom(...)`；fallback 主要用于渐进迁移。
 
-Supplementary 可以单独声明 refresh policy：
+## 事件
 
-```swift
-let header = Supplementary(
-    UICollectionView.elementKindSectionHeader,
-    id: "users-header",
-    view: TitleHeaderView.self
-) { view, _ in
-    view.titleLabel.text = "用户"
-}
-.refreshID(headerVersion)
-.refreshPolicy(.whenRefreshIDChanges)
-
-ListSection(.users) { ... }
-    .supplementary(header)
-```
-
-Header/Footer 会自动生成 boundary supplementary layout。custom kind 默认也是 top boundary；
-需要调整位置、尺寸或 zIndex 时使用显式 layout：
-
-```swift
-ListSection(.users) {
-    ...
-}
-.supplementary("badge", BadgeView.self, id: "vip-badge") { view, _ in
-    view.configure(text: "VIP")
-}
-.boundarySupplementaryLayout(
-    kind: "badge",
-    alignment: .topTrailing,
-    width: .absolute(64),
-    height: .absolute(28),
-    zIndex: 5
-)
-```
-
-角标要挂到每个 item 上时，用 item-level supplementary：
-
-```swift
-ListSection(.users) {
-    ...
-} layout: {
-    GridLayout(columns: 2, spacing: 12)
-} supplementaries: {
-    SectionSupplementary("vip-dot", BadgeView.self, id: "vip-dot") { view, context in
-        view.configure(count: badges[context.indexPath.item].count)
-    }
-    .refreshID(badgeVersion)
-    .refreshPolicy(.whenRefreshIDChanges)
-    .itemSupplementaryLayout(
-        anchor: .topTrailing,
-        width: .absolute(18),
-        height: .absolute(18),
-        fractionalOffset: CGPoint(x: 0.25, y: -0.25)
-    )
-}
-```
-
-## SwiftUI 风格交互、原生 List 与层级
-
-Row 行为通过值语义 modifier 组合；section 决定整体选择模式，单行可以继续细化：
+简单事件可以直接挂在 Row 上：
 
 ```swift
 Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
-    cell.configure(user)
+    cell.configure(with: user)
 }
-.selectionDisabled(user.isUnavailable)
-.focusable()
-.selectionFollowsFocus()
-.springLoadingEnabled()
-.onHighlightChange { user, highlighted, _ in
-    analytics.highlight(user.id, highlighted)
+.onSelect { user, context in
+    analytics.trackSelection(id: context.itemID)
+    openProfile(user)
 }
-.onPrimaryAction { user, _ in
-    router.open(user)
+.onDisplay { cell, context in
+    analytics.trackImpression(id: context.itemID)
 }
 ```
 
-Collection swipe 必须使用 UIKit 原生 list layout。`leadingSwipeActions` / `trailingSwipeActions`
-会被安装到 `UICollectionLayoutListConfiguration`，不是伪装成 collection delegate 方法：
+Cell 内部产生的业务事件可以通过强类型路由统一交给页面处理：
 
 ```swift
-collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
-    configuration: .init(interSectionSpacing: 12)
-)
+enum UserListEvent: ListEvent {
+    case avatarTapped(userID: String)
+}
+
+adapter.onEvent(UserListEvent.self) { event, _ in
+    switch event {
+    case .avatarTapped(let userID):
+        openProfile(userID)
+    }
+}
 
 adapter.apply {
-    ListSection(.inbox) {
-        Row(model: message, id: \.id, cell: MessageListCell.self) { cell, message, _ in
-            cell.configure(message)
+    ListSection(.users) {
+        ForEach(users, id: \.id) { user in
+            Row(model: user, cell: UserCell.self) { cell, user, context in
+                cell.configure(with: user)
+                cell.onAvatarTap = {
+                    context.send(UserListEvent.avatarTapped(userID: user.id))
+                }
+            }
         }
-        .trailingSwipeActions { context in
-            UISwipeActionsConfiguration(actions: [deleteAction(context.itemID)])
-        }
-    } layout: {
-        UIKitListLayout(appearance: .insetGrouped, showsSeparators: true)
     }
 }
 ```
 
-层级列表使用 `DisclosureGroup` 构建 section snapshot。父节点 cell 应使用
-`UICollectionViewListCell` 并显式添加 `.outlineDisclosure()`：
+如果 cell 只需要把一个无参数动作转成事件，可以用 `onCellEvent` 减少绑定样板：
+
+```swift
+Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
+    cell.configure(with: user)
+}
+.onCellEvent({ cell, send in
+    cell.onAvatarTap = send
+}, send: { user in
+    UserListEvent.avatarTapped(userID: user.id)
+})
+```
+
+展示和预取事件也可以直接拿到强类型 model：
+
+```swift
+Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
+    cell.configure(with: user)
+}
+.onDisplay { cell, context in
+    analytics.trackImpression(id: context.itemID)
+    cell.startAnimation()
+}
+.onEndDisplay { cell, _ in
+    cell.stopAnimation()
+}
+.onPrefetch { user, _ in
+    imagePipeline.prefetch(user.avatarURL)
+}
+.onCancelPrefetch { user, _ in
+    imagePipeline.cancelPrefetch(user.avatarURL)
+}
+```
+
+`ListContext.identity` / `itemID` 是稳定身份；`indexPath` 只表示事件发生时的位置。跨刷新逻辑应优先保存 identity，而不是 index path。
+
+## 实时列表查询与可见刷新
+
+Adapter 保存的是当前已经提交的描述树，因此页面不需要额外维护一套 sections 来查询位置：
+
+```swift
+let count = adapter.itemCount(in: .messages)
+let indexPaths = adapter.indexPaths(forRowID: messageID, in: .messages)
+
+if let indexPath = indexPaths.first,
+   let identity = adapter.itemIdentity(at: indexPath) {
+    print(identity)
+    print(adapter.contains(identity))
+}
+```
+
+轻量状态变化，例如倒计时、音量动画或在线状态，只重配当前可见 Cell：
+
+```swift
+adapter.reconfigureVisibleRows(
+    forRowID: seatID,
+    in: .seats
+)
+```
+
+内容变化会影响自适应高度或布局时，通过 diffable snapshot reload 可见节点：
+
+```swift
+adapter.reloadVisibleRows(
+    forRowID: messageID,
+    in: .messages
+)
+```
+
+两者区别是：`reconfigureVisibleRows` 直接调用当前 Row 的配置闭包，不重新量高；`reloadVisibleRows` 会让 UIKit 重新创建/布局对应的可见节点。
+
+Supplementary 也支持按 kind 或关联 Row ID 做可见重配：
+
+```swift
+adapter.reconfigureVisibleSupplementaries(
+    ofKind: UICollectionView.elementKindSectionHeader,
+    in: .messages
+)
+```
+
+## 层级列表
+
+Collection 使用 `DisclosureGroup` 或 `OutlineGroup` 构建 diffable section snapshot。父节点 Cell 应继承 `UICollectionViewListCell`，并使用 `.outlineDisclosure()` 显示系统展开图标：
 
 ```swift
 ListSection(.files) {
-    DisclosureGroup(
-        Row(folder.id, model: folder, cell: FolderCell.self) { cell, folder, _ in
-            cell.configure(folder)
-        }
-        .outlineDisclosure(),
-        isExpanded: expandedFolderIDs.contains(folder.id)
-    ) {
-        ForEach(folder.files, id: \.id) { file in
-            Row(model: file, cell: FileCell.self) { cell, file, _ in
-                cell.configure(file)
+    ForEach(folders, id: \.id) { folder in
+        DisclosureGroup(
+            Row(model: folder, cell: FolderCell.self) { cell, folder, _ in
+                cell.configure(with: folder)
+            }
+            .outlineDisclosure(),
+            isExpanded: expandedFolderIDs.contains(folder.id)
+        ) {
+            ForEach(folder.files, id: \.id) { file in
+                Row(model: file, cell: FileCell.self) { cell, file, _ in
+                    cell.configure(with: file)
+                }
             }
         }
     }
 } layout: {
     UIKitListLayout(appearance: .sidebar)
 }
+.selectionMode(.single)
 .onExpansionChange { identity, isExpanded in
-    store.setExpanded(identity.rowID, isExpanded: isExpanded)
+    guard let folderID = identity.rowID.typed(Folder.ID.self) else { return }
+    store.setExpanded(folderID, isExpanded: isExpanded)
 }
 ```
 
-需要等待 diffable、层级 snapshot、selection 和可见刷新全部完成时，使用 `applyAndWait`；
-需要无动画整体替换时选择 `.reloadData`：
+展开状态由业务层保存。下一次 render 时继续把状态传给 `isExpanded`，即可保持声明式单向数据流。
+
+## Apply、动画与滚动
+
+普通页面使用 `apply`。需要等待 diffable、selection、可见刷新和滚动全部完成时，使用 `applyAndWait`：
 
 ```swift
-let result = await adapter.applyAndWait(
-    options: .init(transaction: .disabled, applicationMode: .reloadData)
-) {
-    makeSections()
+let transaction = ListTransaction.automatic
+    .scrollBehavior(.scrollToLast(in: Section.messages, position: .bottom))
+
+let result = await adapter.applyAndWait(transaction: transaction) {
+    makeMessageSections()
 }
+
 print(result.summary)
 ```
 
-`ListContext.identity` / `itemID` 是稳定身份，`indexPath` 只代表事件发生时的位置。adapter
-也提供 `itemIdentity(at:)`、`indexPath(for:)`、`rowIdentifier(at:as:)` 和 `contains(_:)` 做双向查询。
+`ListTransaction` 可以分别控制 snapshot、outline、layout、content 和 scroll 动画，并默认遵循 Reduce Motion。连续 async apply 可以选择合并到最新状态或按调用顺序串行执行。
 
-## Delegate Forwarding
+需要无动画整体替换或自定义刷新策略时，传入完整 options：
 
-Adapter 会接管 UIKit delegate/data source。声明式 API 未覆盖的方法会动态转发；已覆盖的方法会先执行
-ListKit 行为再调用转发对象：
+```swift
+let options = ListApplyOptions(
+    transaction: .disabled,
+    refreshStrategy: .automatic,
+    applicationMode: .reloadData
+)
+
+await adapter.applyAndWait(options: options) {
+    makeSections()
+}
+```
+
+### 常用 Transaction
+
+首次加载禁用所有动画：
+
+```swift
+adapter.apply(transaction: .disabled) {
+    makeSections()
+}
+```
+
+插入历史消息时保持某条可见消息在 viewport 中的位置：
+
+```swift
+let transaction = ListTransaction.automatic
+    .scrollBehavior(
+        .preserveVisiblePosition(
+            of: ListScrollTarget(anchorMessageID, in: Section.messages)
+        )
+    )
+
+await adapter.applyAndWait(transaction: transaction) {
+    makeMessageSections()
+}
+```
+
+连续更新必须严格按顺序完成时使用 serial；默认 `.coalesceLatest` 更适合高频实时状态：
+
+```swift
+let transaction = ListTransaction.automatic
+    .updatePolicy(.serial)
+    .snapshotAnimation(.disabled)
+    .contentAnimation(.enabled)
+```
+
+### Apply Summary
+
+`apply` 会立即返回 result；`applyAndWait` 返回最终完成状态。摘要适合日志、性能观察和测试断言：
+
+```swift
+let result = await adapter.applyAndWait {
+    makeSections()
+}
+
+let summary = result.summary
+print("inserted:", summary.insertedCount)
+print("deleted:", summary.deletedCount)
+print("moved:", summary.movedCount)
+print("refreshed:", summary.refreshIDChangedCount)
+print("completion:", summary.animation.completionState)
+```
+
+如果较新的 `.coalesceLatest` apply 取代了尚未完成的旧 apply，旧结果会以 `.superseded` 结束；任务在提交前取消时会返回 `.cancelledBeforeCommit`。
+
+## Diagnostics
+
+默认配置会在 diffable apply 前检查重复 identity 和无效布局，问题存在时打印诊断并跳过本次提交，避免 UIKit 用难以定位的异常崩溃：
+
+```swift
+let options = ListApplyOptions(
+    diagnostics: .init(mode: .warning, logsApplySummary: true)
+)
+
+let result = adapter.apply(options: options) {
+    makeSections()
+}
+
+for issue in result.summary.diagnosticsIssues {
+    print(issue.kind, issue.message)
+}
+```
+
+会被检查的问题包括：
+
+- 重复 section ID、Row identity 或 supplementary identity。
+- 同一 section 内重复的 supplementary kind。
+- supplementary layout 没有匹配的 view。
+- 同一个 kind 同时声明 boundary 与 item-level layout。
+- grid 列数小于 1、负 spacing、非正尺寸。
+- legacy layout ID 没有被 fallback 解析。
+
+调试期希望立即停在问题现场时使用 `.assertion`；完全关闭检查可以使用 `.disabled`。
+
+## 自动注册与手写 Data Source
+
+标准 `Row`、`TableRow`、header、footer 和 supplementary 都会自动注册 class 或同名 nib，不需要页面手动调用 `register`。
+
+如果旧页面仍然使用手写 `UICollectionViewDataSource`，可以复用 `.lk` 命名空间中的类型安全 helper：
+
+```swift
+let cellRegistration: UICollectionView.CellRegistration<UserCell, User> = collectionView.lk.cellRegistration(
+    UserCell.self
+) { cell, _, user in
+    cell.configure(with: user)
+}
+
+let headerRegistration = collectionView.lk.supplementaryRegistration(
+    UsersHeaderView.self,
+    ofKind: UICollectionView.elementKindSectionHeader
+) { view, _, _ in
+    view.titleLabel.text = "Users"
+}
+```
+
+Table 也提供同样的注册和 dequeue helper：
+
+```swift
+tableView.lk.register(UserTableCell.self)
+tableView.lk.registerHeaderFooter(UsersTableHeaderView.self)
+
+let cell: UserTableCell = tableView.lk.dequeue(UserTableCell.self, for: indexPath)
+```
+
+## Adapter 所有权
+
+Adapter 会接管 UIKit 的 data source、delegate 与 prefetch data source。请将 adapter 作为页面的强引用属性保存；如果其他对象还需要接收未被 ListKit 覆盖的 delegate 回调，可以设置 forwarding delegate：
 
 ```swift
 adapter.collectionDelegate = self
@@ -749,44 +1009,48 @@ tableAdapter.tableDelegate = self
 tableAdapter.tableDataSource = self
 ```
 
-原生 drag/drop 不强制包装进 DSL，可直接设置 `dragDelegate` / `dropDelegate`。
+Collection 的原生 drag/drop 仍可直接使用 `dragDelegate` 与 `dropDelegate`。
 
-## iOS 模拟器测试
+## 进阶能力
 
-仓库提供只包含 `ExamplesTests` 的共享 Scheme，默认关闭测试并行和代码覆盖，避免运行单元测试时
-额外构建 `ExamplesUITests`。测试脚本会优先复用已经启动的 iPhone/iPad；仅在没有可用的已启动设备时
-启动一次模拟器，并在测试结束后保留它供下一次运行复用：
+- `ListStateRow`：描述 loading、empty 和 error 状态。
+- `DisclosureGroup` / `OutlineGroup`：生成 collection section snapshot 层级。
+- `selected(...)` / `selectionMode(...)`：声明单选、多选和受控选择状态。
+- `itemIdentity(at:)`、`indexPath(for:)`、`indexPaths(forRowID:in:)`：稳定身份与位置双向查询。
+- `reconfigureVisibleRows(...)`：只更新当前可见节点。
+- `ProviderRow` / `ListProviderSection`：逐步迁移复杂旧 data source 的逃生口。
+- `ListDiagnosticsOptions` / `lastApplySummary`：定位重复 ID、无效 layout 和 apply 行为。
+
+## 示例与测试
+
+`Examples/` 包含 collection 与 table 两套完整页面，演示 layout、selection、事件、刷新、swipe、context menu 和 reordering。
+
+运行 iOS Simulator 测试：
 
 ```bash
-# 增量构建并运行全部 ExamplesTests
+# 增量构建并运行 ExamplesTests
 scripts/test-ios.sh
 
 # 只运行一个 suite
 scripts/test-ios.sh ExamplesTests/ListKitLayoutTests
 
-# 代码没有变化时复用上一次构建产物
+# 复用上一次构建产物
 scripts/test-ios.sh --no-build ExamplesTests/ListKitLayoutTests
 ```
 
-需要预构建后反复运行时，先执行 `scripts/test-ios.sh --prepare`，后续使用 `--no-build`。
-可通过 `LISTKIT_SIMULATOR_ID=<UUID>` 固定设备；脚本不会主动 shutdown 或 erase 模拟器。
+可以通过 `LISTKIT_SIMULATOR_ID=<UUID>` 指定模拟器。
 
-## CellKit 迁移对照
+## 源码结构
 
-| CellKit | ListKit |
-| --- | --- |
-| `CollectionViewController` + `sections` + `apply` | `CollectionListAdapter.apply { ... }` |
-| `CollectionViewCellItem` model conform | 业务 model 不需要 conform，直接传给 `Row(..., model:)` |
-| `selectionHandler` | `.onSelect { context in ... }` |
-| `CollectionViewSupplementary` | `.header(...)` / `.footer(...)` / `.supplementary(...)` |
-| cell 内按钮闭包直连页面 | `context.send(MyEvent)` + `.onEvent(MyEvent.self)` |
-| 手动注册 cell/header | ListKit 自动按 class/nib 注册 |
+```text
+Sources/ListKit/
+├── Core/         Identity、events、diagnostics 与 apply core
+├── DSL/          Row、section、supplementary 与 builders
+├── Reusable/     自动注册与类型安全 dequeue
+├── Collection/   UICollectionView adapter 与 layout DSL
+└── Table/        UITableView adapter 与 Table DSL
+```
 
-迁移期少量复杂旧 cell 可以用 `ProviderRow` 作为逃生口，但不要再包装成 App 级 provider/section DSL。长期代码应直接写 `ListSection`、`Row(model:id:cell:)`、`.refreshID`、`.onSelect` 和 `.header/.footer/.supplementary`。
+## License
 
-## 当前边界
-
-- `CollectionListAdapter` 继续承载 compositional layout、supplementary layout 和 background decoration。
-- `TableListAdapter` 提供独立 Table DSL、diffable apply、cell/header/footer、selection、display、prefetch、高度、editing、move、context menu、UIKit swipe、可见刷新和 delegate forwarding。
-- `SwipeCellKit` 不进入 ListKit package；使用第三方 swipe 的页面通过 App 层 bridge 或页面自管接入。
-- FSPagerView 等业务型组件仍留在 App 层，ListKit 只负责列表描述、diff、刷新和事件分发。
+ListKit 基于 MIT License 发布，详见 [LICENSE](LICENSE)。
