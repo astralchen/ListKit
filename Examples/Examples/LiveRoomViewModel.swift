@@ -866,7 +866,7 @@ final class LiveRoomViewModel {
             TableHeader(AdminHeaderView.self, id: "moderation-header") { view, _ in
                 view.configure(title: "Admin Events", detail: "\(moderationCount)")
             }
-            .height(.fixed(54))
+            .height(.automatic(estimated: 44))
             .refreshID(moderationCount)
         }
         .selectionMode(.single)

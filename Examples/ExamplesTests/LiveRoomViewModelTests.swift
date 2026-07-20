@@ -61,6 +61,13 @@ struct LiveRoomViewModelTests {
         #expect((adminTable.view as? UITableView)?.tableHeaderView != nil)
     }
 
+    @Test func adminEventCellKeepsItsBackgroundOutsideTheEditingContentView() {
+        let cell = AdminEventTableCell()
+
+        #expect(cell.backgroundView?.backgroundColor == .secondarySystemGroupedBackground)
+        #expect(cell.contentView.backgroundColor == .clear)
+    }
+
     @Test func sendingMessageAppendsMessageAndRequestsScroll() {
         let viewModel = LiveRoomViewModel()
         let initialCount = viewModel.messageCount

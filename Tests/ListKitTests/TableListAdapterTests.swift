@@ -35,6 +35,7 @@ final class TableListAdapterTests: XCTestCase {
 
         XCTAssertEqual(sections.count, 1)
         XCTAssertEqual(sections[0].rows.count, 2)
+        XCTAssertEqual(sections[0].selectionMode, .automatic)
         XCTAssertEqual(sections[0].rows[0].identity.rowID.typed(Int.self), 1)
         XCTAssertEqual(sections[0].rows[0].contentTransition, .opacity)
         XCTAssertEqual(sections[0].header?.identity.rowID.typed(String.self), "chrome")
@@ -70,6 +71,8 @@ final class TableListAdapterTests: XCTestCase {
         _ = adapter.tableView(tableView, cellForRowAt: indexPath)
         adapter.tableView(tableView, didSelectRowAt: indexPath)
 
+        XCTAssertTrue(tableView.allowsSelection)
+        XCTAssertFalse(tableView.allowsMultipleSelection)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), .messages)
         XCTAssertEqual(adapter.rowCount(in: .messages), 1)
         XCTAssertEqual(adapter.itemCount(in: .messages), 1)
@@ -896,10 +899,12 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(model: Message(id: 11, text: "B", version: 1), cell: MessageTableCell.self) { _, _, _ in }
             }
             .selectionMode(.single)
+            .multipleSelectionInteraction()
             TableSection(2) {
                 TableRow(model: Message(id: 20, text: "C", version: 1), cell: MessageTableCell.self) { _, _, _ in }
             }
             .selectionMode(.multiple)
+            .multipleSelectionInteraction()
         }
 
         let disabled = IndexPath(row: 0, section: 0)
@@ -912,6 +917,18 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertNil(adapter.tableView(tableView, willSelectRowAt: disabled))
         XCTAssertEqual(adapter.tableView(tableView, willSelectRowAt: firstSingle), firstSingle)
         XCTAssertEqual(adapter.tableView(tableView, willSelectRowAt: multiple), multiple)
+        XCTAssertFalse(
+            adapter.tableView(
+                tableView,
+                shouldBeginMultipleSelectionInteractionAt: firstSingle
+            )
+        )
+        XCTAssertTrue(
+            adapter.tableView(
+                tableView,
+                shouldBeginMultipleSelectionInteractionAt: multiple
+            )
+        )
 
         tableView.selectRow(at: firstSingle, animated: false, scrollPosition: .none)
         tableView.selectRow(at: secondSingle, animated: false, scrollPosition: .none)
@@ -920,6 +937,130 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertFalse(tableView.indexPathsForSelectedRows?.contains(firstSingle) ?? false)
         XCTAssertTrue(tableView.indexPathsForSelectedRows?.contains(secondSingle) ?? false)
         XCTAssertEqual(deselectedMessageID, 10)
+    }
+
+    func testTableAutomaticSelectionUsesRowIntent() {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+
+        adapter.apply(transaction: .disabled) {
+            TableSection(0) {
+                TableRow("static", model: "Static", cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertFalse(tableView.allowsSelection)
+        XCTAssertNil(adapter.tableView(tableView, willSelectRowAt: IndexPath(row: 0, section: 0)))
+
+        adapter.apply(transaction: .disabled) {
+            TableSection(0) {
+                TableRow("static", model: "Static", cell: MessageTableCell.self) { _, _, _ in }
+            }
+            TableSection(1) {
+                TableRow("plain", model: "Plain", cell: MessageTableCell.self) { _, _, _ in }
+                TableRow("action", model: "Action", cell: MessageTableCell.self) { _, _, _ in }
+                    .onSelect { _ in }
+                TableRow("controlled", model: "Controlled", cell: MessageTableCell.self) { _, _, _ in }
+                    .selected(false)
+                TableRow("disabled", model: "Disabled", cell: MessageTableCell.self) { _, _, _ in }
+                    .onSelect { _ in }
+                    .selectionDisabled()
+            }
+            .multipleSelectionInteraction()
+        }
+
+        XCTAssertTrue(tableView.allowsSelection)
+        XCTAssertFalse(tableView.allowsMultipleSelection)
+        XCTAssertNil(adapter.tableView(tableView, willSelectRowAt: IndexPath(row: 0, section: 0)))
+        XCTAssertNil(adapter.tableView(tableView, willSelectRowAt: IndexPath(row: 0, section: 1)))
+        XCTAssertEqual(
+            adapter.tableView(tableView, willSelectRowAt: IndexPath(row: 1, section: 1)),
+            IndexPath(row: 1, section: 1)
+        )
+        XCTAssertEqual(
+            adapter.tableView(tableView, willSelectRowAt: IndexPath(row: 2, section: 1)),
+            IndexPath(row: 2, section: 1)
+        )
+        XCTAssertNil(adapter.tableView(tableView, willSelectRowAt: IndexPath(row: 3, section: 1)))
+        XCTAssertFalse(
+            adapter.tableView(
+                tableView,
+                shouldBeginMultipleSelectionInteractionAt: IndexPath(row: 1, section: 1)
+            )
+        )
+    }
+
+    func testTableControlledSelectionSynchronizesAcrossApply() async {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+        let indexPath = IndexPath(row: 0, section: 0)
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(0) {
+                TableRow("controlled", model: "Controlled", cell: MessageTableCell.self) { _, _, _ in }
+                    .selected(true)
+            }
+        }
+        XCTAssertEqual(tableView.indexPathsForSelectedRows, [indexPath])
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(0) {
+                TableRow("controlled", model: "Controlled", cell: MessageTableCell.self) { _, _, _ in }
+                    .selected(false)
+            }
+        }
+        XCTAssertTrue(tableView.indexPathsForSelectedRows?.isEmpty ?? true)
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            TableSection(0) {
+                TableRow("controlled", model: "Controlled", cell: MessageTableCell.self) { _, _, _ in }
+                    .selected(true)
+            }
+        }
+        XCTAssertEqual(tableView.indexPathsForSelectedRows, [indexPath])
+    }
+
+    func testTableHighlightIntentDoesNotEnableRowSelection() {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+        let indexPath = IndexPath(row: 0, section: 0)
+        var highlightChanges: [Bool] = []
+
+        adapter.apply(transaction: .disabled) {
+            TableSection(0) {
+                TableRow("highlight", model: "Highlight", cell: MessageTableCell.self) { _, _, _ in }
+                    .selectionDisabled()
+                    .onHighlightChange { isHighlighted, _ in
+                        highlightChanges.append(isHighlighted)
+                    }
+            }
+        }
+
+        XCTAssertTrue(tableView.allowsSelection)
+        XCTAssertNil(adapter.tableView(tableView, willSelectRowAt: indexPath))
+        XCTAssertTrue(adapter.tableView(tableView, shouldHighlightRowAt: indexPath))
+        adapter.tableView(tableView, didHighlightRowAt: indexPath)
+        adapter.tableView(tableView, didUnhighlightRowAt: indexPath)
+        XCTAssertEqual(highlightChanges, [true, false])
+    }
+
+    func testTableAutomaticSelectionUsesExternalDelegateIntent() {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        let adapter = TableListAdapter<Int>(tableView: tableView)
+        let selectionDelegate = TableSelectionDelegateSpy()
+        let indexPath = IndexPath(row: 0, section: 0)
+        adapter.tableDelegate = selectionDelegate
+
+        adapter.apply(transaction: .disabled) {
+            TableSection(0) {
+                TableRow("plain", model: "Plain", cell: MessageTableCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertTrue(tableView.allowsSelection)
+        XCTAssertEqual(adapter.tableView(tableView, willSelectRowAt: indexPath), indexPath)
+        adapter.tableView(tableView, didSelectRowAt: indexPath)
+        XCTAssertEqual(selectionDelegate.selectedIndexPath, indexPath)
     }
 
     func testTableDataSourceForwardsEditingAndMoveCallbacks() {
@@ -1128,5 +1269,13 @@ private final class TableDelegateSpy: NSObject, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, didEndDisplaying cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         didEndDisplayingCount += 1
+    }
+}
+
+private final class TableSelectionDelegateSpy: NSObject, UITableViewDelegate {
+    var selectedIndexPath: IndexPath?
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        selectedIndexPath = indexPath
     }
 }

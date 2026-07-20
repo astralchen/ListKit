@@ -1110,7 +1110,11 @@ final class AdminEventTableCell: UITableViewCell {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
         backgroundColor = .clear
-        contentView.backgroundColor = .systemBackground
+        contentView.backgroundColor = .clear
+
+        let rowBackgroundView = UIView()
+        rowBackgroundView.backgroundColor = .secondarySystemGroupedBackground
+        backgroundView = rowBackgroundView
 
         selectionImageView.contentMode = .scaleAspectFit
         selectionImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -1209,7 +1213,11 @@ final class AdminHeaderView: UITableViewHeaderFooterView {
 
     override init(reuseIdentifier: String?) {
         super.init(reuseIdentifier: reuseIdentifier)
-        contentView.backgroundColor = .systemGroupedBackground
+        backgroundView = UIView()
+        backgroundView?.backgroundColor = .clear
+        contentView.backgroundColor = .clear
+        preservesSuperviewLayoutMargins = true
+        contentView.preservesSuperviewLayoutMargins = true
 
         titleLabel.font = UIFont.preferredFont(forTextStyle: .headline)
         titleLabel.adjustsFontForContentSizeCategory = true
@@ -1228,10 +1236,10 @@ final class AdminHeaderView: UITableViewHeaderFooterView {
         contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -32),
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: contentView.layoutMarginsGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: contentView.layoutMarginsGuide.bottomAnchor)
         ])
 
         accessibilityIdentifier = "moderation-header"

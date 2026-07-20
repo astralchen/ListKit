@@ -498,10 +498,9 @@ ListSection(.gifts) {
         }
     }
 }
-.selectionMode(.single)
 ```
 
-多选时使用 `.selectionMode(.multiple)`；只展示点击事件、不保留系统选中态时使用 `.selectionMode(.none)` 和 `.onSelect(...)`。键盘、鼠标和 tvOS 风格交互还可以组合 `.focusable()`、`.selectionFollowsFocus()`、`.onHighlightChange(...)` 与 `.onPrimaryAction(...)`。
+Section 默认使用 `.automatic`：声明了 `.onSelect(...)`、`.onDeselect(...)`、`.selected(...)`、`.onSelectionChange(...)`、`.selectionFollowsFocus()` 或 outline disclosure 的 Row 自动参与 section 内单选，纯展示 Row 不会进入选中态；外部 UIKit delegate 声明选择回调时也会自动启用。显式 `.selectionMode(.single)` 会让 section 内所有未禁用 Row 可选；多选使用 `.selectionMode(.multiple)`，系统多选手势需再声明 `.multipleSelectionInteraction()`；`.selectionMode(.none)` 会关闭选择及其回调。`.onHighlightChange(...)` 可以单独使用，包括在 `.selectionDisabled()` 的 Row 上；键盘、鼠标和 tvOS 风格交互还可以组合 `.focusable()` 与 `.onPrimaryAction(...)`。
 
 ## Layout 与 Supplementary
 

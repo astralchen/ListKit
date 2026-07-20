@@ -174,6 +174,18 @@ public struct AnyTableRow {
     let moveTargetProvider: (@MainActor (IndexPath, IndexPath) -> IndexPath)?
     let leadingSwipeActionsProvider: (@MainActor (TableListContext) -> UISwipeActionsConfiguration?)?
     let trailingSwipeActionsProvider: (@MainActor (TableListContext) -> UISwipeActionsConfiguration?)?
+
+    var hasAutomaticSelectionIntent: Bool {
+        isSelected != nil
+            || selectionFollowsFocus == true
+            || selectHandler != nil
+            || deselectHandler != nil
+            || selectionChangeHandler != nil
+    }
+
+    var hasAutomaticHighlightIntent: Bool {
+        highlightChangeHandler != nil
+    }
 }
 
 /// 可以放入 `TableSection` row builder 的元素协议。
@@ -386,7 +398,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return copy
     }
 
-    /// 设置 row 的初始选中状态。
+    /// 设置 row 的受控选中状态；adapter 会在每次 apply 完成及 cell dequeue 时同步 UIKit。
     ///
     /// - Parameter isSelected: 是否选中。
     public func selected(_ isSelected: Bool = true) -> Self {
@@ -395,7 +407,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return copy
     }
 
-    /// 禁止当前 Row 被选择，同时保留 section 级选择策略。
+    /// 禁止当前 Row 被选择，同时保留 section 级选择策略和显式声明的高亮回调。
     public func selectionDisabled(_ disabled: Bool = true) -> Self {
         var copy = self
         copy.rowIsSelectionDisabled = disabled
@@ -1267,6 +1279,7 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     public var rows: [AnyTableRow]
     public var header: AnyTableSectionSupplementary?
     public var footer: AnyTableSectionSupplementary?
+    /// section 选择模式，默认为根据 Row 选择意图自动解析。
     public var selectionMode: ListSelectionMode
     public var indexTitle: String?
     public var headerTitle: String?
@@ -1304,7 +1317,7 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
         self.rows = rows().flatMap { $0.eraseToAnyTableRows(sectionID: id) }
         self.header = header().first { $0.kind == .header }?.makeSupplementary(sectionID: id)
         self.footer = footer().first { $0.kind == .footer }?.makeSupplementary(sectionID: id)
-        self.selectionMode = .none
+        self.selectionMode = .automatic
         self.indexTitle = nil
         self.headerTitle = nil
         self.footerTitle = nil
@@ -1313,7 +1326,7 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
 
     /// 设置 section 的选择模式。
     ///
-    /// - Parameter mode: 单选、多选或不启用选择。
+    /// - Parameter mode: 自动、单选、多选或不启用选择。
     public func selectionMode(_ mode: ListSelectionMode) -> Self {
         var copy = self
         copy.selectionMode = mode
@@ -1341,7 +1354,7 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
         return copy
     }
 
-    /// 允许系统的多选手势从当前 section 开始。
+    /// 允许系统的多选手势从当前 section 开始。仅在 `.selectionMode(.multiple)` 时生效。
     public func multipleSelectionInteraction(_ enabled: Bool = true) -> Self {
         var copy = self
         copy.allowsMultipleSelectionInteraction = enabled

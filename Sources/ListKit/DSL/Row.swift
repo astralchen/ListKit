@@ -40,12 +40,35 @@ public struct ListContentTransition: Equatable, Sendable {
 
 /// section 选择模式描述。
 public enum ListSelectionMode: Equatable, Sendable {
+    /// 根据 Row 或外部 UIKit delegate 的选择意图自动启用 section 内单选。
+    case automatic
     /// 不启用选择。
     case none
     /// 单选。
     case single
     /// 多选。
     case multiple
+}
+
+enum ResolvedListSelectionMode: Equatable {
+    case none
+    case single
+    case multiple
+}
+
+extension ListSelectionMode {
+    func resolved(automaticSelectionEnabled: Bool) -> ResolvedListSelectionMode {
+        switch self {
+        case .automatic:
+            automaticSelectionEnabled ? .single : .none
+        case .none:
+            .none
+        case .single:
+            .single
+        case .multiple:
+            .multiple
+        }
+    }
 }
 
 /// 类型擦除后的 Row 描述。
@@ -85,6 +108,19 @@ public struct AnyListRow {
     let leadingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let trailingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let moveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
+
+    var hasAutomaticSelectionIntent: Bool {
+        isSelected != nil
+            || selectionFollowsFocus == true
+            || showsOutlineDisclosure
+            || selectHandler != nil
+            || deselectHandler != nil
+            || selectionChangeHandler != nil
+    }
+
+    var hasAutomaticHighlightIntent: Bool {
+        highlightChangeHandler != nil
+    }
 }
 
 /// 可以放入 `ListSection` row builder 的元素协议。
@@ -355,7 +391,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         }
     }
 
-    /// 描述当前 Row 是否选中。adapter 会在 cell dequeue 时同步 UIKit 选中态。
+    /// 描述当前 Row 的受控选中状态。adapter 会在每次 apply 完成及 cell dequeue 时同步 UIKit。
     ///
     /// - Parameter isSelected: 当前 Row 是否处于选中状态。
     /// - Returns: 应用选中态后的 Row。
@@ -365,7 +401,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
-    /// 禁止当前 Row 被选择，同时保留 section 级选择策略。
+    /// 禁止当前 Row 被选择，同时保留 section 级选择策略和显式声明的高亮回调。
     public func selectionDisabled(_ disabled: Bool = true) -> Self {
         var copy = self
         copy.rowIsSelectionDisabled = disabled

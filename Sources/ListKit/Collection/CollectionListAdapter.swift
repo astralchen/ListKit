@@ -28,8 +28,11 @@ where SectionID: Hashable & Sendable {
     public weak var scrollDelegate: UIScrollViewDelegate?
 
     /// UIKit delegate 逃生口。ListKit 已处理的回调会先执行声明式 Row 行为，再转发到此对象；
-    /// 其余可选 delegate 方法会通过 Objective-C forwarding 自动转发。
-    public weak var collectionDelegate: UICollectionViewDelegate?
+    /// 其余可选 delegate 方法会通过 Objective-C forwarding 自动转发。选择或高亮回调
+    /// 会参与 `.automatic` 交互能力推断。
+    public weak var collectionDelegate: UICollectionViewDelegate? {
+        didSet { configureSelectionBehavior() }
+    }
 
     /// 原生 drag/drop 逃生口；设置后直接安装到 collection view。
     public weak var dragDelegate: UICollectionViewDragDelegate? {
@@ -318,6 +321,7 @@ where SectionID: Hashable & Sendable {
             }
             self.isApplyingSnapshot = false
             self.restoreSelection(for: selectedItemIdentities)
+            self.synchronizeControlledSelection()
             self.reconcileSelection()
             self.performLayoutUpdate(
                 invalidating: shouldInvalidateLayout,
@@ -563,7 +567,10 @@ where SectionID: Hashable & Sendable {
     }
 
     public func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
-        guard row(at: indexPath)?.isSelectionDisabled != true else { return false }
+        guard let row = row(at: indexPath) else { return false }
+        let allowsListKitHighlight = row.hasAutomaticHighlightIntent
+            || (!row.isSelectionDisabled && selectionMode(at: indexPath) != .none)
+        guard allowsListKitHighlight || collectionDelegateHasHighlightIntent else { return false }
         return collectionDelegate?.collectionView?(collectionView, shouldHighlightItemAt: indexPath) ?? true
     }
 
@@ -616,7 +623,11 @@ where SectionID: Hashable & Sendable {
         _ collectionView: UICollectionView,
         shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath
     ) -> Bool {
-        guard sections[safe: indexPath.section]?.allowsMultipleSelectionInteraction == true else { return false }
+        guard
+            sections[safe: indexPath.section]?.allowsMultipleSelectionInteraction == true,
+            selectionMode(at: indexPath) == .multiple,
+            row(at: indexPath)?.isSelectionDisabled != true
+        else { return false }
         return collectionDelegate?.collectionView?(
             collectionView,
             shouldBeginMultipleSelectionInteractionAt: indexPath
@@ -1825,11 +1836,16 @@ where SectionID: Hashable & Sendable {
 
     private func configureSelectionBehavior() {
         guard let collectionView else { return }
-        let selectableSections = sections.filter { $0.selectionMode != .none }
-        collectionView.allowsSelection = !selectableSections.isEmpty
-        collectionView.allowsMultipleSelection = selectableSections.contains { $0.selectionMode == .multiple }
-            || selectableSections.count > 1
-            || selectableSections.contains { $0.allowsMultipleSelectionInteraction }
+        let selectionSections = sections.compactMap { section -> (ListSection<SectionID>, ResolvedListSelectionMode)? in
+            let mode = selectionMode(for: section)
+            return mode == .none ? nil : (section, mode)
+        }
+        let allowsRowSelection = sections.contains(where: sectionAllowsUserSelection)
+        let allowsHighlight = collectionDelegateHasHighlightIntent
+            || sections.contains { $0.rows.contains(where: \.hasAutomaticHighlightIntent) }
+        collectionView.allowsSelection = allowsRowSelection || allowsHighlight
+        collectionView.allowsMultipleSelection = selectionSections.contains { $0.1 == .multiple }
+            || selectionSections.count > 1
     }
 
     private func captureSelectedItemIdentities() -> [AnyListIdentity] {
@@ -1842,15 +1858,39 @@ where SectionID: Hashable & Sendable {
     private func restoreSelection(for identities: [AnyListIdentity]) {
         guard let collectionView else { return }
         for identity in identities {
-            guard let indexPath = dataSource.indexPath(for: identity) else { continue }
+            guard
+                rowsByIdentity[identity]?.isSelected == nil,
+                let indexPath = dataSource.indexPath(for: identity)
+            else { continue }
             collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+        }
+    }
+
+    private func synchronizeControlledSelection() {
+        guard let collectionView else { return }
+        for section in sections {
+            for row in section.rows {
+                guard
+                    let isSelected = row.isSelected,
+                    let indexPath = dataSource.indexPath(for: row.identity)
+                else { continue }
+                if isSelected, selectionMode(at: indexPath) != .none {
+                    collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+                } else {
+                    collectionView.deselectItem(at: indexPath, animated: false)
+                }
+            }
         }
     }
 
     private func reconcileSelection() {
         guard let collectionView else { return }
         let selectedIndexPaths = (collectionView.indexPathsForSelectedItems ?? []).sorted {
-            $0.section == $1.section ? $0.item < $1.item : $0.section < $1.section
+            if $0.section != $1.section { return $0.section < $1.section }
+            let lhsIsControlled = row(at: $0)?.isSelected == true
+            let rhsIsControlled = row(at: $1)?.isSelected == true
+            if lhsIsControlled != rhsIsControlled { return lhsIsControlled }
+            return $0.item < $1.item
         }
         var selectedSingleSections = Set<Int>()
 
@@ -1880,8 +1920,50 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    private func selectionMode(at indexPath: IndexPath) -> ListSelectionMode {
-        sections[safe: indexPath.section]?.selectionMode ?? .none
+    private func selectionMode(for section: ListSection<SectionID>) -> ResolvedListSelectionMode {
+        section.selectionMode.resolved(
+            automaticSelectionEnabled: collectionDelegateHasSelectionIntent
+                || section.rows.contains { $0.hasAutomaticSelectionIntent }
+        )
+    }
+
+    private func selectionMode(at indexPath: IndexPath) -> ResolvedListSelectionMode {
+        guard let section = sections[safe: indexPath.section] else { return .none }
+        return section.selectionMode.resolved(
+            automaticSelectionEnabled: collectionDelegateHasSelectionIntent
+                || row(at: indexPath)?.hasAutomaticSelectionIntent == true
+        )
+    }
+
+    private func sectionAllowsUserSelection(_ section: ListSection<SectionID>) -> Bool {
+        switch section.selectionMode {
+        case .automatic:
+            return section.rows.contains { row in
+                !row.isSelectionDisabled
+                    && (row.hasAutomaticSelectionIntent || collectionDelegateHasSelectionIntent)
+            }
+        case .none:
+            return false
+        case .single, .multiple:
+            return true
+        }
+    }
+
+    private var collectionDelegateHasSelectionIntent: Bool {
+        collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:shouldSelectItemAt:)))
+            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:didSelectItemAt:)))
+            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:shouldDeselectItemAt:)))
+            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:didDeselectItemAt:)))
+    }
+
+    private var collectionDelegateHasHighlightIntent: Bool {
+        collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:shouldHighlightItemAt:)))
+            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:didHighlightItemAt:)))
+            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:didUnhighlightItemAt:)))
+    }
+
+    private func collectionDelegateResponds(to selector: Selector) -> Bool {
+        collectionDelegate?.responds(to: selector) == true
     }
 
     private func row(at indexPath: IndexPath) -> AnyListRow? {

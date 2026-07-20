@@ -49,7 +49,7 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
     public var customSectionLayout: ListCustomSectionLayout<SectionID>?
     /// supplementary kind 到 layout 描述的映射。
     public var supplementaryLayouts: [String: ListSupplementaryLayout]
-    /// section 选择模式。
+    /// section 选择模式，默认为根据 Row 选择意图自动解析。
     public var selectionMode: ListSelectionMode
     /// 侧边索引中展示的标题。
     public var indexTitle: String?
@@ -99,7 +99,7 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
         self.sectionLayout = nil
         self.customSectionLayout = nil
         self.supplementaryLayouts = [:]
-        self.selectionMode = .none
+        self.selectionMode = .automatic
         self.indexTitle = nil
         self.allowsMultipleSelectionInteraction = false
         self.isHeaderSticky = false
@@ -119,7 +119,7 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
         return copy
     }
 
-    /// 允许系统的多选手势从当前 section 开始。
+    /// 允许系统的多选手势从当前 section 开始。仅在 `.selectionMode(.multiple)` 时生效。
     public func multipleSelectionInteraction(_ enabled: Bool = true) -> Self {
         var copy = self
         copy.allowsMultipleSelectionInteraction = enabled
@@ -395,7 +395,7 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
 
     /// 设置 section 的选择模式。
     ///
-    /// - Parameter mode: 当前 section 使用的选择模式。
+    /// - Parameter mode: 当前 section 使用的选择模式；默认为 `.automatic`。
     /// - Returns: 应用选择模式后的 section。
     public func selectionMode(_ mode: ListSelectionMode) -> Self {
         var copy = self

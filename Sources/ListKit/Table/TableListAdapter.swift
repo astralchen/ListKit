@@ -25,8 +25,10 @@ where SectionID: Hashable & Sendable {
     /// 滚动回调转发对象。
     public weak var scrollDelegate: UIScrollViewDelegate?
 
-    /// table delegate 转发对象。
-    public weak var tableDelegate: UITableViewDelegate?
+    /// table delegate 转发对象；选择或高亮回调会参与 `.automatic` 交互能力推断。
+    public weak var tableDelegate: UITableViewDelegate? {
+        didSet { configureSelectionBehavior() }
+    }
 
     /// UIKit data source 逃生口，仅用于 ListKit 未声明的可选能力。
     public weak var tableDataSource: UITableViewDataSource?
@@ -251,6 +253,7 @@ where SectionID: Hashable & Sendable {
                 return
             }
             self.restoreSelection(for: selectedItemIdentities)
+            self.synchronizeControlledSelection()
             self.reconcileSelection()
             let metrics = TableApplyAnimationMetrics()
             let animationCoordinator = ListAnimationCompletionCoordinator {
@@ -466,7 +469,10 @@ where SectionID: Hashable & Sendable {
     }
 
     public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
-        guard row(at: indexPath)?.isSelectionDisabled != true else { return false }
+        guard let row = row(at: indexPath) else { return false }
+        let allowsListKitHighlight = row.hasAutomaticHighlightIntent
+            || (!row.isSelectionDisabled && selectionMode(at: indexPath) != .none)
+        guard allowsListKitHighlight || tableDelegateHasHighlightIntent else { return false }
         return tableDelegate?.tableView?(tableView, shouldHighlightRowAt: indexPath) ?? true
     }
 
@@ -519,7 +525,11 @@ where SectionID: Hashable & Sendable {
         _ tableView: UITableView,
         shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath
     ) -> Bool {
-        guard sections[safe: indexPath.section]?.allowsMultipleSelectionInteraction == true else { return false }
+        guard
+            sections[safe: indexPath.section]?.allowsMultipleSelectionInteraction == true,
+            selectionMode(at: indexPath) == .multiple,
+            row(at: indexPath)?.isSelectionDisabled != true
+        else { return false }
         return tableDelegate?.tableView?(
             tableView,
             shouldBeginMultipleSelectionInteractionAt: indexPath
@@ -1237,11 +1247,16 @@ where SectionID: Hashable & Sendable {
 
     private func configureSelectionBehavior() {
         guard let tableView else { return }
-        let selectableSections = sections.filter { $0.selectionMode != .none }
-        tableView.allowsSelection = !selectableSections.isEmpty
-        tableView.allowsMultipleSelection = selectableSections.contains { $0.selectionMode == .multiple }
-            || selectableSections.count > 1
-            || selectableSections.contains { $0.allowsMultipleSelectionInteraction }
+        let selectionSections = sections.compactMap { section -> (TableSection<SectionID>, ResolvedListSelectionMode)? in
+            let mode = selectionMode(for: section)
+            return mode == .none ? nil : (section, mode)
+        }
+        let allowsRowSelection = sections.contains(where: sectionAllowsUserSelection)
+        let allowsHighlight = tableDelegateHasHighlightIntent
+            || sections.contains { $0.rows.contains(where: \.hasAutomaticHighlightIntent) }
+        tableView.allowsSelection = allowsRowSelection || allowsHighlight
+        tableView.allowsMultipleSelection = selectionSections.contains { $0.1 == .multiple }
+            || selectionSections.count > 1
     }
 
     private func captureSelectedItemIdentities() -> [AnyListIdentity] {
@@ -1254,15 +1269,39 @@ where SectionID: Hashable & Sendable {
     private func restoreSelection(for identities: [AnyListIdentity]) {
         guard let tableView else { return }
         for identity in identities {
-            guard let indexPath = dataSource.indexPath(for: identity) else { continue }
+            guard
+                rowsByIdentity[identity]?.isSelected == nil,
+                let indexPath = dataSource.indexPath(for: identity)
+            else { continue }
             tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+        }
+    }
+
+    private func synchronizeControlledSelection() {
+        guard let tableView else { return }
+        for section in sections {
+            for row in section.rows {
+                guard
+                    let isSelected = row.isSelected,
+                    let indexPath = dataSource.indexPath(for: row.identity)
+                else { continue }
+                if isSelected, selectionMode(at: indexPath) != .none {
+                    tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+                } else {
+                    tableView.deselectRow(at: indexPath, animated: false)
+                }
+            }
         }
     }
 
     private func reconcileSelection() {
         guard let tableView else { return }
         let selectedIndexPaths = (tableView.indexPathsForSelectedRows ?? []).sorted {
-            $0.section == $1.section ? $0.row < $1.row : $0.section < $1.section
+            if $0.section != $1.section { return $0.section < $1.section }
+            let lhsIsControlled = row(at: $0)?.isSelected == true
+            let rhsIsControlled = row(at: $1)?.isSelected == true
+            if lhsIsControlled != rhsIsControlled { return lhsIsControlled }
+            return $0.row < $1.row
         }
         var selectedSingleSections = Set<Int>()
 
@@ -1292,8 +1331,50 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    private func selectionMode(at indexPath: IndexPath) -> ListSelectionMode {
-        sections[safe: indexPath.section]?.selectionMode ?? .none
+    private func selectionMode(for section: TableSection<SectionID>) -> ResolvedListSelectionMode {
+        section.selectionMode.resolved(
+            automaticSelectionEnabled: tableDelegateHasSelectionIntent
+                || section.rows.contains { $0.hasAutomaticSelectionIntent }
+        )
+    }
+
+    private func selectionMode(at indexPath: IndexPath) -> ResolvedListSelectionMode {
+        guard let section = sections[safe: indexPath.section] else { return .none }
+        return section.selectionMode.resolved(
+            automaticSelectionEnabled: tableDelegateHasSelectionIntent
+                || row(at: indexPath)?.hasAutomaticSelectionIntent == true
+        )
+    }
+
+    private func sectionAllowsUserSelection(_ section: TableSection<SectionID>) -> Bool {
+        switch section.selectionMode {
+        case .automatic:
+            return section.rows.contains { row in
+                !row.isSelectionDisabled
+                    && (row.hasAutomaticSelectionIntent || tableDelegateHasSelectionIntent)
+            }
+        case .none:
+            return false
+        case .single, .multiple:
+            return true
+        }
+    }
+
+    private var tableDelegateHasSelectionIntent: Bool {
+        tableDelegateResponds(to: #selector(UITableViewDelegate.tableView(_:willSelectRowAt:)))
+            || tableDelegateResponds(to: #selector(UITableViewDelegate.tableView(_:didSelectRowAt:)))
+            || tableDelegateResponds(to: #selector(UITableViewDelegate.tableView(_:willDeselectRowAt:)))
+            || tableDelegateResponds(to: #selector(UITableViewDelegate.tableView(_:didDeselectRowAt:)))
+    }
+
+    private var tableDelegateHasHighlightIntent: Bool {
+        tableDelegateResponds(to: #selector(UITableViewDelegate.tableView(_:shouldHighlightRowAt:)))
+            || tableDelegateResponds(to: #selector(UITableViewDelegate.tableView(_:didHighlightRowAt:)))
+            || tableDelegateResponds(to: #selector(UITableViewDelegate.tableView(_:didUnhighlightRowAt:)))
+    }
+
+    private func tableDelegateResponds(to selector: Selector) -> Bool {
+        tableDelegate?.responds(to: selector) == true
     }
 
     private func moveRowDescription(from source: IndexPath, to destination: IndexPath) {

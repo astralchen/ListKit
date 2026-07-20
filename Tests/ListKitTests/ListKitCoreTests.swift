@@ -956,6 +956,7 @@ final class ListKitCoreTests: XCTestCase {
 
         XCTAssertEqual(sections.count, 1)
         XCTAssertEqual(sections[0].rows.count, 2)
+        XCTAssertEqual(sections[0].selectionMode, .automatic)
         XCTAssertEqual(sections[0].supplementaries.count, 1)
         XCTAssertEqual(sections[0].rows[0].identity.rowID.typed(Int.self), 1)
         XCTAssertEqual(sections[0].rows[1].identity.rowID.typed(Int.self), 2)
@@ -1181,6 +1182,8 @@ final class ListKitCoreTests: XCTestCase {
         adapter.collectionView(collectionView, didSelectItemAt: IndexPath(item: 0, section: 0))
         _ = adapter.collectionView(collectionView, cellForItemAt: IndexPath(item: 0, section: 0))
 
+        XCTAssertTrue(collectionView.allowsSelection)
+        XCTAssertFalse(collectionView.allowsMultipleSelection)
         XCTAssertEqual(selectedID, 0)
         XCTAssertEqual(receivedEvent, .avatarTap(userID: 1))
     }
@@ -1569,10 +1572,12 @@ final class ListKitCoreTests: XCTestCase {
                 Row(11, model: User(id: 11, name: "B", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
             }
             .selectionMode(.single)
+            .multipleSelectionInteraction()
             ListSection(2) {
                 Row(20, model: User(id: 20, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
             }
             .selectionMode(.multiple)
+            .multipleSelectionInteraction()
         }
 
         let disabled = IndexPath(item: 0, section: 0)
@@ -1585,6 +1590,18 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: disabled))
         XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: firstSingle))
         XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: multiple))
+        XCTAssertFalse(
+            adapter.collectionView(
+                collectionView,
+                shouldBeginMultipleSelectionInteractionAt: firstSingle
+            )
+        )
+        XCTAssertTrue(
+            adapter.collectionView(
+                collectionView,
+                shouldBeginMultipleSelectionInteractionAt: multiple
+            )
+        )
 
         collectionView.selectItem(at: firstSingle, animated: false, scrollPosition: [])
         collectionView.selectItem(at: secondSingle, animated: false, scrollPosition: [])
@@ -1593,6 +1610,124 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertFalse(collectionView.indexPathsForSelectedItems?.contains(firstSingle) ?? false)
         XCTAssertTrue(collectionView.indexPathsForSelectedItems?.contains(secondSingle) ?? false)
         XCTAssertEqual(deselectedUserID, 10)
+    }
+
+    func testCollectionAutomaticSelectionUsesRowIntent() {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+
+        adapter.apply(transaction: .disabled) {
+            ListSection(0) {
+                Row("static", model: "Static", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertFalse(collectionView.allowsSelection)
+        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 0)))
+
+        adapter.apply(transaction: .disabled) {
+            ListSection(0) {
+                Row("static", model: "Static", cell: NormalUserCell.self) { _, _, _ in }
+            }
+            ListSection(1) {
+                Row("plain", model: "Plain", cell: NormalUserCell.self) { _, _, _ in }
+                Row("action", model: "Action", cell: NormalUserCell.self) { _, _, _ in }
+                    .onSelect { _ in }
+                Row("controlled", model: "Controlled", cell: NormalUserCell.self) { _, _, _ in }
+                    .selected(false)
+                Row("disabled", model: "Disabled", cell: NormalUserCell.self) { _, _, _ in }
+                    .onSelect { _ in }
+                    .selectionDisabled()
+            }
+            .multipleSelectionInteraction()
+        }
+
+        XCTAssertTrue(collectionView.allowsSelection)
+        XCTAssertFalse(collectionView.allowsMultipleSelection)
+        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 0)))
+        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 1)))
+        XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 1, section: 1)))
+        XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 2, section: 1)))
+        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 3, section: 1)))
+        XCTAssertFalse(
+            adapter.collectionView(
+                collectionView,
+                shouldBeginMultipleSelectionInteractionAt: IndexPath(item: 1, section: 1)
+            )
+        )
+    }
+
+    func testCollectionControlledSelectionSynchronizesAcrossApply() async {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let indexPath = IndexPath(item: 0, section: 0)
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(0) {
+                Row("controlled", model: "Controlled", cell: NormalUserCell.self) { _, _, _ in }
+                    .selected(true)
+            }
+        }
+        XCTAssertEqual(collectionView.indexPathsForSelectedItems, [indexPath])
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(0) {
+                Row("controlled", model: "Controlled", cell: NormalUserCell.self) { _, _, _ in }
+                    .selected(false)
+            }
+        }
+        XCTAssertTrue(collectionView.indexPathsForSelectedItems?.isEmpty ?? true)
+
+        _ = await adapter.applyAndWait(transaction: .disabled) {
+            ListSection(0) {
+                Row("controlled", model: "Controlled", cell: NormalUserCell.self) { _, _, _ in }
+                    .selected(true)
+            }
+        }
+        XCTAssertEqual(collectionView.indexPathsForSelectedItems, [indexPath])
+    }
+
+    func testCollectionHighlightIntentDoesNotEnableRowSelection() {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let indexPath = IndexPath(item: 0, section: 0)
+        var highlightChanges: [Bool] = []
+
+        adapter.apply(transaction: .disabled) {
+            ListSection(0) {
+                Row("highlight", model: "Highlight", cell: NormalUserCell.self) { _, _, _ in }
+                    .selectionDisabled()
+                    .onHighlightChange { isHighlighted, _ in
+                        highlightChanges.append(isHighlighted)
+                    }
+            }
+        }
+
+        XCTAssertTrue(collectionView.allowsSelection)
+        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: indexPath))
+        XCTAssertTrue(adapter.collectionView(collectionView, shouldHighlightItemAt: indexPath))
+        adapter.collectionView(collectionView, didHighlightItemAt: indexPath)
+        adapter.collectionView(collectionView, didUnhighlightItemAt: indexPath)
+        XCTAssertEqual(highlightChanges, [true, false])
+    }
+
+    func testCollectionAutomaticSelectionUsesExternalDelegateIntent() {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let selectionDelegate = CollectionSelectionDelegateSpy()
+        let indexPath = IndexPath(item: 0, section: 0)
+        adapter.collectionDelegate = selectionDelegate
+
+        adapter.apply(transaction: .disabled) {
+            ListSection(0) {
+                Row("plain", model: "Plain", cell: NormalUserCell.self) { _, _, _ in }
+            }
+        }
+
+        XCTAssertTrue(collectionView.allowsSelection)
+        XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: indexPath))
+        adapter.collectionView(collectionView, didSelectItemAt: indexPath)
+        XCTAssertEqual(selectionDelegate.selectedIndexPath, indexPath)
     }
 
     func testCellEventBindingSendsTypedEvent() {
@@ -2973,6 +3108,14 @@ private final class CollectionDisplayDelegateSpy: NSObject, UICollectionViewDele
         forItemAt indexPath: IndexPath
     ) {
         didEndDisplayingCount += 1
+    }
+}
+
+private final class CollectionSelectionDelegateSpy: NSObject, UICollectionViewDelegate {
+    var selectedIndexPath: IndexPath?
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        selectedIndexPath = indexPath
     }
 }
 
