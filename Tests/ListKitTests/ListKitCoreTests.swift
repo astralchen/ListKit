@@ -268,6 +268,264 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(cell.name, "B")
     }
 
+    func testCollectionReloadAllRefreshesStableNeverRowAndHeaderAndInvalidatesLayout() async throws {
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: UICollectionViewFlowLayout()
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let host = UIViewController()
+        host.view.frame = collectionView.bounds
+        host.view.addSubview(collectionView)
+        let window = UIWindow(frame: collectionView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        var rowText = "English"
+        var headerText = "People"
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                Row("row", model: "stable", cell: NormalUserCell.self) { cell, _, _ in
+                    cell.name = rowText
+                }
+                .refreshID(1)
+                .refreshPolicy(.never)
+            } header: {
+                Header(HeaderView.self, id: "header") { view, _ in
+                    view.title = headerText
+                }
+                .refreshID(1)
+                .refreshPolicy(.never)
+                .layout(height: .absolute(32))
+            }
+        }
+        collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
+        collectionView.reloadData()
+        collectionView.layoutIfNeeded()
+
+        let indexPath = IndexPath(item: 0, section: 0)
+        let stableIdentity = try XCTUnwrap(adapter.itemIdentity(at: indexPath))
+        XCTAssertEqual(
+            (collectionView.cellForItem(at: indexPath) as? NormalUserCell)?.name,
+            "English"
+        )
+        XCTAssertEqual(
+            collectionView.visibleSupplementaryViews(
+                ofKind: UICollectionView.elementKindSectionHeader
+            ).compactMap { $0 as? HeaderView }.first?.title,
+            "People"
+        )
+
+        rowText = "Arabic"
+        headerText = "Users"
+        let baselineLayoutGeneration = adapter.layoutInvalidationGeneration
+        let reloadCompleted = expectation(description: "collection reload all")
+        var completedSummary: ListApplySummary?
+        let submittedResult = adapter.reloadAll(
+            transaction: .disabled,
+            transition: .identity
+        ) { summary in
+            completedSummary = summary
+            reloadCompleted.fulfill()
+        }
+
+        XCTAssertEqual(submittedResult.summary.animation.completionState, .submitted)
+        await fulfillment(of: [reloadCompleted], timeout: 2)
+        collectionView.layoutIfNeeded()
+
+        XCTAssertEqual(completedSummary?.animation.completionState, .completed)
+        XCTAssertEqual(completedSummary?.animation.layoutInvalidated, true)
+        XCTAssertEqual(completedSummary?.refreshIDChangedCount, 0)
+        XCTAssertEqual(completedSummary?.supplementaryRefreshIDChangedCount, 0)
+        XCTAssertEqual(completedSummary?.snapshotRefreshCount, 1)
+        XCTAssertEqual(adapter.layoutInvalidationGeneration, baselineLayoutGeneration + 1)
+        XCTAssertEqual(adapter.itemIdentity(at: indexPath), stableIdentity)
+        XCTAssertEqual(
+            (collectionView.cellForItem(at: indexPath) as? NormalUserCell)?.name,
+            "Arabic"
+        )
+        XCTAssertEqual(
+            collectionView.visibleSupplementaryViews(
+                ofKind: UICollectionView.elementKindSectionHeader
+            ).compactMap { $0 as? HeaderView }.first?.title,
+            "Users"
+        )
+    }
+
+    func testCollectionTargetedRefreshesStableNeverRowAndSectionContent() async throws {
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: UICollectionViewFlowLayout()
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let host = UIViewController()
+        host.view.frame = collectionView.bounds
+        host.view.addSubview(collectionView)
+        let window = UIWindow(frame: collectionView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        var rowText = "Initial row"
+        var headerText = "Initial header"
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                Row("row", model: "stable", cell: NormalUserCell.self) { cell, _, _ in
+                    cell.name = rowText
+                }
+                .refreshID(1)
+                .refreshPolicy(.never)
+            } header: {
+                Header(HeaderView.self, id: "header") { view, _ in
+                    view.title = headerText
+                }
+                .refreshID(1)
+                .refreshPolicy(.never)
+                .layout(height: .absolute(32))
+            }
+        }
+        collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
+        collectionView.reloadData()
+        collectionView.layoutIfNeeded()
+
+        let indexPath = IndexPath(item: 0, section: 0)
+        let stableIdentity = try XCTUnwrap(adapter.itemIdentity(at: indexPath))
+        let initialCell = try XCTUnwrap(
+            collectionView.cellForItem(at: indexPath) as? NormalUserCell
+        )
+
+        rowText = "Reconfigured row"
+        let reconfigureCompleted = expectation(description: "targeted row reconfigure")
+        let reconfiguredCount = adapter.reconfigureRows(
+            forRowIDs: ["row", "row", "missing"],
+            in: 0,
+            transaction: .disabled
+        ) {
+            reconfigureCompleted.fulfill()
+        }
+        XCTAssertEqual(reconfiguredCount, 1)
+        await fulfillment(of: [reconfigureCompleted], timeout: 2)
+        collectionView.layoutIfNeeded()
+
+        let reconfiguredCell = try XCTUnwrap(
+            collectionView.cellForItem(at: indexPath) as? NormalUserCell
+        )
+        if #available(iOS 15.0, tvOS 15.0, *) {
+            XCTAssertTrue(reconfiguredCell === initialCell)
+        }
+        XCTAssertEqual(reconfiguredCell.name, "Reconfigured row")
+        XCTAssertEqual(adapter.itemIdentity(at: indexPath), stableIdentity)
+
+        rowText = "Reloaded row"
+        let reloadRowCompleted = expectation(description: "targeted row reload")
+        let reloadedCount = adapter.reloadRows(
+            forRowID: "row",
+            in: 0,
+            transaction: .disabled
+        ) {
+            reloadRowCompleted.fulfill()
+        }
+        XCTAssertEqual(reloadedCount, 1)
+        await fulfillment(of: [reloadRowCompleted], timeout: 2)
+        collectionView.layoutIfNeeded()
+
+        XCTAssertEqual(
+            (collectionView.cellForItem(at: indexPath) as? NormalUserCell)?.name,
+            "Reloaded row"
+        )
+        XCTAssertEqual(adapter.itemIdentity(at: indexPath), stableIdentity)
+
+        rowText = "Section row"
+        headerText = "Section header"
+        let reloadSectionCompleted = expectation(description: "targeted section reload")
+        let reloadedSectionCount = adapter.reloadSections(
+            [0, 0, 99],
+            transaction: .disabled
+        ) {
+            reloadSectionCompleted.fulfill()
+        }
+        XCTAssertEqual(reloadedSectionCount, 1)
+        await fulfillment(of: [reloadSectionCompleted], timeout: 2)
+        collectionView.layoutIfNeeded()
+
+        XCTAssertEqual(
+            (collectionView.cellForItem(at: indexPath) as? NormalUserCell)?.name,
+            "Section row"
+        )
+        XCTAssertEqual(
+            collectionView.visibleSupplementaryViews(
+                ofKind: UICollectionView.elementKindSectionHeader
+            ).compactMap { $0 as? HeaderView }.first?.title,
+            "Section header"
+        )
+        XCTAssertEqual(adapter.itemIdentity(at: indexPath), stableIdentity)
+    }
+
+    func testCollectionAsyncReloadAllPreservesRuntimeExpandedOutlineState() async throws {
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            collectionViewLayout: UICollectionViewFlowLayout()
+        )
+        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
+        let host = UIViewController()
+        host.view.frame = collectionView.bounds
+        host.view.addSubview(collectionView)
+        let window = UIWindow(frame: collectionView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        _ = await adapter.applyAndWait(
+            options: .init(transaction: .disabled, applicationMode: .reloadData)
+        ) {
+            ListSection(0) {
+                DisclosureGroup(
+                    Row("parent", model: "Parent", cell: UICollectionViewListCell.self) { _, _, _ in }
+                        .outlineDisclosure()
+                        .outlineAnimation(.disabled),
+                    isExpanded: false
+                ) {
+                    Row("child", model: "Child", cell: UICollectionViewListCell.self) { _, _, _ in }
+                }
+            }
+        }
+        collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
+        collectionView.reloadData()
+        collectionView.layoutIfNeeded()
+        XCTAssertNil(collectionView.cellForItem(at: IndexPath(item: 1, section: 0)))
+
+        adapter.collectionView(
+            collectionView,
+            didSelectItemAt: IndexPath(item: 0, section: 0)
+        )
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+        collectionView.layoutIfNeeded()
+
+        let childIndexPath = IndexPath(item: 1, section: 0)
+        let childIdentity = try XCTUnwrap(adapter.itemIdentity(at: childIndexPath))
+        XCTAssertNotNil(collectionView.cellForItem(at: childIndexPath))
+
+        let result = await adapter.reloadAll(
+            transaction: .disabled,
+            transition: .identity
+        )
+        collectionView.layoutIfNeeded()
+
+        XCTAssertEqual(result.summary.animation.completionState, .completed)
+        XCTAssertTrue(result.summary.animation.layoutInvalidated)
+        XCTAssertEqual(adapter.itemIdentity(at: childIndexPath), childIdentity)
+        XCTAssertNotNil(collectionView.cellForItem(at: childIndexPath))
+    }
+
     func testCollectionApplyDeletesEntireSectionAndClearsIdentityHistory() async throws {
         let collectionView = UICollectionView(
             frame: CGRect(x: 0, y: 0, width: 320, height: 240),

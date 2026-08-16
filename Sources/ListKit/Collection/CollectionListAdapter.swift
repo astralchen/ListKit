@@ -65,6 +65,7 @@ where SectionID: Hashable & Sendable {
     private var layoutSignature: [ListSectionLayoutSignature] = []
     private var dataSource: CollectionDiffableDataSource<SectionID>!
     var isApplyingSnapshot = false
+    private var isMutationPipelineActive = false
     private var rowsByIdentity: [AnyListIdentity: AnyListRow] = [:]
     private var supplementariesByKindAndSection: [SupplementaryKey: AnySupplementary] = [:]
     private var displayedRowsByCell: [ObjectIdentifier: AnyListRow] = [:]
@@ -80,6 +81,10 @@ where SectionID: Hashable & Sendable {
     private var temporaryAnchorBaseBottomInset: CGFloat?
     private var isSerialApplyActive = false
     private var serialApplyWaiters: [CheckedContinuation<Void, Never>] = []
+    private var pendingReloadAllRequests: [ListReloadAllRequest] = []
+    private var isReloadAllRetryScheduled = false
+    private var targetedRefreshInFlightCount = 0
+    private var isPerformingSynchronousReloadMutation = false
     private let eventRouter = ListEventRouter<ListContext>()
 
     /// 创建 adapter 并接管 collection view 的 data source、delegate 和 prefetch data source。
@@ -202,6 +207,189 @@ where SectionID: Hashable & Sendable {
         )
     }
 
+    /// 使用当前已提交的描述树和 snapshot 强制重新加载整个列表。
+    ///
+    /// 此方法不依赖 Row 或 supplementary 的 `identity`、`refreshID` 和刷新策略，
+    /// 并始终同步失效布局。适用于语言、LTR/RTL、Dynamic Type、主题等未进入
+    /// 刷新标识的全局环境变化。
+    ///
+    /// - Important: 此方法不会重建描述树。配置闭包应在执行时读取最新环境；
+    ///   如果本地化文案已作为值保存在旧 model 中，请先更新数据并使用 `apply`。
+    /// - Returns: 本次强制刷新的初始结果；最终摘要可从 `lastApplySummary` 获取。
+    @discardableResult
+    public func reloadAll(
+        transaction: ListTransaction = .automatic,
+        transition: ListContentTransition = .opacity
+    ) -> ListApplyResult<SectionID> {
+        _reloadAll(
+            transaction: transaction,
+            transition: transition,
+            completion: nil
+        )
+    }
+
+    /// 使用当前已提交状态强刷整个列表，并在过渡和布局完成后回调。
+    @discardableResult
+    public func reloadAll(
+        transaction: ListTransaction = .automatic,
+        transition: ListContentTransition = .opacity,
+        completion: @escaping (ListApplySummary) -> Void
+    ) -> ListApplyResult<SectionID> {
+        _reloadAll(
+            transaction: transaction,
+            transition: transition,
+            completion: completion
+        )
+    }
+
+    private func _reloadAll(
+        transaction: ListTransaction,
+        transition: ListContentTransition,
+        completion: ((ListApplySummary) -> Void)?
+    ) -> ListApplyResult<SectionID> {
+        let request = ListReloadAllRequest(
+            transaction: transaction,
+            transition: transition,
+            completion: completion
+        )
+        let summary = makeReloadAllPlan(transaction: transaction).initialSummary.replacingAnimation(
+            ListAnimationSummary(
+                reduceMotionApplied: transaction.resolved(
+                    reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+                ).reduceMotionApplied
+            )
+        )
+        lastApplySummary = summary
+
+        if isMutationPipelineActive
+            || targetedRefreshInFlightCount > 0
+            || !pendingReloadAllRequests.isEmpty
+            || collectionView?.hasUncommittedUpdates == true {
+            enqueueReloadAll(request)
+        } else {
+            performReloadAll(request)
+        }
+
+        return ListApplyResult(adapter: self, summary: summary)
+    }
+
+    /// 强制刷新当前已提交列表，并等待内容过渡和布局完成。
+    @discardableResult
+    public func reloadAll(
+        transaction: ListTransaction = .automatic,
+        transition: ListContentTransition = .opacity
+    ) async -> ListApplyResult<SectionID> {
+        if Task.isCancelled {
+            let resolved = transaction.resolved(
+                reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+            )
+            return ListApplyResult(
+                adapter: self,
+                summary: ListApplySummary(
+                    animation: ListAnimationSummary(
+                        completionState: .cancelledBeforeCommit,
+                        reduceMotionApplied: resolved.reduceMotionApplied
+                    )
+                )
+            )
+        }
+
+        return await withCheckedContinuation { continuation in
+            _ = reloadAll(
+                transaction: transaction,
+                transition: transition
+            ) { [weak self] summary in
+                continuation.resume(returning: ListApplyResult(adapter: self, summary: summary))
+            }
+        }
+    }
+
+    /// 使用 diffable `reconfigureItems` 轻量重配匹配业务 ID 的 Row。
+    ///
+    /// iOS 15+ 保留现有 Cell 并支持自适应尺寸更新；iOS 14 回退为 reload。
+    /// 同一业务 ID 对应多个展示变体时会全部重配。
+    @discardableResult
+    public func reconfigureRows<RowID>(
+        forRowID rowID: RowID,
+        in sectionID: SectionID? = nil,
+        transaction: ListTransaction = .automatic,
+        completion: (() -> Void)? = nil
+    ) -> Int where RowID: Hashable & Sendable {
+        reconfigureRows(
+            forRowIDs: [rowID],
+            in: sectionID,
+            transaction: transaction,
+            completion: completion
+        )
+    }
+
+    /// 使用 diffable `reconfigureItems` 批量重配匹配业务 ID 的 Row。
+    @discardableResult
+    public func reconfigureRows<RowID>(
+        forRowIDs rowIDs: [RowID],
+        in sectionID: SectionID? = nil,
+        transaction: ListTransaction = .automatic,
+        completion: (() -> Void)? = nil
+    ) -> Int where RowID: Hashable & Sendable {
+        refreshRows(
+            matching: rowIDs,
+            in: sectionID,
+            mode: .reconfigure,
+            transaction: transaction,
+            completion: completion
+        )
+    }
+
+    /// 使用 diffable `reloadItems` 重新创建匹配业务 ID 的 Row 并重新计算尺寸。
+    @discardableResult
+    public func reloadRows<RowID>(
+        forRowID rowID: RowID,
+        in sectionID: SectionID? = nil,
+        transaction: ListTransaction = .automatic,
+        completion: (() -> Void)? = nil
+    ) -> Int where RowID: Hashable & Sendable {
+        reloadRows(
+            forRowIDs: [rowID],
+            in: sectionID,
+            transaction: transaction,
+            completion: completion
+        )
+    }
+
+    /// 使用 diffable `reloadItems` 批量重新创建匹配业务 ID 的 Row。
+    @discardableResult
+    public func reloadRows<RowID>(
+        forRowIDs rowIDs: [RowID],
+        in sectionID: SectionID? = nil,
+        transaction: ListTransaction = .automatic,
+        completion: (() -> Void)? = nil
+    ) -> Int where RowID: Hashable & Sendable {
+        refreshRows(
+            matching: rowIDs,
+            in: sectionID,
+            mode: .reload,
+            transaction: transaction,
+            completion: completion
+        )
+    }
+
+    /// 使用 diffable `reloadSections` 刷新指定 Section。
+    ///
+    /// Section reload 会同时刷新其中的 Row 和 supplementary；不存在或重复的
+    /// section id 会被安全忽略。
+    @discardableResult
+    public func reloadSections(
+        _ sectionIDs: [SectionID],
+        transaction: ListTransaction = .automatic,
+        completion: (() -> Void)? = nil
+    ) -> Int {
+        refreshSections(
+            sectionIDs,
+            transaction: transaction,
+            completion: completion
+        )
+    }
+
     private func _apply(
         options: ListApplyOptions,
         completion: ((ListApplySummary) -> Void)?,
@@ -211,9 +399,30 @@ where SectionID: Hashable & Sendable {
         let resolvedTransaction = options.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
-        let newLayoutSignature = Self.makeLayoutSignature(from: newSections)
-        let shouldInvalidateLayout = layoutSignature != newLayoutSignature
         let diagnosticsIssues = ListDiagnostics.validate(newSections)
+        if isPerformingSynchronousReloadMutation {
+            let deferredPlan = ListApplyPlanner.makePlan(
+                old: Self.makeCoreSnapshots(from: sections),
+                new: Self.makeCoreSnapshots(from: newSections),
+                options: options,
+                diagnosticsIssues: diagnosticsIssues
+            )
+            let deferredSummary = deferredPlan.initialSummary.replacingAnimation(
+                ListAnimationSummary(reduceMotionApplied: resolvedTransaction.reduceMotionApplied)
+            )
+            lastApplySummary = deferredSummary
+            ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
+            let deferredApply = ListMainActorCallbackBox { [weak self] in
+                guard let self else { return }
+                _ = self._apply(options: options, completion: completion) { newSections }
+            }
+            deferredApply.schedule()
+            return ListApplyResult(adapter: self, summary: deferredSummary)
+        }
+
+        let newLayoutSignature = Self.makeLayoutSignature(from: newSections)
+        let shouldInvalidateLayout = options.applicationMode == .reloadData
+            || layoutSignature != newLayoutSignature
         let applyPlan = ListApplyPlanner.makePlan(
             old: Self.makeCoreSnapshots(from: sections),
             new: Self.makeCoreSnapshots(from: newSections),
@@ -288,7 +497,9 @@ where SectionID: Hashable & Sendable {
         let snapshotItems = Set(snapshot.itemIdentifiers)
         let refreshItems = applyPlan.snapshotRefreshItems.filter { snapshotItems.contains($0) }
         if !refreshItems.isEmpty {
-            if #available(iOS 15.0, tvOS 15.0, *) {
+            if options.refreshStrategy == .forceReload {
+                snapshot.reloadItems(refreshItems)
+            } else if #available(iOS 15.0, tvOS 15.0, *) {
                 snapshot.reconfigureItems(refreshItems)
             } else {
                 snapshot.reloadItems(refreshItems)
@@ -313,6 +524,7 @@ where SectionID: Hashable & Sendable {
         }
 
         isApplyingSnapshot = true
+        isMutationPipelineActive = true
         let finishApply = { [weak self] in
             guard let self else { return }
             guard self.applyGeneration == generation else {
@@ -361,7 +573,9 @@ where SectionID: Hashable & Sendable {
                     )
                     self.lastApplySummary = completedSummary
                     ListApplyLogger.logApplySummary(completedSummary, options: options)
+                    self.isMutationPipelineActive = false
                     completion?(completedSummary)
+                    self.performNextPendingReloadAllIfNeeded()
                 }
 
                 self.rebindVisibleSupplementaryTapHandlers()
@@ -422,6 +636,382 @@ where SectionID: Hashable & Sendable {
         }
 
         return ListApplyResult(adapter: self, summary: summary)
+    }
+
+    private func makeReloadAllPlan(transaction: ListTransaction) -> ListApplyPlan {
+        let currentSnapshots = Self.makeCoreSnapshots(from: sections)
+        let options = ListApplyOptions(
+            transaction: transaction,
+            refreshStrategy: .forceReload,
+            applicationMode: .reloadData
+        )
+        return ListApplyPlanner.makePlan(
+            old: currentSnapshots,
+            new: currentSnapshots,
+            options: options,
+            diagnosticsIssues: ListDiagnostics.validate(sections)
+        )
+    }
+
+    private func refreshRows<RowID>(
+        matching rowIDs: [RowID],
+        in sectionID: SectionID?,
+        mode: ListTargetedRowRefreshMode,
+        transaction: ListTransaction,
+        completion: (() -> Void)?
+    ) -> Int where RowID: Hashable & Sendable {
+        let snapshot = dataSource.snapshot()
+        let targetRowIDs = Set(rowIDs.map(AnyListID.init))
+        let targetSectionID = sectionID.map(AnyListID.init)
+        let refreshItems = snapshot.itemIdentifiers.filter { identity in
+            targetRowIDs.contains(identity.rowID)
+                && (targetSectionID.map { identity.sectionID == $0 } ?? true)
+                && rowsByIdentity[identity] != nil
+        }
+        return refreshRows(
+            refreshItems,
+            mode: mode,
+            transaction: transaction,
+            completion: completion
+        )
+    }
+
+    private func refreshRows(
+        _ identities: [AnyListIdentity],
+        mode: ListTargetedRowRefreshMode,
+        transaction: ListTransaction,
+        completion: (() -> Void)?
+    ) -> Int {
+        var snapshot = dataSource.snapshot()
+        let currentItems = Set(snapshot.itemIdentifiers)
+        var seen: Set<AnyListIdentity> = []
+        let refreshItems = identities.filter { identity in
+            currentItems.contains(identity)
+                && rowsByIdentity[identity] != nil
+                && seen.insert(identity).inserted
+        }
+        guard !refreshItems.isEmpty else {
+            completion?()
+            return 0
+        }
+        if isPerformingSynchronousReloadMutation {
+            let deferredRefresh = ListMainActorCallbackBox { [weak self] in
+                guard let self else {
+                    completion?()
+                    return
+                }
+                _ = self.refreshRows(
+                    refreshItems,
+                    mode: mode,
+                    transaction: transaction,
+                    completion: completion
+                )
+            }
+            deferredRefresh.schedule()
+            return refreshItems.count
+        }
+
+        switch mode {
+        case .reconfigure:
+            if #available(iOS 15.0, tvOS 15.0, *) {
+                snapshot.reconfigureItems(refreshItems)
+            } else {
+                snapshot.reloadItems(refreshItems)
+            }
+        case .reload:
+            snapshot.reloadItems(refreshItems)
+        }
+
+        targetedRefreshInFlightCount += 1
+        let resolvedTransaction = transaction.resolved(
+            reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+        )
+        let didRefreshBox = ListMainActorCallbackBox { [weak self] in
+            guard let self else {
+                completion?()
+                return
+            }
+            self.targetedRefreshInFlightCount -= 1
+            completion?()
+            self.performNextPendingReloadAllIfNeeded()
+        }
+        dataSource.apply(
+            snapshot,
+            animatingDifferences: resolvedTransaction.snapshotAnimation
+        ) {
+            didRefreshBox.schedule()
+        }
+        return refreshItems.count
+    }
+
+    private func refreshSections(
+        _ sectionIDs: [SectionID],
+        transaction: ListTransaction,
+        completion: (() -> Void)?
+    ) -> Int {
+        var snapshot = dataSource.snapshot()
+        let currentSectionIDs = Set(snapshot.sectionIdentifiers)
+        var seen: Set<AnyListID> = []
+        let refreshSectionIDs = sectionIDs.compactMap { sectionID -> AnyListID? in
+            let erasedID = AnyListID(sectionID)
+            guard currentSectionIDs.contains(erasedID), seen.insert(erasedID).inserted else {
+                return nil
+            }
+            return erasedID
+        }
+        guard !refreshSectionIDs.isEmpty else {
+            completion?()
+            return 0
+        }
+        if isPerformingSynchronousReloadMutation {
+            let deferredRefresh = ListMainActorCallbackBox { [weak self] in
+                guard let self else {
+                    completion?()
+                    return
+                }
+                _ = self.refreshSections(
+                    sectionIDs,
+                    transaction: transaction,
+                    completion: completion
+                )
+            }
+            deferredRefresh.schedule()
+            return refreshSectionIDs.count
+        }
+
+        snapshot.reloadSections(refreshSectionIDs)
+        targetedRefreshInFlightCount += 1
+        let resolvedTransaction = transaction.resolved(
+            reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+        )
+        let didRefreshBox = ListMainActorCallbackBox { [weak self] in
+            guard let self else {
+                completion?()
+                return
+            }
+            self.targetedRefreshInFlightCount -= 1
+            self.rebindVisibleSupplementaryTapHandlers()
+            completion?()
+            self.performNextPendingReloadAllIfNeeded()
+        }
+        dataSource.apply(
+            snapshot,
+            animatingDifferences: resolvedTransaction.snapshotAnimation
+        ) {
+            didRefreshBox.schedule()
+        }
+        return refreshSectionIDs.count
+    }
+
+    private func performReloadAll(_ request: ListReloadAllRequest) {
+        let resolvedTransaction = request.transaction.resolved(
+            reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+        )
+        let options = ListApplyOptions(
+            transaction: request.transaction,
+            refreshStrategy: .forceReload,
+            applicationMode: .reloadData
+        )
+        let applyPlan = makeReloadAllPlan(transaction: request.transaction)
+        let summary = applyPlan.initialSummary.replacingAnimation(
+            ListAnimationSummary(reduceMotionApplied: resolvedTransaction.reduceMotionApplied)
+        )
+        lastApplySummary = summary
+        ListApplyLogger.logDiagnostics(issues: summary.diagnosticsIssues, options: options)
+
+        guard let collectionView else {
+            let completedSummary = applyPlan.completedSummary(
+                visibleRefreshCount: 0,
+                visibleSupplementaryRefreshCount: 0,
+                animation: ListAnimationSummary(
+                    completionState: .completed,
+                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                )
+            )
+            lastApplySummary = completedSummary
+            ListApplyLogger.logApplySummary(completedSummary, options: options)
+            request.completion?(completedSummary)
+            performNextPendingReloadAllIfNeeded()
+            return
+        }
+
+        let visibleAnchor: ListVisibleRowAnchor?
+        switch resolvedTransaction.scrollBehavior.storage {
+        case .preserveVisiblePosition(let target):
+            visibleAnchor = captureVisibleRowAnchor(for: target)
+            if let visibleAnchor {
+                reserveScrollRange(for: visibleAnchor)
+            }
+        case .none, .scrollTo, .scrollToLast:
+            visibleAnchor = nil
+            cancelTemporaryAnchorReservation()
+        }
+        let selectedItemIdentities = captureSelectedItemIdentities()
+
+        applyGeneration += 1
+        let generation = applyGeneration
+        isApplyingSnapshot = true
+        isMutationPipelineActive = true
+        let metrics = CollectionApplyAnimationMetrics()
+
+        let completeAsSuperseded = {
+            let supersededSummary = summary.replacingAnimation(
+                ListAnimationSummary(
+                    completionState: .superseded,
+                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                )
+            )
+            ListApplyLogger.logApplySummary(supersededSummary, options: options)
+            request.completion?(supersededSummary)
+        }
+
+        let completeReload = { [weak self] (layoutAnimated: Bool, transitionCount: Int) in
+            guard let self else { return }
+            guard self.applyGeneration == generation else {
+                completeAsSuperseded()
+                return
+            }
+
+            metrics.layoutAnimated = layoutAnimated
+            metrics.contentTransitionCount = transitionCount
+            let completedSummary = applyPlan.completedSummary(
+                visibleRefreshCount: metrics.visibleRefreshCount,
+                visibleSupplementaryRefreshCount: metrics.visibleSupplementaryRefreshCount,
+                animation: ListAnimationSummary(
+                    completionState: .completed,
+                    contentTransitionCount: metrics.contentTransitionCount,
+                    layoutInvalidated: true,
+                    layoutAnimated: metrics.layoutAnimated,
+                    scrollAnimated: metrics.scrollOutcome.animated,
+                    anchorCompensation: metrics.scrollOutcome.anchorCompensation,
+                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                )
+            )
+            self.lastApplySummary = completedSummary
+            self.isMutationPipelineActive = false
+            ListApplyLogger.logApplySummary(completedSummary, options: options)
+            request.completion?(completedSummary)
+            self.performNextPendingReloadAllIfNeeded()
+        }
+
+        let finishReloadedLayout = { [weak self] in
+            guard let self else { return }
+            guard self.applyGeneration == generation else { return }
+            self.restoreSelection(for: selectedItemIdentities)
+            self.synchronizeControlledSelection()
+            self.reconcileSelection()
+            self.rebindVisibleSupplementaryTapHandlers()
+            metrics.visibleRefreshCount = collectionView.indexPathsForVisibleItems.count
+            metrics.visibleSupplementaryRefreshCount = self.visibleSupplementaryTargets().count
+            metrics.scrollOutcome = self.performScrollBehavior(
+                resolvedTransaction.scrollBehavior,
+                visibleAnchor: visibleAnchor,
+                animated: resolvedTransaction.scrollAnimation
+            )
+        }
+
+        let opacityDuration: TimeInterval?
+        switch request.transition.storage {
+        case .opacity(let duration) where resolvedTransaction.contentAnimation && duration > 0:
+            opacityDuration = duration
+        case .identity, .opacity:
+            opacityDuration = nil
+        }
+
+        if let opacityDuration {
+            UIView.transition(
+                with: collectionView,
+                duration: opacityDuration,
+                options: [.transitionCrossDissolve, .beginFromCurrentState, .allowAnimatedContent]
+            ) {
+                self.performSynchronousReloadMutation {
+                    self.layoutInvalidationGeneration += 1
+                    collectionView.reloadData()
+                    collectionView.collectionViewLayout.invalidateLayout()
+                    collectionView.layoutIfNeeded()
+                    finishReloadedLayout()
+                }
+            } completion: { _ in
+                completeReload(false, 1)
+            }
+            isApplyingSnapshot = false
+        } else {
+            performSynchronousReloadMutation {
+                collectionView.reloadData()
+                layoutInvalidationGeneration += 1
+                UIView.performWithoutAnimation {
+                    collectionView.collectionViewLayout.invalidateLayout()
+                    collectionView.layoutIfNeeded()
+                }
+                finishReloadedLayout()
+            }
+            isApplyingSnapshot = false
+            completeReload(false, 0)
+        }
+    }
+
+    private func performSynchronousReloadMutation(_ mutation: () -> Void) {
+        let wasPerformingMutation = isPerformingSynchronousReloadMutation
+        isPerformingSynchronousReloadMutation = true
+        defer { isPerformingSynchronousReloadMutation = wasPerformingMutation }
+        mutation()
+    }
+
+    private func enqueueReloadAll(_ request: ListReloadAllRequest) {
+        var supersededRequests: [ListReloadAllRequest] = []
+        if request.transaction.updatePolicy == .coalesceLatest {
+            var retainedRequests: [ListReloadAllRequest] = []
+            for pendingRequest in pendingReloadAllRequests {
+                guard pendingRequest.transaction.updatePolicy == .coalesceLatest else {
+                    retainedRequests.append(pendingRequest)
+                    continue
+                }
+                supersededRequests.append(pendingRequest)
+            }
+            pendingReloadAllRequests = retainedRequests
+        }
+        pendingReloadAllRequests.append(request)
+
+        // Publish the new queue before invoking user callbacks. A superseded
+        // completion may synchronously call reloadAll again.
+        for pendingRequest in supersededRequests {
+            let resolved = pendingRequest.transaction.resolved(
+                reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+            )
+            let supersededSummary = makeReloadAllPlan(
+                transaction: pendingRequest.transaction
+            ).initialSummary.replacingAnimation(
+                ListAnimationSummary(
+                    completionState: .superseded,
+                    reduceMotionApplied: resolved.reduceMotionApplied
+                )
+            )
+            pendingRequest.completion?(supersededSummary)
+        }
+        performNextPendingReloadAllIfNeeded()
+    }
+
+    private func performNextPendingReloadAllIfNeeded() {
+        guard !isMutationPipelineActive,
+              targetedRefreshInFlightCount == 0,
+              !pendingReloadAllRequests.isEmpty else { return }
+        guard collectionView?.hasUncommittedUpdates != true else {
+            scheduleReloadAllRetry()
+            return
+        }
+        performReloadAll(pendingReloadAllRequests.removeFirst())
+    }
+
+    private func scheduleReloadAllRetry() {
+        guard !isReloadAllRetryScheduled else { return }
+        isReloadAllRetryScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isReloadAllRetryScheduled = false
+                self.performNextPendingReloadAllIfNeeded()
+            }
+        }
     }
 
     /// 重建描述树并等待 snapshot、outline、layout 和内容过渡完成。
@@ -1188,12 +1778,12 @@ where SectionID: Hashable & Sendable {
     ) -> Int where RowID: Hashable & Sendable {
         let identities = visibleIndexPaths(matching: rowID, in: sectionID)
             .compactMap { row(at: $0)?.identity }
-        guard !identities.isEmpty else { return 0 }
-
-        var snapshot = dataSource.snapshot()
-        snapshot.reloadItems(identities)
-        dataSource.apply(snapshot, animatingDifferences: false)
-        return identities.count
+        return refreshRows(
+            identities,
+            mode: .reload,
+            transaction: .disabled,
+            completion: nil
+        )
     }
 
     /// 轻量重配当前可见 supplementary view。

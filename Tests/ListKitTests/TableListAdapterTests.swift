@@ -1159,6 +1159,237 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertTrue(type(of: header) == MessageHeaderView.self)
     }
 
+    func testReloadAllBypassesNeverPolicyAndCompletesAfterLayoutInvalidation() throws {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 260),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+        var rowText = "Row 1"
+        var headerTitle = "Header 1"
+        var footerTitle = "Footer 1"
+
+        let initialApplyCompleted = expectation(description: "initial table apply completed")
+        adapter.apply(transaction: .disabled, completion: { _ in
+            initialApplyCompleted.fulfill()
+        }) {
+            TableSection(.messages) {
+                TableRow(1, model: (), cell: MessageTableCell.self) { cell, _, _ in
+                    cell.textValue = rowText
+                }
+                .height(.fixed(44))
+                .refreshID("stable-row")
+                .refreshPolicy(.never)
+            } header: {
+                TableHeader(MessageHeaderView.self, id: "header") { view, _ in
+                    view.title = headerTitle
+                }
+                .height(.fixed(40))
+                .refreshID("stable-header")
+                .refreshPolicy(.never)
+            } footer: {
+                TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
+                    view.title = footerTitle
+                }
+                .height(.fixed(40))
+                .refreshID("stable-footer")
+                .refreshPolicy(.never)
+            }
+        }
+        wait(for: [initialApplyCompleted], timeout: 1)
+        tableView.reloadData()
+        tableView.layoutIfNeeded()
+
+        let indexPath = IndexPath(row: 0, section: 0)
+        let originalIdentity = try XCTUnwrap(adapter.itemIdentity(at: indexPath))
+        XCTAssertEqual((tableView.cellForRow(at: indexPath) as? MessageTableCell)?.textValue, "Row 1")
+        XCTAssertEqual((tableView.headerView(forSection: 0) as? MessageHeaderView)?.title, "Header 1")
+        XCTAssertEqual((tableView.footerView(forSection: 0) as? MessageHeaderView)?.title, "Footer 1")
+
+        rowText = "Row 2"
+        headerTitle = "Header 2"
+        footerTitle = "Footer 2"
+
+        let reloadCompleted = expectation(description: "table reload all completed")
+        var completedSummary: ListApplySummary?
+        adapter.reloadAll(
+            transaction: .disabled,
+            transition: .identity
+        ) { summary in
+            completedSummary = summary
+            reloadCompleted.fulfill()
+        }
+        wait(for: [reloadCompleted], timeout: 1)
+        tableView.layoutIfNeeded()
+
+        XCTAssertEqual(adapter.itemIdentity(at: indexPath), originalIdentity)
+        XCTAssertEqual((tableView.cellForRow(at: indexPath) as? MessageTableCell)?.textValue, "Row 2")
+        XCTAssertEqual((tableView.headerView(forSection: 0) as? MessageHeaderView)?.title, "Header 2")
+        XCTAssertEqual((tableView.footerView(forSection: 0) as? MessageHeaderView)?.title, "Footer 2")
+        XCTAssertEqual(completedSummary?.animation.completionState, .completed)
+        XCTAssertEqual(completedSummary?.animation.layoutInvalidated, true)
+        XCTAssertEqual(completedSummary?.refreshIDChangedCount, 0)
+        XCTAssertEqual(completedSummary?.supplementaryRefreshIDChangedCount, 0)
+        XCTAssertEqual(completedSummary?.snapshotRefreshCount, 1)
+        XCTAssertEqual(completedSummary?.visibleRefreshCount, 1)
+        XCTAssertEqual(completedSummary?.visibleSupplementaryRefreshCount, 2)
+        XCTAssertEqual(adapter.lastApplySummary, completedSummary)
+    }
+
+    func testTargetedRowRefreshAPIsIgnorePolicyDeduplicateAndComplete() throws {
+        let tableView = UITableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+        var rowTexts = [1: "A", 2: "B"]
+
+        let initialApplyCompleted = expectation(description: "initial targeted row apply completed")
+        adapter.apply(transaction: .disabled, completion: { _ in
+            initialApplyCompleted.fulfill()
+        }) {
+            TableSection(.messages) {
+                TableForEach([1, 2], id: \.self) { rowID in
+                    TableRow(rowID, model: (), cell: MessageTableCell.self) { cell, _, _ in
+                        cell.textValue = rowTexts[rowID]
+                    }
+                    .height(.fixed(44))
+                    .refreshID("stable-\(rowID)")
+                    .refreshPolicy(.never)
+                }
+            }
+        }
+        wait(for: [initialApplyCompleted], timeout: 1)
+        tableView.reloadData()
+        tableView.layoutIfNeeded()
+
+        let firstIndexPath = IndexPath(row: 0, section: 0)
+        let secondIndexPath = IndexPath(row: 1, section: 0)
+        let firstCell = try XCTUnwrap(tableView.cellForRow(at: firstIndexPath) as? MessageTableCell)
+        XCTAssertEqual(firstCell.textValue, "A")
+        XCTAssertEqual((tableView.cellForRow(at: secondIndexPath) as? MessageTableCell)?.textValue, "B")
+
+        rowTexts[1] = "A2"
+        rowTexts[2] = "B2"
+
+        let reconfigureCompleted = expectation(description: "targeted row reconfigure completed")
+        XCTAssertEqual(
+            adapter.reconfigureRows(
+                forRowIDs: [1, 1],
+                in: .messages,
+                transaction: .disabled,
+                completion: { reconfigureCompleted.fulfill() }
+            ),
+            1
+        )
+        wait(for: [reconfigureCompleted], timeout: 1)
+
+        let reconfiguredFirstCell = try XCTUnwrap(
+            tableView.cellForRow(at: firstIndexPath) as? MessageTableCell
+        )
+        if #available(iOS 15.0, tvOS 15.0, *) {
+            XCTAssertTrue(reconfiguredFirstCell === firstCell)
+        }
+        XCTAssertEqual(reconfiguredFirstCell.textValue, "A2")
+        XCTAssertEqual((tableView.cellForRow(at: secondIndexPath) as? MessageTableCell)?.textValue, "B")
+
+        let reloadCompleted = expectation(description: "targeted row reload completed")
+        XCTAssertEqual(
+            adapter.reloadRows(
+                forRowID: 2,
+                in: .messages,
+                transaction: .disabled,
+                completion: { reloadCompleted.fulfill() }
+            ),
+            1
+        )
+        wait(for: [reloadCompleted], timeout: 1)
+
+        XCTAssertEqual((tableView.cellForRow(at: secondIndexPath) as? MessageTableCell)?.textValue, "B2")
+
+        var emptyReloadCompleted = false
+        XCTAssertEqual(
+            adapter.reloadRows(
+                forRowIDs: [Int](),
+                in: .messages,
+                transaction: .disabled,
+                completion: { emptyReloadCompleted = true }
+            ),
+            0
+        )
+        XCTAssertTrue(emptyReloadCompleted)
+    }
+
+    func testReloadSectionsTargetsOnlyRequestedSectionAndReloadsIndexTitles() throws {
+        let tableView = ReloadTrackingTableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 360),
+            style: .plain
+        )
+        let adapter = TableListAdapter<Section>(tableView: tableView)
+        var messagesHeader = "Messages 1"
+        var emptyHeader = "Empty 1"
+
+        let initialApplyCompleted = expectation(description: "initial section apply completed")
+        adapter.apply(transaction: .disabled, completion: { _ in
+            initialApplyCompleted.fulfill()
+        }) {
+            TableSection(.messages) {
+                TableRow(1, model: (), cell: MessageTableCell.self) { _, _, _ in }
+                    .height(.fixed(44))
+            } header: {
+                TableHeader(MessageHeaderView.self, id: "messages-header") { view, _ in
+                    view.title = messagesHeader
+                }
+                .height(.fixed(40))
+                .refreshID("stable-messages-header")
+                .refreshPolicy(.never)
+            }
+            .indexTitle("M")
+
+            TableSection(.empty) {
+                TableRow(2, model: (), cell: MessageTableCell.self) { _, _, _ in }
+                    .height(.fixed(44))
+            } header: {
+                TableHeader(MessageHeaderView.self, id: "empty-header") { view, _ in
+                    view.title = emptyHeader
+                }
+                .height(.fixed(40))
+                .refreshID("stable-empty-header")
+                .refreshPolicy(.never)
+            }
+            .indexTitle("E")
+        }
+        wait(for: [initialApplyCompleted], timeout: 1)
+        tableView.reloadData()
+        tableView.layoutIfNeeded()
+        tableView.reloadSectionIndexTitlesCallCount = 0
+
+        XCTAssertEqual((tableView.headerView(forSection: 0) as? MessageHeaderView)?.title, "Messages 1")
+        XCTAssertEqual((tableView.headerView(forSection: 1) as? MessageHeaderView)?.title, "Empty 1")
+
+        messagesHeader = "Messages 2"
+        emptyHeader = "Empty 2"
+
+        let reloadCompleted = expectation(description: "targeted section reload completed")
+        XCTAssertEqual(
+            adapter.reloadSections(
+                [.messages, .messages],
+                transaction: .disabled,
+                completion: { reloadCompleted.fulfill() }
+            ),
+            1
+        )
+        wait(for: [reloadCompleted], timeout: 1)
+        tableView.layoutIfNeeded()
+
+        XCTAssertEqual((tableView.headerView(forSection: 0) as? MessageHeaderView)?.title, "Messages 2")
+        XCTAssertEqual((tableView.headerView(forSection: 1) as? MessageHeaderView)?.title, "Empty 1")
+        XCTAssertEqual(tableView.reloadSectionIndexTitlesCallCount, 1)
+
+        adapter.reloadSectionIndexTitles()
+        XCTAssertEqual(tableView.reloadSectionIndexTitlesCallCount, 2)
+    }
+
     func testTableAdapterVisibleRefreshAPIsTargetMatchingRows() {
         let tableView = UITableView(frame: CGRect(x: 0, y: 0, width: 320, height: 240), style: .plain)
         let adapter = TableListAdapter<Section>(tableView: tableView)
@@ -1262,6 +1493,15 @@ private final class MessageTableCell: UITableViewCell {
 
 private final class MessageHeaderView: UITableViewHeaderFooterView {
     var title: String?
+}
+
+private final class ReloadTrackingTableView: UITableView {
+    var reloadSectionIndexTitlesCallCount = 0
+
+    override func reloadSectionIndexTitles() {
+        reloadSectionIndexTitlesCallCount += 1
+        super.reloadSectionIndexTitles()
+    }
 }
 
 private final class TableDelegateSpy: NSObject, UITableViewDelegate {

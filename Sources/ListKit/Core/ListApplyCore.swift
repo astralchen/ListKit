@@ -64,6 +64,17 @@ struct ListApplyPlan {
     }
 }
 
+struct ListReloadAllRequest {
+    let transaction: ListTransaction
+    let transition: ListContentTransition
+    let completion: ((ListApplySummary) -> Void)?
+}
+
+enum ListTargetedRowRefreshMode {
+    case reconfigure
+    case reload
+}
+
 enum ListApplyPlanner {
     static func makePlan(
         old oldSections: [ListSectionSnapshot],

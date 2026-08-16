@@ -398,7 +398,9 @@ Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
 | `.never` | identity 不变时不主动刷新。 |
 | `.alwaysVisible` | 每次 apply 都重配当前可见 cell。 |
 
-iOS 15+ 使用 `reconfigureItems`；iOS 14 自动回退到 `reloadItems`。请保证同一 section 内的 Row ID 唯一，debug diagnostics 会报告重复身份。
+iOS 15+ 的常规刷新使用 `reconfigureItems`；iOS 14 自动回退到 `reloadItems`。
+`.forceReload` 在所有系统版本都使用真正的 `reloadItems`，适合需要替换 Cell 类型或实例的场景。
+请保证同一 section 内的 Row ID 唯一，debug diagnostics 会报告重复身份。
 
 Apply 级别还可以覆盖整批列表的刷新行为：
 
@@ -418,6 +420,54 @@ let options = ListApplyOptions(
 adapter.apply(options: options) {
     makeSections()
 }
+```
+
+### 主动刷新层级
+
+身份、`refreshID` 和 policy 都没有变化，但外部环境发生变化时，可以直接按所需粒度刷新：
+
+| API | 行为 |
+| --- | --- |
+| `reconfigureRows(forRowID:in:)` | iOS 15+ 保留 Cell 并重新配置、自适应量高；iOS 14 回退为 reload。 |
+| `reloadRows(forRowID:in:)` | 通过 diffable `reloadItems` 重新创建匹配的 Row。 |
+| `reloadSections(_:)` | 通过 diffable `reloadSections` 刷新整个 section，包括 Row 和 header/footer/supplementary。 |
+| `reloadAll()` | 基于当前已提交状态强刷全部内容、section 附属视图、索引标题和布局。 |
+
+在 iOS 14 上，UIKit 对非动画 diffable apply 可能内部使用 `reloadData`；因此定向 API
+仍保证目标内容被刷新，但不承诺只重建目标 Cell。iOS 15+ 才能稳定区分
+`reconfigureItems`、`reloadItems` 和 reload-data reset。
+
+Row API 接受业务 ID，不要求页面构造 ListKit 内部的复合 identity；批量刷新使用
+`forRowIDs:`。省略 section 时，同一业务 ID 在所有 section 中的匹配项都会刷新：
+
+```swift
+adapter.reconfigureRows(forRowID: userID, in: .users)
+adapter.reloadRows(forRowIDs: changedMessageIDs, in: .messages)
+adapter.reloadSections([.profile, .settings])
+```
+
+语言、LTR/RTL、Dynamic Type 或全局主题切换适合 `reloadAll`。先更新真正承载列表的
+UIKit 环境，再触发刷新；默认使用 0.2 秒 cross-dissolve，并自动遵循 Reduce Motion：
+
+```swift
+collectionView.semanticContentAttribute = isRTL ? .forceRightToLeft : .forceLeftToRight
+
+adapter.reloadAll()
+
+// 需要等待过渡和布局完成：
+let result = await adapter.reloadAll()
+```
+
+`reloadAll` 有意复用当前 diffable snapshot / outline 状态，不提交一份新的结构；内部调用
+`reloadData()` 只会让 diffable data source 重新提供当前内容，不会修改 snapshot。ListKit
+会避开正在提交的 snapshot 和 `hasUncommittedUpdates`，避免丢弃拖放或重排中的占位状态。
+
+`reloadAll` 不会重新执行 section builder。如果旧描述树已经把本地化字符串保存成值，
+请先更新 model，再使用 `apply` 重建 sections；配置闭包在执行时动态读取语言或主题时，
+直接 `reloadAll` 即可。若不需要过渡，可显式关闭：
+
+```swift
+adapter.reloadAll(transaction: .disabled, transition: .identity)
 ```
 
 ### 内容过渡
