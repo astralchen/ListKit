@@ -80,25 +80,6 @@ public struct TableListContext {
         self.eventDispatcher = eventDispatcher
     }
 
-    @available(*, deprecated, message: "Pass a stable AnyListIdentity instead of a positional sectionID.")
-    init(
-        sectionID: AnyListID,
-        indexPath: IndexPath,
-        tableView: UITableView,
-        eventDispatcher: @escaping @MainActor (any ListEvent, TableListContext) -> Void
-    ) {
-        self.init(
-            identity: AnyListIdentity(
-                sectionID: sectionID,
-                rowID: AnyListID(indexPath.row),
-                presentationID: ObjectIdentifier(LegacyTableListContextPresentation.self)
-            ),
-            indexPath: indexPath,
-            tableView: tableView,
-            eventDispatcher: eventDispatcher
-        )
-    }
-
     /// 向 table adapter 发送业务事件。
     ///
     /// - Parameter event: 遵守 `ListEvent` 的业务事件。
@@ -131,8 +112,6 @@ private final class TableListViewReference {
         self.tableView = tableView
     }
 }
-
-private final class LegacyTableListContextPresentation {}
 
 /// 类型擦除后的 table row 描述。
 public struct AnyTableRow {
@@ -213,6 +192,8 @@ private enum TableRowIDSource<ID> {
     case inherited
 }
 
+/// 业务 model 不强制要求 `Sendable`；强类型 model 事件只允许在 MainActor 回调中读取。
+/// 这个盒子必须保持私有，不能扩散到公开 Sendable 值或后台执行路径。
 private struct TableMainActorValueBox<Value>: @unchecked Sendable {
     let value: Value
 }

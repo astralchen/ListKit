@@ -198,44 +198,6 @@ public extension UICollectionView {
 
     /// ListKit 注册和 dequeue 命名空间。
     var lk: ListKitCollectionViewNamespace { ListKitCollectionViewNamespace(collectionView: self) }
-
-    /// 迁移兼容入口；新代码优先使用 `collectionView.lk.register(Cell.self)`。
-    @available(*, deprecated, message: "Migration-only compatibility. Prefer collectionView.lk.register(Cell.self).")
-    @MainActor func register<Cell>(_ cellType: Cell.Type) where Cell: UICollectionViewCell {
-        lk.register(cellType)
-    }
-
-    /// 迁移兼容入口；新代码优先使用 `collectionView.lk.register(View.self, ofKind: kind)`。
-    @available(*, deprecated, message: "Migration-only compatibility. Prefer collectionView.lk.register(View.self, ofKind: kind).")
-    @MainActor func register<View>(_ viewType: View.Type, forSupplementaryViewOfKind kind: String)
-        where View: UICollectionReusableView
-    {
-        lk.register(viewType, ofKind: kind)
-    }
-
-    /// 迁移兼容入口；新代码优先使用 `collectionView.lk.register(supplementaryView: View.self)`。
-    @available(*, deprecated, message: "Migration-only compatibility. Prefer collectionView.lk.register(supplementaryView: View.self).")
-    @MainActor func register<View>(supplementaryView viewType: View.Type) where View: UICollectionReusableView {
-        lk.register(supplementaryView: viewType)
-    }
-
-    /// 迁移兼容入口；新代码优先使用 `collectionView.lk.dequeue(Cell.self, for: indexPath)`。
-    @available(*, deprecated, message: "Migration-only compatibility. Prefer collectionView.lk.dequeue(Cell.self, for: indexPath).")
-    @MainActor func dequeueReusableCell<Cell>(withCellClass cellType: Cell.Type, for indexPath: IndexPath) -> Cell
-        where Cell: UICollectionViewCell
-    {
-        lk.dequeue(cellType, for: indexPath)
-    }
-
-    /// 迁移兼容入口；新代码优先使用 `collectionView.lk.dequeue(View.self, ofKind: kind, for: indexPath)`。
-    @available(*, deprecated, message: "Migration-only compatibility. Prefer collectionView.lk.dequeue(View.self, ofKind: kind, for: indexPath).")
-    @MainActor func dequeueReusableSupplementaryView<View>(
-        ofKind kind: String,
-        withViewClass viewType: View.Type,
-        for indexPath: IndexPath
-    ) -> View where View: UICollectionReusableView {
-        lk.dequeue(viewType, ofKind: kind, for: indexPath)
-    }
 }
 
 public extension UICollectionViewLayout {

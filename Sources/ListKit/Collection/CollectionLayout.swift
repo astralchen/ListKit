@@ -177,7 +177,7 @@ public struct ListLayoutPoint: Hashable, Sendable {
 /// Section 背景装饰描述。
 ///
 /// - Important: raw kind 入口不会注册 view；typed view 入口会由 adapter 注册到当前 layout。
-public struct ListBackgroundDecoration: Hashable, @unchecked Sendable {
+public struct ListBackgroundDecoration: Hashable {
     /// 默认 section 背景 decoration kind。
     public static let defaultKind = "UICollectionView.ElementKindSectionBackgroundDecoration"
 
@@ -257,7 +257,7 @@ public struct ListBackgroundDecoration: Hashable, @unchecked Sendable {
     }
 }
 
-public struct ListSectionLayoutConfiguration<SectionID>: Hashable, Sendable where SectionID: Hashable & Sendable {
+public struct ListSectionLayoutConfiguration<SectionID>: Hashable where SectionID: Hashable & Sendable {
     var layoutID: AnyListID?
     var sectionLayout: ListSectionLayout?
     var customSectionLayout: ListCustomSectionLayout<SectionID>?
@@ -540,7 +540,7 @@ public struct ListSectionHorizontalLayout: Hashable, Sendable {
 /// 自定义 section layout 的类型安全逃生口。
 ///
 /// - Important: `id` 只描述自定义布局的稳定身份；真正的布局由 `makeSection` 在主线程生成。
-public struct ListCustomSectionLayout<SectionID>: @unchecked Sendable where SectionID: Hashable & Sendable {
+public struct ListCustomSectionLayout<SectionID> where SectionID: Hashable & Sendable {
     /// 自定义布局的稳定身份，用于 layout metadata diff 和诊断。
     public let id: AnyListID
     let makeSection: @MainActor (

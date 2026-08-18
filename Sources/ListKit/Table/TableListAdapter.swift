@@ -42,6 +42,9 @@ where SectionID: Hashable & Sendable {
     }
 
     /// 最近一次 `apply` 的摘要。
+    ///
+    /// 同步 `apply` 提交后会先更新为 `.submitted` 摘要；snapshot、可见刷新、layout
+    /// 和滚动处理完成后，会再次更新为最终摘要。
     public private(set) var lastApplySummary = ListApplySummary()
 
     /// Table diffable data source 在差异提交时使用的默认行动画。
@@ -125,8 +128,17 @@ where SectionID: Hashable & Sendable {
         options: ListApplyOptions,
         completion: ((ListApplySummary) -> Void)? = nil,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
-    ) -> TableApplyResult<SectionID> {
+    ) -> ListApplySummary {
         _apply(options: options, completion: completion, content)
+    }
+
+    /// 提交一次 table 更新，并立即返回提交摘要。
+    @discardableResult
+    public func apply(
+        options: ListApplyOptions,
+        @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
+    ) -> ListApplySummary {
+        _apply(options: options, completion: nil, content)
     }
 
     /// 以 SwiftUI 风格的 transaction 提交更新。
@@ -135,12 +147,21 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction = .automatic,
         completion: ((ListApplySummary) -> Void)? = nil,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
-    ) -> TableApplyResult<SectionID> {
+    ) -> ListApplySummary {
         apply(
             options: ListApplyOptions(transaction: transaction),
             completion: completion,
             content
         )
+    }
+
+    /// 以 SwiftUI 风格的 transaction 提交更新，并立即返回提交摘要。
+    @discardableResult
+    public func apply(
+        transaction: ListTransaction = .automatic,
+        @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
+    ) -> ListApplySummary {
+        _apply(options: ListApplyOptions(transaction: transaction), completion: nil, content)
     }
 
     /// 提交已经构建好的 table sections。
@@ -149,7 +170,7 @@ where SectionID: Hashable & Sendable {
         _ sections: [TableSection<SectionID>],
         options: ListApplyOptions,
         completion: ((ListApplySummary) -> Void)? = nil
-    ) -> TableApplyResult<SectionID> {
+    ) -> ListApplySummary {
         apply(options: options, completion: completion) { sections }
     }
 
@@ -159,7 +180,7 @@ where SectionID: Hashable & Sendable {
         _ sections: [TableSection<SectionID>],
         transaction: ListTransaction = .automatic,
         completion: ((ListApplySummary) -> Void)? = nil
-    ) -> TableApplyResult<SectionID> {
+    ) -> ListApplySummary {
         apply(
             sections,
             options: ListApplyOptions(transaction: transaction),
@@ -180,7 +201,7 @@ where SectionID: Hashable & Sendable {
     public func reloadAll(
         transaction: ListTransaction = .automatic,
         transition: ListContentTransition = .opacity
-    ) -> TableApplyResult<SectionID> {
+    ) -> ListApplySummary {
         _reloadAll(
             transaction: transaction,
             transition: transition,
@@ -194,7 +215,7 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction = .automatic,
         transition: ListContentTransition = .opacity,
         completion: @escaping (ListApplySummary) -> Void
-    ) -> TableApplyResult<SectionID> {
+    ) -> ListApplySummary {
         _reloadAll(
             transaction: transaction,
             transition: transition,
@@ -206,7 +227,7 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction,
         transition: ListContentTransition,
         completion: ((ListApplySummary) -> Void)?
-    ) -> TableApplyResult<SectionID> {
+    ) -> ListApplySummary {
         let request = ListReloadAllRequest(
             transaction: transaction,
             transition: transition,
@@ -230,7 +251,7 @@ where SectionID: Hashable & Sendable {
             performReloadAll(request)
         }
 
-        return TableApplyResult(adapter: self, summary: summary)
+        return summary
     }
 
     /// 强制刷新当前已提交列表，并等待内容过渡和布局完成。
@@ -238,18 +259,15 @@ where SectionID: Hashable & Sendable {
     public func reloadAll(
         transaction: ListTransaction = .automatic,
         transition: ListContentTransition = .opacity
-    ) async -> TableApplyResult<SectionID> {
+    ) async -> ListApplySummary {
         if Task.isCancelled {
             let resolved = transaction.resolved(
                 reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
             )
-            return TableApplyResult(
-                adapter: self,
-                summary: ListApplySummary(
-                    animation: ListAnimationSummary(
-                        completionState: .cancelledBeforeCommit,
-                        reduceMotionApplied: resolved.reduceMotionApplied
-                    )
+            return ListApplySummary(
+                animation: ListAnimationSummary(
+                    completionState: .cancelledBeforeCommit,
+                    reduceMotionApplied: resolved.reduceMotionApplied
                 )
             )
         }
@@ -259,7 +277,7 @@ where SectionID: Hashable & Sendable {
                 transaction: transaction,
                 transition: transition
             ) { [weak self] summary in
-                continuation.resume(returning: TableApplyResult(adapter: self, summary: summary))
+                continuation.resume(returning: summary)
             }
         }
     }
@@ -358,7 +376,7 @@ where SectionID: Hashable & Sendable {
         options: ListApplyOptions,
         completion: ((ListApplySummary) -> Void)?,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
-    ) -> TableApplyResult<SectionID> {
+    ) -> ListApplySummary {
         let newSections = content()
         let resolvedTransaction = options.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
@@ -381,7 +399,7 @@ where SectionID: Hashable & Sendable {
                 _ = self._apply(options: options, completion: completion) { newSections }
             }
             deferredApply.schedule()
-            return TableApplyResult(adapter: self, summary: deferredSummary)
+            return deferredSummary
         }
 
         let applyPlan = ListApplyPlanner.makePlan(
@@ -402,7 +420,7 @@ where SectionID: Hashable & Sendable {
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options, prefix: "ListKit table apply summary")
             completion?(summary)
-            return TableApplyResult(adapter: self, summary: summary)
+            return summary
         }
 
         let visibleAnchor: TableVisibleRowAnchor?
@@ -555,7 +573,7 @@ where SectionID: Hashable & Sendable {
             }
         }
 
-        return TableApplyResult(adapter: self, summary: summary)
+        return summary
     }
 
     private func makeReloadAllPlan(transaction: ListTransaction) -> ListApplyPlan {
@@ -954,10 +972,10 @@ where SectionID: Hashable & Sendable {
 
     /// 重建描述树并等待 snapshot、layout 和内容过渡完成。
     @discardableResult
-    public func applyAndWait(
+    public func apply(
         options: ListApplyOptions,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
-    ) async -> TableApplyResult<SectionID> {
+    ) async -> ListApplySummary {
         let builtSections = content()
         let usesSerialScheduling = options.transaction.updatePolicy == .serial
         if usesSerialScheduling {
@@ -968,20 +986,17 @@ where SectionID: Hashable & Sendable {
             let resolved = options.transaction.resolved(
                 reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
             )
-            return TableApplyResult(
-                adapter: self,
-                summary: ListApplySummary(
-                    animation: ListAnimationSummary(
-                        completionState: .cancelledBeforeCommit,
-                        reduceMotionApplied: resolved.reduceMotionApplied
-                    )
+            return ListApplySummary(
+                animation: ListAnimationSummary(
+                    completionState: .cancelledBeforeCommit,
+                    reduceMotionApplied: resolved.reduceMotionApplied
                 )
             )
         }
 
         let result = await withCheckedContinuation { continuation in
             _ = _apply(options: options, completion: { [weak self] summary in
-                continuation.resume(returning: TableApplyResult(adapter: self, summary: summary))
+                continuation.resume(returning: summary)
             }) {
                 builtSections
             }
@@ -994,11 +1009,11 @@ where SectionID: Hashable & Sendable {
 
     /// 提交 transaction，并等待 snapshot、layout 和内容过渡完成。
     @discardableResult
-    public func applyAndWait(
+    public func apply(
         transaction: ListTransaction = .automatic,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
-    ) async -> TableApplyResult<SectionID> {
-        await applyAndWait(options: ListApplyOptions(transaction: transaction), content)
+    ) async -> ListApplySummary {
+        await apply(options: ListApplyOptions(transaction: transaction), content)
     }
 
     /// 绑定自定义业务事件。
@@ -1074,16 +1089,6 @@ where SectionID: Hashable & Sendable {
             return nil
         }
         return tableDelegate?.tableView?(tableView, willDeselectRowAt: indexPath) ?? indexPath
-    }
-
-    @available(*, deprecated, renamed: "tableView(_:willSelectRowAt:)")
-    public func tableView(_ tableView: UITableView, shouldSelectRowAt indexPath: IndexPath) -> IndexPath? {
-        self.tableView(tableView, willSelectRowAt: indexPath)
-    }
-
-    @available(*, deprecated, renamed: "tableView(_:willDeselectRowAt:)")
-    public func tableView(_ tableView: UITableView, shouldDeselectRowAt indexPath: IndexPath) -> IndexPath? {
-        self.tableView(tableView, willDeselectRowAt: indexPath)
     }
 
     public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
@@ -2347,14 +2352,18 @@ where SectionID: Hashable & Sendable {
 private final class TableUnsafeForwardingTarget: @unchecked Sendable {
     let value: AnyObject?
 
+    @MainActor
     init(_ value: AnyObject?) {
+        MainActor.preconditionIsolated()
         self.value = value
     }
 }
 
+/// UIKit/Dispatch completion 可能从非主队列触发；这个私有盒子只负责把回调重新排到 MainActor 执行。
 private final class TableMainActorCallbackBox: @unchecked Sendable {
     private let callback: () -> Void
 
+    @MainActor
     init(_ callback: @escaping () -> Void) {
         self.callback = callback
     }
@@ -2365,29 +2374,6 @@ private final class TableMainActorCallbackBox: @unchecked Sendable {
                 callback()
             }
         }
-    }
-}
-
-/// 一次 table `apply` 调用的返回值。
-@MainActor
-public struct TableApplyResult<SectionID> where SectionID: Hashable & Sendable {
-    fileprivate weak var adapter: TableListAdapter<SectionID>?
-    /// 本次 apply 的统计摘要。
-    public let summary: ListApplySummary
-
-    /// 在本次 apply 关联的 adapter 上绑定业务事件。
-    ///
-    /// - Parameters:
-    ///   - eventType: 事件类型。
-    ///   - handler: 事件处理闭包。
-    /// - Returns: 当前结果，便于链式调用。
-    @discardableResult
-    public func onEvent<Event>(
-        _ eventType: Event.Type = Event.self,
-        handler: @escaping @MainActor (Event, TableListContext) -> Void
-    ) -> Self where Event: ListEvent {
-        adapter?.onEvent(eventType, handler: handler)
-        return self
     }
 }
 

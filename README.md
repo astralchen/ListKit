@@ -904,17 +904,18 @@ ListSection(.files) {
 
 ## Apply、动画与滚动
 
-普通页面使用 `apply`。需要等待 diffable、selection、可见刷新和滚动全部完成时，使用 `applyAndWait`：
+普通页面使用同步 `apply`。需要等待 diffable、selection、可见刷新和滚动全部完成时，
+使用 async `apply`：
 
 ```swift
 let transaction = ListTransaction.automatic
     .scrollBehavior(.scrollToLast(in: Section.messages, position: .bottom))
 
-let result = await adapter.applyAndWait(transaction: transaction) {
+let summary = await adapter.apply(transaction: transaction) {
     makeMessageSections()
 }
 
-print(result.summary)
+print(summary)
 ```
 
 `ListTransaction` 可以分别控制 snapshot、outline、layout、content 和 scroll 动画，并默认遵循 Reduce Motion。连续 async apply 可以选择合并到最新状态或按调用顺序串行执行。
@@ -928,7 +929,7 @@ let options = ListApplyOptions(
     applicationMode: .reloadData
 )
 
-await adapter.applyAndWait(options: options) {
+await adapter.apply(options: options) {
     makeSections()
 }
 ```
@@ -953,7 +954,7 @@ let transaction = ListTransaction.automatic
         )
     )
 
-await adapter.applyAndWait(transaction: transaction) {
+await adapter.apply(transaction: transaction) {
     makeMessageSections()
 }
 ```
@@ -969,22 +970,28 @@ let transaction = ListTransaction.automatic
 
 ### Apply Summary
 
-`apply` 会立即返回 result；`applyAndWait` 返回最终完成状态。摘要适合日志、性能观察和测试断言：
+`apply` 会立即返回 summary，这时 `summary.animation.completionState` 通常是 `.submitted`，
+用于观察本次提交计划。需要最终可见刷新、layout、滚动和内容过渡统计时，使用 completion
+或 async `apply`。摘要适合日志、性能观察和测试断言，不应替代业务数据状态：
 
 ```swift
-let result = await adapter.applyAndWait {
+let summary = await adapter.apply {
     makeSections()
 }
 
-let summary = result.summary
-print("inserted:", summary.insertedCount)
-print("deleted:", summary.deletedCount)
-print("moved:", summary.movedCount)
-print("refreshed:", summary.refreshIDChangedCount)
+print("inserted rows:", summary.insertedRowCount)
+print("deleted rows:", summary.deletedRowCount)
+print("moved rows:", summary.movedRowCount)
+print("refreshID changed rows:", summary.refreshIDChangedCount)
+print("visible refreshed rows:", summary.visibleRefreshCount)
 print("completion:", summary.animation.completionState)
 ```
 
 如果较新的 `.coalesceLatest` apply 取代了尚未完成的旧 apply，旧结果会以 `.superseded` 结束；任务在提交前取消时会返回 `.cancelledBeforeCommit`。
+`refreshIDChangedCount` 表示新旧 snapshot 都存在且 refreshID 变化的 Row 数量；
+`snapshotRefreshCount` 表示按当前 refresh strategy 交给 diffable reload/reconfigure 的 Row 数量；
+`visibleRefreshCount` 表示最终阶段实际重新配置的可见 Row 数量。
+Collection supplementary view 与 Table header/footer 会统一计入 supplementary refresh 统计。
 
 ## Diagnostics
 
@@ -995,11 +1002,11 @@ let options = ListApplyOptions(
     diagnostics: .init(mode: .warning, logsApplySummary: true)
 )
 
-let result = adapter.apply(options: options) {
+let summary = adapter.apply(options: options) {
     makeSections()
 }
 
-for issue in result.summary.diagnosticsIssues {
+for issue in summary.diagnosticsIssues {
     print(issue.kind, issue.message)
 }
 ```
@@ -1067,27 +1074,48 @@ Collection 的原生 drag/drop 仍可直接使用 `dragDelegate` 与 `dropDelega
 - `selected(...)` / `selectionMode(...)`：声明单选、多选和受控选择状态。
 - `itemIdentity(at:)`、`indexPath(for:)`、`indexPaths(forRowID:in:)`：稳定身份与位置双向查询。
 - `reconfigureVisibleRows(...)`：只更新当前可见节点。
-- `ProviderRow` / `ListProviderSection`：逐步迁移复杂旧 data source 的逃生口。
+- `ProviderRow` / `ProviderSupplementary`：逐步迁移复杂旧 data source 的逃生口。
 - `ListDiagnosticsOptions` / `lastApplySummary`：定位重复 ID、无效 layout 和 apply 行为。
 
 ## 示例与测试
 
 `Examples/` 包含 collection 与 table 两套完整页面，演示 layout、selection、事件、刷新、swipe、context menu 和 reordering。
 
+ListKit 是 iOS/UIKit 框架，有效验收项是 iOS Simulator 或 generic iOS Simulator 的
+`xcodebuild`。裸跑 `swift test` 会走 macOS SwiftPM 构建路径，macOS target 没有
+UIKit，因此 `no such module 'UIKit'` 不作为 ListKit 的有效失败信号。
+
+编译 iOS 测试目标：
+
+```bash
+xcodebuild -quiet \
+  -project Examples/Examples.xcodeproj \
+  -scheme ExamplesUnitTests \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /tmp/ListKitDerivedData \
+  build-for-testing
+```
+
 运行 iOS Simulator 测试：
 
 ```bash
-# 增量构建并运行 ExamplesTests
-scripts/test-ios.sh
-
-# 只运行一个 suite
-scripts/test-ios.sh ExamplesTests/ListKitLayoutTests
-
-# 复用上一次构建产物
-scripts/test-ios.sh --no-build ExamplesTests/ListKitLayoutTests
+xcodebuild -quiet \
+  -project Examples/Examples.xcodeproj \
+  -scheme ExamplesUnitTests \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=26.5' \
+  -derivedDataPath /tmp/ListKitDerivedData \
+  test
 ```
 
-可以通过 `LISTKIT_SIMULATOR_ID=<UUID>` 指定模拟器。
+可以通过 `xcrun simctl list devices available` 查看本机可用模拟器，并按实际安装的
+设备名和系统版本替换 `-destination`。
+
+读取最近一次测试摘要：
+
+```bash
+xcrun xcresulttool get test-results summary \
+  --path /tmp/ListKitDerivedData/Logs/Test/<Test-ExamplesUnitTests-*.xcresult>
+```
 
 ## 源码结构
 

@@ -33,9 +33,9 @@ struct ListApplyPlan {
         initialSummary.insertedSectionCount > 0
             || initialSummary.deletedSectionCount > 0
             || initialSummary.movedSectionCount > 0
-            || initialSummary.insertedCount > 0
-            || initialSummary.deletedCount > 0
-            || initialSummary.movedCount > 0
+            || initialSummary.insertedRowCount > 0
+            || initialSummary.deletedRowCount > 0
+            || initialSummary.movedRowCount > 0
             || initialSummary.snapshotRefreshCount > 0
     }
 
@@ -49,10 +49,10 @@ struct ListApplyPlan {
             deletedSectionCount: initialSummary.deletedSectionCount,
             movedSectionCount: initialSummary.movedSectionCount,
             keptSectionCount: initialSummary.keptSectionCount,
-            insertedCount: initialSummary.insertedCount,
-            deletedCount: initialSummary.deletedCount,
-            movedCount: initialSummary.movedCount,
-            keptCount: initialSummary.keptCount,
+            insertedRowCount: initialSummary.insertedRowCount,
+            deletedRowCount: initialSummary.deletedRowCount,
+            movedRowCount: initialSummary.movedRowCount,
+            keptRowCount: initialSummary.keptRowCount,
             refreshIDChangedCount: initialSummary.refreshIDChangedCount,
             snapshotRefreshCount: initialSummary.snapshotRefreshCount,
             visibleRefreshCount: visibleRefreshCount,
@@ -86,7 +86,7 @@ enum ListApplyPlanner {
         let newRows = newSections.flatMap(\.rows)
         let oldSupplementaries = oldSections.flatMap(\.supplementaries)
         let newSupplementaries = newSections.flatMap(\.supplementaries)
-        let movedCount = inferredRowMoveCount(old: oldSections, new: newSections)
+        let movedRowCount = inferredRowMoveCount(old: oldSections, new: newSections)
         let sectionChanges = sectionChanges(old: oldSections, new: newSections)
         let oldRowsByIdentity = lookup(from: oldRows)
         let newRowsByIdentity = lookup(from: newRows)
@@ -113,7 +113,7 @@ enum ListApplyPlanner {
             visibleRefreshCount: 0,
             visibleSupplementaryRefreshCount: 0,
             diagnosticsIssues: diagnosticsIssues,
-            movedCount: movedCount,
+            movedRowCount: movedRowCount,
             sectionChanges: sectionChanges
         )
 
@@ -225,7 +225,7 @@ enum ListApplyPlanner {
         visibleRefreshCount: Int,
         visibleSupplementaryRefreshCount: Int,
         diagnosticsIssues: [ListDiagnosticsIssue],
-        movedCount: Int,
+        movedRowCount: Int,
         sectionChanges: ListSectionChanges
     ) -> ListApplySummary {
         let oldIDs = Set(oldRowsByIdentity.keys)
@@ -249,10 +249,10 @@ enum ListApplyPlanner {
             deletedSectionCount: sectionChanges.deletedCount,
             movedSectionCount: sectionChanges.movedCount,
             keptSectionCount: sectionChanges.keptCount,
-            insertedCount: newIDs.subtracting(oldIDs).count,
-            deletedCount: oldIDs.subtracting(newIDs).count,
-            movedCount: movedCount,
-            keptCount: keptIDs.count,
+            insertedRowCount: newIDs.subtracting(oldIDs).count,
+            deletedRowCount: oldIDs.subtracting(newIDs).count,
+            movedRowCount: movedRowCount,
+            keptRowCount: keptIDs.count,
             refreshIDChangedCount: refreshIDChangedCount,
             snapshotRefreshCount: snapshotRefreshItems.count,
             visibleRefreshCount: visibleRefreshCount,
@@ -441,7 +441,7 @@ enum ListApplyLogger {
         #if DEBUG
         guard options.diagnostics.logsApplySummary else { return }
         print(
-            "\(prefix): sectionInserted=\(summary.insertedSectionCount), sectionDeleted=\(summary.deletedSectionCount), sectionMoved=\(summary.movedSectionCount), sectionKept=\(summary.keptSectionCount), inserted=\(summary.insertedCount), deleted=\(summary.deletedCount), moved=\(summary.movedCount), kept=\(summary.keptCount), refreshIDChanged=\(summary.refreshIDChangedCount), snapshotRefresh=\(summary.snapshotRefreshCount), visibleRefresh=\(summary.visibleRefreshCount), supplementaryRefreshIDChanged=\(summary.supplementaryRefreshIDChangedCount), visibleSupplementaryRefresh=\(summary.visibleSupplementaryRefreshCount), animation=\(summary.animation.completionState), snapshotAnimated=\(summary.animation.snapshotAnimated), outlineAnimated=\(summary.animation.outlineAnimatedSectionCount), contentTransitions=\(summary.animation.contentTransitionCount), layoutAnimated=\(summary.animation.layoutAnimated), scrollAnimated=\(summary.animation.scrollAnimated), anchorCompensation=\(summary.animation.anchorCompensation), reduceMotion=\(summary.animation.reduceMotionApplied), diagnostics=\(summary.diagnosticsIssues.count)"
+            "\(prefix): sectionInserted=\(summary.insertedSectionCount), sectionDeleted=\(summary.deletedSectionCount), sectionMoved=\(summary.movedSectionCount), sectionKept=\(summary.keptSectionCount), rowInserted=\(summary.insertedRowCount), rowDeleted=\(summary.deletedRowCount), rowMoved=\(summary.movedRowCount), rowKept=\(summary.keptRowCount), refreshIDChanged=\(summary.refreshIDChangedCount), snapshotRefresh=\(summary.snapshotRefreshCount), visibleRefresh=\(summary.visibleRefreshCount), supplementaryRefreshIDChanged=\(summary.supplementaryRefreshIDChangedCount), visibleSupplementaryRefresh=\(summary.visibleSupplementaryRefreshCount), animation=\(summary.animation.completionState), snapshotAnimated=\(summary.animation.snapshotAnimated), outlineAnimated=\(summary.animation.outlineAnimatedSectionCount), contentTransitions=\(summary.animation.contentTransitionCount), layoutAnimated=\(summary.animation.layoutAnimated), scrollAnimated=\(summary.animation.scrollAnimated), anchorCompensation=\(summary.animation.anchorCompensation), reduceMotion=\(summary.animation.reduceMotionApplied), diagnostics=\(summary.diagnosticsIssues.count)"
         )
         #endif
     }

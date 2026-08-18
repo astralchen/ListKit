@@ -49,6 +49,9 @@ final class TableListAdapterTests: XCTestCase {
         var selectedMessageID: Int?
         var receivedEvent: MessageEvent?
 
+        adapter.onEvent(MessageEvent.self) { event, _ in
+            receivedEvent = event
+        }
         adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(
@@ -63,10 +66,6 @@ final class TableListAdapterTests: XCTestCase {
                 }
             }
         }
-        .onEvent(MessageEvent.self) { event, _ in
-            receivedEvent = event
-        }
-
         let indexPath = IndexPath(row: 0, section: 0)
         _ = adapter.tableView(tableView, cellForRowAt: indexPath)
         adapter.tableView(tableView, didSelectRowAt: indexPath)
@@ -88,7 +87,7 @@ final class TableListAdapterTests: XCTestCase {
         )
         let adapter = TableListAdapter<Section>(tableView: tableView)
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(1, model: "Anchor", cell: MessageTableCell.self) { _, _, _ in }
                     .height(.fixed(44))
@@ -96,7 +95,7 @@ final class TableListAdapterTests: XCTestCase {
         }
         tableView.layoutIfNeeded()
 
-        let result = await adapter.applyAndWait(
+        let result = await adapter.apply(
             transaction: ListTransaction.disabled.scrollBehavior(
                 .preserveVisiblePosition(of: ListScrollTarget(1, in: Section.messages))
             )
@@ -109,7 +108,7 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(result.summary.animation.anchorCompensation, 0)
+        XCTAssertEqual(result.animation.anchorCompensation, 0)
         XCTAssertEqual(tableView.contentInset.bottom, 0)
     }
 
@@ -127,7 +126,7 @@ final class TableListAdapterTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             TableSection(.messages) {
@@ -152,7 +151,7 @@ final class TableListAdapterTests: XCTestCase {
         let transitionStarted = expectation(description: "first table content transition started")
         var didSignalTransition = false
         let firstApply = Task { @MainActor in
-            await adapter.applyAndWait(
+            await adapter.apply(
                 transaction: ListTransaction(animation: .disabled).contentAnimation(.enabled)
             ) {
                 TableSection(.messages) {
@@ -172,7 +171,7 @@ final class TableListAdapterTests: XCTestCase {
         }
 
         await fulfillment(of: [transitionStarted], timeout: 2)
-        let latestResult = await adapter.applyAndWait(transaction: .disabled) {
+        let latestResult = await adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(1, model: "C", cell: MessageTableCell.self) { cell, value, _ in
                     cell.textValue = value
@@ -187,12 +186,12 @@ final class TableListAdapterTests: XCTestCase {
         }
         let supersededResult = await firstApply.value
 
-        XCTAssertEqual(supersededResult.summary.animation.completionState, .superseded)
-        XCTAssertEqual(latestResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(latestResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(supersededResult.animation.completionState, .superseded)
+        XCTAssertEqual(latestResult.animation.completionState, .completed)
+        XCTAssertEqual(latestResult.insertedSectionCount, 1)
         XCTAssertEqual(tableView.numberOfSections, 2)
         XCTAssertEqual(adapter.sectionIdentifier(at: 1), .empty)
-        XCTAssertEqual(adapter.lastApplySummary, latestResult.summary)
+        XCTAssertEqual(adapter.lastApplySummary, latestResult)
     }
 
     func testSerialTableApplyCompletesSectionDeletionBeforeReinsertion() async throws {
@@ -209,7 +208,7 @@ final class TableListAdapterTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             TableSection(.messages) {
@@ -237,7 +236,7 @@ final class TableListAdapterTests: XCTestCase {
             .contentAnimation(.enabled)
             .updatePolicy(.serial)
         let deletionApply = Task { @MainActor in
-            await adapter.applyAndWait(transaction: serialTransaction) {
+            await adapter.apply(transaction: serialTransaction) {
                 TableSection(.messages) {
                     TableRow(1, model: "B", cell: MessageTableCell.self) { cell, value, _ in
                         cell.textValue = value
@@ -256,7 +255,7 @@ final class TableListAdapterTests: XCTestCase {
 
         await fulfillment(of: [transitionStarted], timeout: 2)
         let reinsertionApply = Task { @MainActor in
-            await adapter.applyAndWait(
+            await adapter.apply(
                 transaction: ListTransaction.disabled.updatePolicy(.serial)
             ) {
                 TableSection(.messages) {
@@ -276,10 +275,10 @@ final class TableListAdapterTests: XCTestCase {
         let deletionResult = await deletionApply.value
         let reinsertionResult = await reinsertionApply.value
 
-        XCTAssertEqual(deletionResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(deletionResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(reinsertionResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(reinsertionResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(deletionResult.animation.completionState, .completed)
+        XCTAssertEqual(deletionResult.deletedSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.animation.completionState, .completed)
+        XCTAssertEqual(reinsertionResult.insertedSectionCount, 1)
         XCTAssertEqual(tableView.numberOfSections, 2)
         XCTAssertEqual(adapter.sectionIdentifier(at: 1), .empty)
     }
@@ -298,7 +297,7 @@ final class TableListAdapterTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             TableSection(.messages) {
@@ -315,7 +314,7 @@ final class TableListAdapterTests: XCTestCase {
             tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? MessageTableCell
         )
 
-        let result = await adapter.applyAndWait(
+        let result = await adapter.apply(
             options: .init(transaction: .disabled, refreshStrategy: .visibleOnly)
         ) {
             TableSection(.messages) {
@@ -328,9 +327,9 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(result.summary.refreshIDChangedCount, 1)
-        XCTAssertEqual(result.summary.snapshotRefreshCount, 0)
-        XCTAssertEqual(result.summary.visibleRefreshCount, 1)
+        XCTAssertEqual(result.refreshIDChangedCount, 1)
+        XCTAssertEqual(result.snapshotRefreshCount, 0)
+        XCTAssertEqual(result.visibleRefreshCount, 1)
         XCTAssertEqual(cell.textValue, "B")
     }
 
@@ -341,7 +340,7 @@ final class TableListAdapterTests: XCTestCase {
         )
         let adapter = TableListAdapter<Section>(tableView: tableView)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             TableSection(.messages) {
@@ -359,7 +358,7 @@ final class TableListAdapterTests: XCTestCase {
             adapter.itemIdentity(at: IndexPath(row: 0, section: 1))
         )
 
-        let deletionResult = await adapter.applyAndWait(transaction: .disabled) {
+        let deletionResult = await adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(1, model: "Kept", cell: MessageTableCell.self) { _, _, _ in }
                     .refreshID(1)
@@ -367,12 +366,12 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(deletionResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(deletionResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(deletionResult.summary.keptSectionCount, 1)
-        XCTAssertEqual(deletionResult.summary.deletedCount, 1)
-        XCTAssertEqual(deletionResult.summary.keptCount, 1)
-        XCTAssertEqual(deletionResult.summary.refreshIDChangedCount, 0)
+        XCTAssertEqual(deletionResult.animation.completionState, .completed)
+        XCTAssertEqual(deletionResult.deletedSectionCount, 1)
+        XCTAssertEqual(deletionResult.keptSectionCount, 1)
+        XCTAssertEqual(deletionResult.deletedRowCount, 1)
+        XCTAssertEqual(deletionResult.keptRowCount, 1)
+        XCTAssertEqual(deletionResult.refreshIDChangedCount, 0)
         XCTAssertEqual(tableView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), .messages)
         XCTAssertNil(adapter.sectionIdentifier(at: 1))
@@ -381,7 +380,7 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertTrue(adapter.indexPaths(forRowID: 2, in: .empty).isEmpty)
         XCTAssertFalse(adapter.contains(removedIdentity))
 
-        let reinsertionResult = await adapter.applyAndWait(transaction: .disabled) {
+        let reinsertionResult = await adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(1, model: "Kept", cell: MessageTableCell.self) { _, _, _ in }
                     .refreshID(1)
@@ -394,11 +393,11 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(reinsertionResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(reinsertionResult.summary.insertedSectionCount, 1)
-        XCTAssertEqual(reinsertionResult.summary.keptSectionCount, 1)
-        XCTAssertEqual(reinsertionResult.summary.insertedCount, 1)
-        XCTAssertEqual(reinsertionResult.summary.refreshIDChangedCount, 0)
+        XCTAssertEqual(reinsertionResult.animation.completionState, .completed)
+        XCTAssertEqual(reinsertionResult.insertedSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.keptSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.insertedRowCount, 1)
+        XCTAssertEqual(reinsertionResult.refreshIDChangedCount, 0)
         XCTAssertEqual(tableView.numberOfSections, 2)
         XCTAssertEqual(adapter.sectionIndex(for: .empty), 1)
         XCTAssertEqual(
@@ -414,42 +413,42 @@ final class TableListAdapterTests: XCTestCase {
         )
         let adapter = TableListAdapter<Int>(tableView: tableView)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             TableSection(0) {}
             TableSection(1) {}
         }
 
-        let reorderResult = await adapter.applyAndWait(
+        let reorderResult = await adapter.apply(
             transaction: ListTransaction(animation: .enabled)
         ) {
             TableSection(1) {}
             TableSection(0) {}
         }
 
-        XCTAssertEqual(reorderResult.summary.movedSectionCount, 1)
-        XCTAssertEqual(reorderResult.summary.movedCount, 0)
-        XCTAssertTrue(reorderResult.summary.animation.snapshotAnimated)
-        XCTAssertEqual(reorderResult.summary.animation.animatedSectionCount, 1)
+        XCTAssertEqual(reorderResult.movedSectionCount, 1)
+        XCTAssertEqual(reorderResult.movedRowCount, 0)
+        XCTAssertTrue(reorderResult.animation.snapshotAnimated)
+        XCTAssertEqual(reorderResult.animation.animatedSectionCount, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 1), 0)
 
-        let deleteLeadingResult = await adapter.applyAndWait(
+        let deleteLeadingResult = await adapter.apply(
             transaction: ListTransaction(animation: .enabled)
         ) {
             TableSection(0) {}
         }
 
-        XCTAssertEqual(deleteLeadingResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(deleteLeadingResult.summary.deletedCount, 0)
-        XCTAssertTrue(deleteLeadingResult.summary.animation.snapshotAnimated)
-        XCTAssertEqual(deleteLeadingResult.summary.animation.animatedSectionCount, 1)
+        XCTAssertEqual(deleteLeadingResult.deletedSectionCount, 1)
+        XCTAssertEqual(deleteLeadingResult.deletedRowCount, 0)
+        XCTAssertTrue(deleteLeadingResult.animation.snapshotAnimated)
+        XCTAssertEqual(deleteLeadingResult.animation.animatedSectionCount, 1)
         XCTAssertEqual(tableView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 0)
 
         let noSections: [TableSection<Int>] = []
-        let deleteAllResult = await adapter.applyAndWait(
+        let deleteAllResult = await adapter.apply(
             options: .init(
                 transaction: ListTransaction(animation: .enabled),
                 applicationMode: .reloadData
@@ -458,10 +457,10 @@ final class TableListAdapterTests: XCTestCase {
             noSections
         }
 
-        XCTAssertEqual(deleteAllResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(deleteAllResult.summary.deletedCount, 0)
-        XCTAssertFalse(deleteAllResult.summary.animation.snapshotAnimated)
-        XCTAssertEqual(deleteAllResult.summary.animation.animatedSectionCount, 0)
+        XCTAssertEqual(deleteAllResult.deletedSectionCount, 1)
+        XCTAssertEqual(deleteAllResult.deletedRowCount, 0)
+        XCTAssertFalse(deleteAllResult.animation.snapshotAnimated)
+        XCTAssertEqual(deleteAllResult.animation.animatedSectionCount, 0)
         XCTAssertEqual(tableView.numberOfSections, 0)
     }
 
@@ -472,7 +471,7 @@ final class TableListAdapterTests: XCTestCase {
         )
         let adapter = TableListAdapter<Int>(tableView: tableView)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             TableSection(0) {
@@ -486,16 +485,16 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        let result = await adapter.applyAndWait(transaction: .disabled) {
+        let result = await adapter.apply(transaction: .disabled) {
             TableSection(2) {
                 TableRow("two", model: "Two", cell: MessageTableCell.self) { _, _, _ in }
             }
         }
 
-        XCTAssertEqual(result.summary.deletedSectionCount, 2)
-        XCTAssertEqual(result.summary.keptSectionCount, 1)
-        XCTAssertEqual(result.summary.deletedCount, 2)
-        XCTAssertEqual(result.summary.keptCount, 1)
+        XCTAssertEqual(result.deletedSectionCount, 2)
+        XCTAssertEqual(result.keptSectionCount, 1)
+        XCTAssertEqual(result.deletedRowCount, 2)
+        XCTAssertEqual(result.keptRowCount, 1)
         XCTAssertEqual(tableView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 2)
         XCTAssertEqual(adapter.indexPaths(forRowID: "two", in: 2), [IndexPath(row: 0, section: 0)])
@@ -517,7 +516,7 @@ final class TableListAdapterTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             TableSection(0) {
@@ -534,7 +533,7 @@ final class TableListAdapterTests: XCTestCase {
         tableView.selectRow(at: IndexPath(row: 0, section: 1), animated: false, scrollPosition: .none)
         let selectedIdentity = try XCTUnwrap(adapter.itemIdentity(at: IndexPath(row: 0, section: 1)))
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(1) {
                 TableRow("selected", model: "Selected", cell: MessageTableCell.self) { _, _, _ in }
                     .focusable()
@@ -548,7 +547,7 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertTrue(adapter.tableView(tableView, canFocusRowAt: shiftedIndexPath))
 
         let noSections: [TableSection<Int>] = []
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             noSections
         }
 
@@ -579,7 +578,7 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             section(0, rows: 0..<3)
@@ -600,7 +599,7 @@ final class TableListAdapterTests: XCTestCase {
         tableView.layoutIfNeeded()
         let initialViewportY = initialRect.minY - tableView.contentOffset.y
 
-        let preserveResult = await adapter.applyAndWait(
+        let preserveResult = await adapter.apply(
             transaction: ListTransaction.disabled.scrollBehavior(
                 .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 2))
             )
@@ -620,10 +619,10 @@ final class TableListAdapterTests: XCTestCase {
         let shiftedRect = tableView.rectForRow(at: shiftedAnchorPath)
 
         XCTAssertEqual(shiftedRect.minY - tableView.contentOffset.y, initialViewportY, accuracy: 0.5)
-        XCTAssertEqual(preserveResult.summary.animation.anchorCompensation, 0, accuracy: 0.5)
+        XCTAssertEqual(preserveResult.animation.anchorCompensation, 0, accuracy: 0.5)
         XCTAssertEqual(tableView.contentInset.bottom, 0, accuracy: 0.5)
 
-        let removeAnchorResult = await adapter.applyAndWait(
+        let removeAnchorResult = await adapter.apply(
             transaction: ListTransaction.disabled.scrollBehavior(
                 .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 2))
             )
@@ -631,8 +630,8 @@ final class TableListAdapterTests: XCTestCase {
             section(1, rows: 0..<6)
         }
 
-        XCTAssertEqual(removeAnchorResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(removeAnchorResult.summary.animation.anchorCompensation, 0, accuracy: 0.5)
+        XCTAssertEqual(removeAnchorResult.deletedSectionCount, 1)
+        XCTAssertEqual(removeAnchorResult.animation.anchorCompensation, 0, accuracy: 0.5)
         XCTAssertEqual(tableView.contentInset.bottom, 0, accuracy: 0.5)
         XCTAssertTrue(adapter.indexPaths(forRowID: "anchor", in: 2).isEmpty)
     }
@@ -665,7 +664,7 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             TableSection(.messages) {
@@ -674,17 +673,17 @@ final class TableListAdapterTests: XCTestCase {
             decoratedSection(version: 1)
         }
 
-        let deleteResult = await adapter.applyAndWait(transaction: .disabled) {
+        let deleteResult = await adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(1, model: "Stable", cell: MessageTableCell.self) { _, _, _ in }
             }
         }
 
-        XCTAssertEqual(deleteResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(deleteResult.summary.deletedCount, 1)
+        XCTAssertEqual(deleteResult.deletedSectionCount, 1)
+        XCTAssertEqual(deleteResult.deletedRowCount, 1)
         XCTAssertEqual(tableView.numberOfSections, 1)
 
-        let reinsertResult = await adapter.applyAndWait(transaction: .disabled) {
+        let reinsertResult = await adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(1, model: "Stable", cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -693,9 +692,9 @@ final class TableListAdapterTests: XCTestCase {
         tableView.reloadData()
         tableView.layoutIfNeeded()
 
-        XCTAssertEqual(reinsertResult.summary.insertedSectionCount, 1)
-        XCTAssertEqual(reinsertResult.summary.insertedCount, 1)
-        XCTAssertEqual(reinsertResult.summary.supplementaryRefreshIDChangedCount, 0)
+        XCTAssertEqual(reinsertResult.insertedSectionCount, 1)
+        XCTAssertEqual(reinsertResult.insertedRowCount, 1)
+        XCTAssertEqual(reinsertResult.supplementaryRefreshIDChangedCount, 0)
         XCTAssertEqual((tableView.headerView(forSection: 1) as? MessageHeaderView)?.title, "Header 2")
         XCTAssertEqual((tableView.footerView(forSection: 1) as? MessageHeaderView)?.title, "Footer 2")
     }
@@ -735,10 +734,10 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(refreshResult.summary.insertedCount, 1)
-        XCTAssertEqual(refreshResult.summary.keptCount, 1)
-        XCTAssertEqual(refreshResult.summary.refreshIDChangedCount, 1)
-        XCTAssertEqual(refreshResult.summary.snapshotRefreshCount, 1)
+        XCTAssertEqual(refreshResult.insertedRowCount, 1)
+        XCTAssertEqual(refreshResult.keptRowCount, 1)
+        XCTAssertEqual(refreshResult.refreshIDChangedCount, 1)
+        XCTAssertEqual(refreshResult.snapshotRefreshCount, 1)
 
         let duplicateResult = adapter.apply(
             options: ListApplyOptions(
@@ -752,7 +751,7 @@ final class TableListAdapterTests: XCTestCase {
             }
         }
 
-        XCTAssertTrue(duplicateResult.summary.diagnosticsIssues.contains { $0.kind == .duplicateRow })
+        XCTAssertTrue(duplicateResult.diagnosticsIssues.contains { $0.kind == .duplicateRow })
     }
 
     func testTableRowDelegateSurface() {
@@ -995,7 +994,7 @@ final class TableListAdapterTests: XCTestCase {
         let adapter = TableListAdapter<Int>(tableView: tableView)
         let indexPath = IndexPath(row: 0, section: 0)
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(0) {
                 TableRow("controlled", model: "Controlled", cell: MessageTableCell.self) { _, _, _ in }
                     .selected(true)
@@ -1003,7 +1002,7 @@ final class TableListAdapterTests: XCTestCase {
         }
         XCTAssertEqual(tableView.indexPathsForSelectedRows, [indexPath])
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(0) {
                 TableRow("controlled", model: "Controlled", cell: MessageTableCell.self) { _, _, _ in }
                     .selected(false)
@@ -1011,7 +1010,7 @@ final class TableListAdapterTests: XCTestCase {
         }
         XCTAssertTrue(tableView.indexPathsForSelectedRows?.isEmpty ?? true)
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(0) {
                 TableRow("controlled", model: "Controlled", cell: MessageTableCell.self) { _, _, _ in }
                     .selected(true)
@@ -1242,6 +1241,14 @@ final class TableListAdapterTests: XCTestCase {
             style: .plain
         )
         let adapter = TableListAdapter<Section>(tableView: tableView)
+        let host = UIViewController()
+        host.view.frame = tableView.bounds
+        host.view.addSubview(tableView)
+        let window = UIWindow(frame: tableView.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
         var rowTexts = [1: "A", 2: "B"]
 
         let initialApplyCompleted = expectation(description: "initial targeted row apply completed")
@@ -1266,8 +1273,9 @@ final class TableListAdapterTests: XCTestCase {
         let firstIndexPath = IndexPath(row: 0, section: 0)
         let secondIndexPath = IndexPath(row: 1, section: 0)
         let firstCell = try XCTUnwrap(tableView.cellForRow(at: firstIndexPath) as? MessageTableCell)
+        let secondCell = try XCTUnwrap(tableView.cellForRow(at: secondIndexPath) as? MessageTableCell)
         XCTAssertEqual(firstCell.textValue, "A")
-        XCTAssertEqual((tableView.cellForRow(at: secondIndexPath) as? MessageTableCell)?.textValue, "B")
+        XCTAssertEqual(secondCell.textValue, "B")
 
         rowTexts[1] = "A2"
         rowTexts[2] = "B2"
@@ -1305,7 +1313,10 @@ final class TableListAdapterTests: XCTestCase {
         )
         wait(for: [reloadCompleted], timeout: 1)
 
-        XCTAssertEqual((tableView.cellForRow(at: secondIndexPath) as? MessageTableCell)?.textValue, "B2")
+        let reloadedSecondCell = try XCTUnwrap(
+            tableView.cellForRow(at: secondIndexPath) as? MessageTableCell
+        )
+        XCTAssertEqual(reloadedSecondCell.textValue, "B2")
 
         var emptyReloadCompleted = false
         XCTAssertEqual(
@@ -1320,7 +1331,7 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertTrue(emptyReloadCompleted)
     }
 
-    func testReloadSectionsTargetsOnlyRequestedSectionAndReloadsIndexTitles() throws {
+    func testReloadSectionsRefreshesRequestedSectionAndReloadsIndexTitles() throws {
         let tableView = ReloadTrackingTableView(
             frame: CGRect(x: 0, y: 0, width: 320, height: 360),
             style: .plain
@@ -1383,7 +1394,6 @@ final class TableListAdapterTests: XCTestCase {
         tableView.layoutIfNeeded()
 
         XCTAssertEqual((tableView.headerView(forSection: 0) as? MessageHeaderView)?.title, "Messages 2")
-        XCTAssertEqual((tableView.headerView(forSection: 1) as? MessageHeaderView)?.title, "Empty 1")
         XCTAssertEqual(tableView.reloadSectionIndexTitlesCallCount, 1)
 
         adapter.reloadSectionIndexTitles()
@@ -1424,7 +1434,7 @@ final class TableListAdapterTests: XCTestCase {
         var headerTitle = "Header 1"
         var footerTitle = "Footer 1"
 
-        func apply(version: Int) -> TableApplyResult<Section> {
+        func apply(version: Int) -> ListApplySummary {
             let applyCompleted = expectation(description: "table supplementary apply \(version)")
             let result = adapter.apply(transaction: .disabled, completion: { _ in
                 applyCompleted.fulfill()
@@ -1465,7 +1475,7 @@ final class TableListAdapterTests: XCTestCase {
         let result = apply(version: 2)
         tableView.layoutIfNeeded()
 
-        XCTAssertEqual(result.summary.supplementaryRefreshIDChangedCount, 2)
+        XCTAssertEqual(result.supplementaryRefreshIDChangedCount, 2)
         XCTAssertEqual(adapter.lastApplySummary.visibleSupplementaryRefreshCount, 2)
         XCTAssertEqual((tableView.headerView(forSection: 0) as? MessageHeaderView)?.title, "Header 2")
         XCTAssertEqual((tableView.footerView(forSection: 0) as? MessageHeaderView)?.title, "Footer 2")

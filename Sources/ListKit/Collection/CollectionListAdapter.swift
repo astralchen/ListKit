@@ -53,7 +53,9 @@ where SectionID: Hashable & Sendable {
 
     /// 最近一次 `apply` 的摘要。
     ///
-    /// DEBUG 下 ListKit 也会输出同一份 summary，便于定位 diff、refreshID 和可见刷新问题。
+    /// 同步 `apply` 提交后会先更新为 `.submitted` 摘要；snapshot、可见刷新、layout
+    /// 和滚动处理完成后，会再次更新为最终摘要。DEBUG 下 ListKit 也会输出同一份
+    /// summary，便于定位 diff、refreshID 和可见刷新问题。
     public private(set) var lastApplySummary = ListApplySummary()
     /// 最近一次 compositional layout provider/helper 产生的 diagnostics。
     public private(set) var lastLayoutDiagnostics: [ListDiagnosticsIssue] = []
@@ -165,8 +167,17 @@ where SectionID: Hashable & Sendable {
         options: ListApplyOptions,
         completion: ((ListApplySummary) -> Void)? = nil,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
-    ) -> ListApplyResult<SectionID> {
+    ) -> ListApplySummary {
         _apply(options: options, completion: completion, content)
+    }
+
+    /// 提交一次列表更新，并立即返回提交摘要。
+    @discardableResult
+    public func apply(
+        options: ListApplyOptions,
+        @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
+    ) -> ListApplySummary {
+        _apply(options: options, completion: nil, content)
     }
 
     /// 以 SwiftUI 风格的 transaction 提交更新。
@@ -175,12 +186,21 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction = .automatic,
         completion: ((ListApplySummary) -> Void)? = nil,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
-    ) -> ListApplyResult<SectionID> {
+    ) -> ListApplySummary {
         apply(
             options: ListApplyOptions(transaction: transaction),
             completion: completion,
             content
         )
+    }
+
+    /// 以 SwiftUI 风格的 transaction 提交更新，并立即返回提交摘要。
+    @discardableResult
+    public func apply(
+        transaction: ListTransaction = .automatic,
+        @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
+    ) -> ListApplySummary {
+        _apply(options: ListApplyOptions(transaction: transaction), completion: nil, content)
     }
 
     /// 提交已经构建好的 section 数组。
@@ -189,7 +209,7 @@ where SectionID: Hashable & Sendable {
         _ sections: [ListSection<SectionID>],
         options: ListApplyOptions,
         completion: ((ListApplySummary) -> Void)? = nil
-    ) -> ListApplyResult<SectionID> {
+    ) -> ListApplySummary {
         apply(options: options, completion: completion) { sections }
     }
 
@@ -199,7 +219,7 @@ where SectionID: Hashable & Sendable {
         _ sections: [ListSection<SectionID>],
         transaction: ListTransaction = .automatic,
         completion: ((ListApplySummary) -> Void)? = nil
-    ) -> ListApplyResult<SectionID> {
+    ) -> ListApplySummary {
         apply(
             sections,
             options: ListApplyOptions(transaction: transaction),
@@ -220,7 +240,7 @@ where SectionID: Hashable & Sendable {
     public func reloadAll(
         transaction: ListTransaction = .automatic,
         transition: ListContentTransition = .opacity
-    ) -> ListApplyResult<SectionID> {
+    ) -> ListApplySummary {
         _reloadAll(
             transaction: transaction,
             transition: transition,
@@ -234,7 +254,7 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction = .automatic,
         transition: ListContentTransition = .opacity,
         completion: @escaping (ListApplySummary) -> Void
-    ) -> ListApplyResult<SectionID> {
+    ) -> ListApplySummary {
         _reloadAll(
             transaction: transaction,
             transition: transition,
@@ -246,7 +266,7 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction,
         transition: ListContentTransition,
         completion: ((ListApplySummary) -> Void)?
-    ) -> ListApplyResult<SectionID> {
+    ) -> ListApplySummary {
         let request = ListReloadAllRequest(
             transaction: transaction,
             transition: transition,
@@ -270,7 +290,7 @@ where SectionID: Hashable & Sendable {
             performReloadAll(request)
         }
 
-        return ListApplyResult(adapter: self, summary: summary)
+        return summary
     }
 
     /// 强制刷新当前已提交列表，并等待内容过渡和布局完成。
@@ -278,18 +298,15 @@ where SectionID: Hashable & Sendable {
     public func reloadAll(
         transaction: ListTransaction = .automatic,
         transition: ListContentTransition = .opacity
-    ) async -> ListApplyResult<SectionID> {
+    ) async -> ListApplySummary {
         if Task.isCancelled {
             let resolved = transaction.resolved(
                 reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
             )
-            return ListApplyResult(
-                adapter: self,
-                summary: ListApplySummary(
-                    animation: ListAnimationSummary(
-                        completionState: .cancelledBeforeCommit,
-                        reduceMotionApplied: resolved.reduceMotionApplied
-                    )
+            return ListApplySummary(
+                animation: ListAnimationSummary(
+                    completionState: .cancelledBeforeCommit,
+                    reduceMotionApplied: resolved.reduceMotionApplied
                 )
             )
         }
@@ -299,7 +316,7 @@ where SectionID: Hashable & Sendable {
                 transaction: transaction,
                 transition: transition
             ) { [weak self] summary in
-                continuation.resume(returning: ListApplyResult(adapter: self, summary: summary))
+                continuation.resume(returning: summary)
             }
         }
     }
@@ -394,7 +411,7 @@ where SectionID: Hashable & Sendable {
         options: ListApplyOptions,
         completion: ((ListApplySummary) -> Void)?,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
-    ) -> ListApplyResult<SectionID> {
+    ) -> ListApplySummary {
         let newSections = content()
         let resolvedTransaction = options.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
@@ -417,7 +434,7 @@ where SectionID: Hashable & Sendable {
                 _ = self._apply(options: options, completion: completion) { newSections }
             }
             deferredApply.schedule()
-            return ListApplyResult(adapter: self, summary: deferredSummary)
+            return deferredSummary
         }
 
         let newLayoutSignature = Self.makeLayoutSignature(from: newSections)
@@ -452,7 +469,7 @@ where SectionID: Hashable & Sendable {
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options)
             completion?(summary)
-            return ListApplyResult(adapter: self, summary: summary)
+            return summary
         }
 
         let visibleAnchor: ListVisibleRowAnchor?
@@ -635,7 +652,7 @@ where SectionID: Hashable & Sendable {
             }
         }
 
-        return ListApplyResult(adapter: self, summary: summary)
+        return summary
     }
 
     private func makeReloadAllPlan(transaction: ListTransaction) -> ListApplyPlan {
@@ -1016,10 +1033,10 @@ where SectionID: Hashable & Sendable {
 
     /// 重建描述树并等待 snapshot、outline、layout 和内容过渡完成。
     @discardableResult
-    public func applyAndWait(
+    public func apply(
         options: ListApplyOptions,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
-    ) async -> ListApplyResult<SectionID> {
+    ) async -> ListApplySummary {
         let builtSections = content()
         let usesSerialScheduling = options.transaction.updatePolicy == .serial
         if usesSerialScheduling {
@@ -1030,20 +1047,17 @@ where SectionID: Hashable & Sendable {
             let resolved = options.transaction.resolved(
                 reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
             )
-            return ListApplyResult(
-                adapter: self,
-                summary: ListApplySummary(
-                    animation: ListAnimationSummary(
-                        completionState: .cancelledBeforeCommit,
-                        reduceMotionApplied: resolved.reduceMotionApplied
-                    )
+            return ListApplySummary(
+                animation: ListAnimationSummary(
+                    completionState: .cancelledBeforeCommit,
+                    reduceMotionApplied: resolved.reduceMotionApplied
                 )
             )
         }
 
         let result = await withCheckedContinuation { continuation in
             _ = _apply(options: options, completion: { [weak self] summary in
-                continuation.resume(returning: ListApplyResult(adapter: self, summary: summary))
+                continuation.resume(returning: summary)
             }) {
                 builtSections
             }
@@ -1056,17 +1070,17 @@ where SectionID: Hashable & Sendable {
 
     /// 提交 transaction，并等待 snapshot、outline、layout 和内容过渡完成。
     @discardableResult
-    public func applyAndWait(
+    public func apply(
         transaction: ListTransaction = .automatic,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
-    ) async -> ListApplyResult<SectionID> {
-        await applyAndWait(options: ListApplyOptions(transaction: transaction), content)
+    ) async -> ListApplySummary {
+        await apply(options: ListApplyOptions(transaction: transaction), content)
     }
 
     /// 绑定自定义业务事件。
     ///
     /// 事件可以从 row、header 或 footer 的 configure 闭包中通过 `context.send(...)`
-    /// 发出，再由页面在 adapter 或 apply result 上集中处理。
+    /// 发出，再由页面在 adapter 上集中处理。
     /// - Parameters:
     ///   - eventType: 要接收的事件类型。
     ///   - handler: 主线程回调的事件处理闭包。
@@ -2811,41 +2825,6 @@ where SectionID: Hashable & Sendable {
     }
 }
 
-/// 一次 `apply` 调用的返回值。
-///
-/// - Usage:
-/// ```swift
-/// let result = adapter.apply {
-///     ListSection(.users) { ... }
-/// }
-/// .onEvent(UserListEvent.self) { event, context in
-///     router.handle(event, from: context.indexPath)
-/// }
-///
-/// print(result.summary.visibleRefreshCount)
-/// ```
-/// - Note: 返回值可以读取本次 apply 的 summary，也可以链式绑定事件处理。
-@MainActor
-public struct ListApplyResult<SectionID> where SectionID: Hashable & Sendable {
-    fileprivate weak var adapter: CollectionListAdapter<SectionID>?
-    public let summary: ListApplySummary
-
-    /// 在本次 apply 关联的 adapter 上绑定业务事件。
-    ///
-    /// - Parameters:
-    ///   - eventType: 要接收的事件类型。
-    ///   - handler: 主线程回调的事件处理闭包。
-    /// - Returns: 原始 `ListApplyResult`，便于继续链式调用。
-    @discardableResult
-    public func onEvent<Event>(
-        _ eventType: Event.Type = Event.self,
-        handler: @escaping @MainActor (Event, ListContext) -> Void
-    ) -> Self where Event: ListEvent {
-        adapter?.onEvent(eventType, handler: handler)
-        return self
-    }
-}
-
 private struct SupplementaryKey: Hashable {
     let kind: String
     let sectionID: AnyListID
@@ -2916,9 +2895,11 @@ private struct ListOutlineSnapshotApplication: Sendable {
     let animatingDifferences: Bool
 }
 
+/// UIKit/Dispatch completion 可能从非主队列触发；这个私有盒子只负责把回调重新排到 MainActor 执行。
 private final class ListMainActorCallbackBox: @unchecked Sendable {
     private let callback: () -> Void
 
+    @MainActor
     init(_ callback: @escaping () -> Void) {
         self.callback = callback
     }
@@ -2939,7 +2920,9 @@ private final class ListMainActorCallbackBox: @unchecked Sendable {
 private final class ListUnsafeForwardingTarget: @unchecked Sendable {
     let value: AnyObject?
 
+    @MainActor
     init(_ value: AnyObject?) {
+        MainActor.preconditionIsolated()
         self.value = value
     }
 }

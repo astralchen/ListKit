@@ -284,25 +284,42 @@ public struct ListApplyOptions: Sendable {
 
 // MARK: - Apply Diagnostics
 
-/// async apply 的最终状态。
+/// 一次 apply summary 的提交/完成状态。
 public enum ListApplyCompletionState: Equatable, Sendable {
+    /// 同步 `apply` 已提交更新请求，但 snapshot、可见刷新、layout 或滚动处理尚未全部完成。
     case submitted
+    /// ListKit 已完成本次 apply 负责的 snapshot、可见刷新、layout、滚动和内容过渡处理。
     case completed
+    /// 本次 apply 被之后的 `.coalesceLatest` apply 取代。
     case superseded
+    /// async 任务在提交更新前已经取消。
     case cancelledBeforeCommit
 }
 
-/// 本次 apply 实际执行的动画诊断。
+/// ListKit 在本次 apply 中调度和观测到的动画、布局与滚动摘要。
+///
+/// 这些值用于 diagnostics、日志和测试断言；它们描述 ListKit 请求或完成的操作，
+/// 不承诺等同 UIKit 内部动画事务的逐帧状态。
 public struct ListAnimationSummary: Equatable, Sendable {
+    /// 本次 apply summary 对应的提交/完成状态。
     public let completionState: ListApplyCompletionState
+    /// ListKit 是否按 transaction 和 snapshot 变化请求了 diffable snapshot 动画。
     public let snapshotAnimated: Bool
+    /// 请求 snapshot 动画时，ListKit 判断内容发生变化的 Section 数量。
     public let animatedSectionCount: Int
+    /// Collection outline hierarchy 发生变化并请求动画的 Section 数量；Table 始终为 0。
     public let outlineAnimatedSectionCount: Int
+    /// 可见 Row 内容过渡动画数量。
     public let contentTransitionCount: Int
+    /// 本次 apply 是否触发布局失效或重新计算。
     public let layoutInvalidated: Bool
+    /// ListKit 是否请求了布局动画。
     public let layoutAnimated: Bool
+    /// ListKit 是否请求了滚动动画。
     public let scrollAnimated: Bool
+    /// 为保持可见锚点位置而补偿的 content inset/offset 距离。
     public let anchorCompensation: CGFloat
+    /// 是否因为系统 Reduce Motion 设置关闭了动画。
     public let reduceMotionApplied: Bool
 
     public init(
@@ -330,7 +347,13 @@ public struct ListAnimationSummary: Equatable, Sendable {
     }
 }
 
-/// apply 后的摘要，DEBUG 日志和测试都复用这份数据。
+/// ListKit 对一次 apply 的观测摘要。
+///
+/// 同步 `apply` 立即返回的 summary 描述本次提交计划，`animation.completionState`
+/// 通常为 `.submitted`。completion、async `apply` 和完成后的 `lastApplySummary`
+/// 返回最终状态，才包含实际执行的可见刷新、layout、滚动和内容过渡统计。
+///
+/// 这些字段用于 diagnostics、日志、性能观察和测试断言；不应作为业务数据状态的唯一来源。
 public struct ListApplySummary: Equatable, Sendable {
     /// 新插入的 Section 数量。
     public let insertedSectionCount: Int
@@ -341,19 +364,30 @@ public struct ListApplySummary: Equatable, Sendable {
     /// 新旧 snapshot 中都存在的 Section 数量。
     public let keptSectionCount: Int
     /// 新插入的 Row 数量。
-    public let insertedCount: Int
+    public let insertedRowCount: Int
     /// 被删除的 Row 数量。
-    public let deletedCount: Int
-    /// 在同一 Section 内发生移动的 Row 数量。
-    public let movedCount: Int
+    public let deletedRowCount: Int
+    /// 在同一 Section 内发生移动的 Row 数量；跨 Section 迁移按删除 + 插入统计。
+    public let movedRowCount: Int
     /// 新旧 snapshot 中都存在的 Row 数量。
-    public let keptCount: Int
+    public let keptRowCount: Int
+    /// 新旧 snapshot 中都存在、且 `refreshID` 发生变化的 Row 数量。
     public let refreshIDChangedCount: Int
+    /// 按当前 refresh strategy 被标记为 diffable reload/reconfigure 的 Row 数量。
     public let snapshotRefreshCount: Int
+    /// 最终阶段实际重新配置的可见 Row 数量；同步 `apply` 初始 summary 通常为 0。
     public let visibleRefreshCount: Int
+    /// 新旧 snapshot 中都存在、且 `refreshID` 发生变化的 supplementary 数量。
+    ///
+    /// Collection supplementary view，以及 Table header/footer，都会按 supplementary 统计。
     public let supplementaryRefreshIDChangedCount: Int
+    /// 最终阶段实际重新配置的可见 supplementary 数量；同步 `apply` 初始 summary 通常为 0。
+    ///
+    /// Collection supplementary view，以及 Table header/footer，都会按 supplementary 统计。
     public let visibleSupplementaryRefreshCount: Int
+    /// 本次 apply 在 diffable 提交前发现的 diagnostics 问题。
     public let diagnosticsIssues: [ListDiagnosticsIssue]
+    /// 本次 apply 的提交/完成与动画观测摘要。
     public let animation: ListAnimationSummary
 
     public init(
@@ -361,10 +395,10 @@ public struct ListApplySummary: Equatable, Sendable {
         deletedSectionCount: Int = 0,
         movedSectionCount: Int = 0,
         keptSectionCount: Int = 0,
-        insertedCount: Int = 0,
-        deletedCount: Int = 0,
-        movedCount: Int = 0,
-        keptCount: Int = 0,
+        insertedRowCount: Int = 0,
+        deletedRowCount: Int = 0,
+        movedRowCount: Int = 0,
+        keptRowCount: Int = 0,
         refreshIDChangedCount: Int = 0,
         snapshotRefreshCount: Int = 0,
         visibleRefreshCount: Int = 0,
@@ -377,10 +411,10 @@ public struct ListApplySummary: Equatable, Sendable {
         self.deletedSectionCount = deletedSectionCount
         self.movedSectionCount = movedSectionCount
         self.keptSectionCount = keptSectionCount
-        self.insertedCount = insertedCount
-        self.deletedCount = deletedCount
-        self.movedCount = movedCount
-        self.keptCount = keptCount
+        self.insertedRowCount = insertedRowCount
+        self.deletedRowCount = deletedRowCount
+        self.movedRowCount = movedRowCount
+        self.keptRowCount = keptRowCount
         self.refreshIDChangedCount = refreshIDChangedCount
         self.snapshotRefreshCount = snapshotRefreshCount
         self.visibleRefreshCount = visibleRefreshCount
@@ -398,10 +432,10 @@ extension ListApplySummary {
             deletedSectionCount: deletedSectionCount,
             movedSectionCount: movedSectionCount,
             keptSectionCount: keptSectionCount,
-            insertedCount: insertedCount,
-            deletedCount: deletedCount,
-            movedCount: movedCount,
-            keptCount: keptCount,
+            insertedRowCount: insertedRowCount,
+            deletedRowCount: deletedRowCount,
+            movedRowCount: movedRowCount,
+            keptRowCount: keptRowCount,
             refreshIDChangedCount: refreshIDChangedCount,
             snapshotRefreshCount: snapshotRefreshCount,
             visibleRefreshCount: visibleRefreshCount,

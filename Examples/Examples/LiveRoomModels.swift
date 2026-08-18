@@ -138,10 +138,10 @@ struct ApplyDiagnostics: Hashable, Sendable {
     var deletedSectionCount: Int = 0
     var movedSectionCount: Int = 0
     var keptSectionCount: Int = 0
-    var insertedCount: Int = 0
-    var deletedCount: Int = 0
-    var movedCount: Int = 0
-    var keptCount: Int = 0
+    var insertedRowCount: Int = 0
+    var deletedRowCount: Int = 0
+    var movedRowCount: Int = 0
+    var keptRowCount: Int = 0
     var refreshIDChangedCount: Int = 0
     var visibleRefreshCount: Int = 0
     var contentTransitionCount: Int = 0
@@ -159,10 +159,10 @@ struct ApplyDiagnostics: Hashable, Sendable {
         hasher.combine(deletedSectionCount)
         hasher.combine(movedSectionCount)
         hasher.combine(keptSectionCount)
-        hasher.combine(insertedCount)
-        hasher.combine(deletedCount)
-        hasher.combine(movedCount)
-        hasher.combine(keptCount)
+        hasher.combine(insertedRowCount)
+        hasher.combine(deletedRowCount)
+        hasher.combine(movedRowCount)
+        hasher.combine(keptRowCount)
         hasher.combine(refreshIDChangedCount)
         hasher.combine(visibleRefreshCount)
         hasher.combine(contentTransitionCount)
@@ -175,7 +175,7 @@ struct ApplyDiagnostics: Hashable, Sendable {
     }
 
     var summaryText: String {
-        "c\(collectionApplyCount)/t\(tableApplyCount)  S +\(insertedSectionCount) -\(deletedSectionCount) ↕\(movedSectionCount)  R +\(insertedCount) -\(deletedCount) ↕\(movedCount)"
+        "c\(collectionApplyCount)/t\(tableApplyCount)  S +\(insertedSectionCount) -\(deletedSectionCount) ↕\(movedSectionCount)  R +\(insertedRowCount) -\(deletedRowCount) ↕\(movedRowCount)"
     }
 
     var refreshText: String {

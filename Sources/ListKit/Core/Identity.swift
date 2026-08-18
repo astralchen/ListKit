@@ -5,6 +5,7 @@ import UIKit
 /// ListKit 内部使用的类型擦除 ID。
 ///
 /// - Important: `Int(1)` 和 `String("1")` 不会被误判成同一个 ID。
+/// - Note: `Sendable` 不变量由 initializer 保证，只有 `Hashable & Sendable` 的原始 id 能进入。
 public struct AnyListID: Hashable, CustomStringConvertible, @unchecked Sendable {
     private let value: AnyHashable
     private let valueType: ObjectIdentifier

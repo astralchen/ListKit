@@ -64,6 +64,11 @@
 			path = ExamplesUITests;
 			sourceTree = "<group>";
 		};
+		77D900122FE0100000D96158 /* ListKitTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../Tests/ListKitTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +103,7 @@
 				77D8FF4D2FDFFAA300D96158 /* Launch Screen.storyboard */,
 				77D8FEAB2FDFED7600D96158 /* Examples */,
 				77D8FEC22FDFED7800D96158 /* ExamplesTests */,
+				77D900122FE0100000D96158 /* ListKitTests */,
 				77D8FECC2FDFED7800D96158 /* ExamplesUITests */,
 				77D8FEAA2FDFED7600D96158 /* Products */,
 			);
@@ -154,6 +160,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				77D8FEC22FDFED7800D96158 /* ExamplesTests */,
+				77D900122FE0100000D96158 /* ListKitTests */,
 			);
 			name = ExamplesTests;
 			packageProductDependencies = (

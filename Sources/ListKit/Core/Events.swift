@@ -66,25 +66,6 @@ public struct ListContext {
         self.eventDispatcher = eventDispatcher
     }
 
-    @available(*, deprecated, message: "Pass a stable AnyListIdentity instead of a positional sectionID.")
-    init(
-        sectionID: AnyListID,
-        indexPath: IndexPath,
-        collectionView: UICollectionView,
-        eventDispatcher: @escaping @MainActor (any ListEvent, ListContext) -> Void
-    ) {
-        self.init(
-            identity: AnyListIdentity(
-                sectionID: sectionID,
-                rowID: AnyListID(indexPath.item),
-                presentationID: ObjectIdentifier(LegacyListContextPresentation.self)
-            ),
-            indexPath: indexPath,
-            collectionView: collectionView,
-            eventDispatcher: eventDispatcher
-        )
-    }
-
     /// 向 adapter 发送业务事件。
     ///
     /// - Parameter event: 遵守 `ListEvent` 的业务事件。
@@ -119,5 +100,3 @@ private final class ListCollectionViewReference {
         self.collectionView = collectionView
     }
 }
-
-private final class LegacyListContextPresentation {}

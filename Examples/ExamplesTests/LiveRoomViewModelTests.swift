@@ -31,10 +31,10 @@ struct LiveRoomViewModelTests {
                 deletedSectionCount: 1,
                 movedSectionCount: 1,
                 keptSectionCount: 3,
-                insertedCount: 4,
-                deletedCount: 2,
-                movedCount: 1,
-                keptCount: 8
+                insertedRowCount: 4,
+                deletedRowCount: 2,
+                movedRowCount: 1,
+                keptRowCount: 8
             )
         )
 
@@ -42,8 +42,8 @@ struct LiveRoomViewModelTests {
         #expect(viewModel.diagnostics.deletedSectionCount == 1)
         #expect(viewModel.diagnostics.movedSectionCount == 1)
         #expect(viewModel.diagnostics.keptSectionCount == 3)
-        #expect(viewModel.diagnostics.insertedCount == 4)
-        #expect(viewModel.diagnostics.deletedCount == 2)
+        #expect(viewModel.diagnostics.insertedRowCount == 4)
+        #expect(viewModel.diagnostics.deletedRowCount == 2)
         #expect(viewModel.diagnostics.summaryText.contains("S +2 -1 ↕1"))
         #expect(viewModel.diagnostics.summaryText.contains("R +4 -2 ↕1"))
     }

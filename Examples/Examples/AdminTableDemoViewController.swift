@@ -56,11 +56,11 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
                 transaction: transaction,
                 applicationMode: applicationMode
             )
-            let result = await tableAdapter.applyAndWait(options: options) {
+            let result = await tableAdapter.apply(options: options) {
                 self.viewModel.tableSections
             }
             guard !Task.isCancelled else { return }
-            self.viewModel.recordTableApply(result.summary)
+            self.viewModel.recordTableApply(result)
         }
     }
 

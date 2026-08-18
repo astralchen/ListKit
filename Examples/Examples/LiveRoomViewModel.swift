@@ -267,10 +267,10 @@ final class LiveRoomViewModel {
         state.diagnostics.deletedSectionCount = summary.deletedSectionCount
         state.diagnostics.movedSectionCount = summary.movedSectionCount
         state.diagnostics.keptSectionCount = summary.keptSectionCount
-        state.diagnostics.insertedCount = summary.insertedCount
-        state.diagnostics.deletedCount = summary.deletedCount
-        state.diagnostics.movedCount = summary.movedCount
-        state.diagnostics.keptCount = summary.keptCount
+        state.diagnostics.insertedRowCount = summary.insertedRowCount
+        state.diagnostics.deletedRowCount = summary.deletedRowCount
+        state.diagnostics.movedRowCount = summary.movedRowCount
+        state.diagnostics.keptRowCount = summary.keptRowCount
         state.diagnostics.refreshIDChangedCount = summary.refreshIDChangedCount
         state.diagnostics.visibleRefreshCount = summary.visibleRefreshCount
         state.diagnostics.contentTransitionCount = summary.animation.contentTransitionCount

@@ -65,7 +65,7 @@ final class ListKitCoreTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -89,7 +89,7 @@ final class ListKitCoreTests: XCTestCase {
         let transitionStarted = expectation(description: "first content transition started")
         var didSignalTransition = false
         let firstApply = Task { @MainActor in
-            await adapter.applyAndWait(
+            await adapter.apply(
                 transaction: ListTransaction(animation: .disabled).contentAnimation(.enabled)
             ) {
                 ListSection(0) {
@@ -108,7 +108,7 @@ final class ListKitCoreTests: XCTestCase {
         }
 
         await fulfillment(of: [transitionStarted], timeout: 2)
-        let latestResult = await adapter.applyAndWait(transaction: .disabled) {
+        let latestResult = await adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row("row", model: "C", cell: NormalUserCell.self) { cell, value, _ in
                     cell.name = value
@@ -122,12 +122,12 @@ final class ListKitCoreTests: XCTestCase {
         }
         let supersededResult = await firstApply.value
 
-        XCTAssertEqual(supersededResult.summary.animation.completionState, .superseded)
-        XCTAssertEqual(latestResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(latestResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(supersededResult.animation.completionState, .superseded)
+        XCTAssertEqual(latestResult.animation.completionState, .completed)
+        XCTAssertEqual(latestResult.insertedSectionCount, 1)
         XCTAssertEqual(collectionView.numberOfSections, 2)
         XCTAssertEqual(adapter.sectionIdentifier(at: 1), 1)
-        XCTAssertEqual(adapter.lastApplySummary, latestResult.summary)
+        XCTAssertEqual(adapter.lastApplySummary, latestResult)
     }
 
     func testSerialCollectionApplyCompletesSectionDeletionBeforeReinsertion() async throws {
@@ -146,7 +146,7 @@ final class ListKitCoreTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -173,7 +173,7 @@ final class ListKitCoreTests: XCTestCase {
             .contentAnimation(.enabled)
             .updatePolicy(.serial)
         let deletionApply = Task { @MainActor in
-            await adapter.applyAndWait(transaction: serialTransaction) {
+            await adapter.apply(transaction: serialTransaction) {
                 ListSection(0) {
                     Row("row", model: "B", cell: NormalUserCell.self) { cell, value, _ in
                         cell.name = value
@@ -191,7 +191,7 @@ final class ListKitCoreTests: XCTestCase {
 
         await fulfillment(of: [transitionStarted], timeout: 2)
         let reinsertionApply = Task { @MainActor in
-            await adapter.applyAndWait(
+            await adapter.apply(
                 transaction: ListTransaction.disabled.updatePolicy(.serial)
             ) {
                 ListSection(0) {
@@ -210,10 +210,10 @@ final class ListKitCoreTests: XCTestCase {
         let deletionResult = await deletionApply.value
         let reinsertionResult = await reinsertionApply.value
 
-        XCTAssertEqual(deletionResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(deletionResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(reinsertionResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(reinsertionResult.summary.insertedSectionCount, 1)
+        XCTAssertEqual(deletionResult.animation.completionState, .completed)
+        XCTAssertEqual(deletionResult.deletedSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.animation.completionState, .completed)
+        XCTAssertEqual(reinsertionResult.insertedSectionCount, 1)
         XCTAssertEqual(collectionView.numberOfSections, 2)
         XCTAssertEqual(adapter.sectionIdentifier(at: 1), 1)
     }
@@ -234,7 +234,7 @@ final class ListKitCoreTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -250,7 +250,7 @@ final class ListKitCoreTests: XCTestCase {
             collectionView.cellForItem(at: IndexPath(item: 0, section: 0)) as? NormalUserCell
         )
 
-        let result = await adapter.applyAndWait(
+        let result = await adapter.apply(
             options: .init(transaction: .disabled, refreshStrategy: .visibleOnly)
         ) {
             ListSection(0) {
@@ -262,9 +262,9 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(result.summary.refreshIDChangedCount, 1)
-        XCTAssertEqual(result.summary.snapshotRefreshCount, 0)
-        XCTAssertEqual(result.summary.visibleRefreshCount, 1)
+        XCTAssertEqual(result.refreshIDChangedCount, 1)
+        XCTAssertEqual(result.snapshotRefreshCount, 0)
+        XCTAssertEqual(result.visibleRefreshCount, 1)
         XCTAssertEqual(cell.name, "B")
     }
 
@@ -284,7 +284,7 @@ final class ListKitCoreTests: XCTestCase {
 
         var rowText = "English"
         var headerText = "People"
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -332,7 +332,7 @@ final class ListKitCoreTests: XCTestCase {
             reloadCompleted.fulfill()
         }
 
-        XCTAssertEqual(submittedResult.summary.animation.completionState, .submitted)
+        XCTAssertEqual(submittedResult.animation.completionState, .submitted)
         await fulfillment(of: [reloadCompleted], timeout: 2)
         collectionView.layoutIfNeeded()
 
@@ -371,7 +371,7 @@ final class ListKitCoreTests: XCTestCase {
 
         var rowText = "Initial row"
         var headerText = "Initial header"
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -480,7 +480,7 @@ final class ListKitCoreTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -520,8 +520,8 @@ final class ListKitCoreTests: XCTestCase {
         )
         collectionView.layoutIfNeeded()
 
-        XCTAssertEqual(result.summary.animation.completionState, .completed)
-        XCTAssertTrue(result.summary.animation.layoutInvalidated)
+        XCTAssertEqual(result.animation.completionState, .completed)
+        XCTAssertTrue(result.animation.layoutInvalidated)
         XCTAssertEqual(adapter.itemIdentity(at: childIndexPath), childIdentity)
         XCTAssertNotNil(collectionView.cellForItem(at: childIndexPath))
     }
@@ -533,7 +533,7 @@ final class ListKitCoreTests: XCTestCase {
         )
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(10) {
@@ -551,7 +551,7 @@ final class ListKitCoreTests: XCTestCase {
             adapter.itemIdentity(at: IndexPath(item: 0, section: 1))
         )
 
-        let deletionResult = await adapter.applyAndWait(transaction: .disabled) {
+        let deletionResult = await adapter.apply(transaction: .disabled) {
             ListSection(10) {
                 Row("kept", model: "Kept", cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
@@ -559,12 +559,12 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(deletionResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(deletionResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(deletionResult.summary.keptSectionCount, 1)
-        XCTAssertEqual(deletionResult.summary.deletedCount, 1)
-        XCTAssertEqual(deletionResult.summary.keptCount, 1)
-        XCTAssertEqual(deletionResult.summary.refreshIDChangedCount, 0)
+        XCTAssertEqual(deletionResult.animation.completionState, .completed)
+        XCTAssertEqual(deletionResult.deletedSectionCount, 1)
+        XCTAssertEqual(deletionResult.keptSectionCount, 1)
+        XCTAssertEqual(deletionResult.deletedRowCount, 1)
+        XCTAssertEqual(deletionResult.keptRowCount, 1)
+        XCTAssertEqual(deletionResult.refreshIDChangedCount, 0)
         XCTAssertEqual(collectionView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 10)
         XCTAssertNil(adapter.sectionIdentifier(at: 1))
@@ -573,7 +573,7 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(adapter.indexPaths(forRowID: "removed", in: 20).isEmpty)
         XCTAssertFalse(adapter.contains(removedIdentity))
 
-        let reinsertionResult = await adapter.applyAndWait(transaction: .disabled) {
+        let reinsertionResult = await adapter.apply(transaction: .disabled) {
             ListSection(10) {
                 Row("kept", model: "Kept", cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
@@ -586,11 +586,11 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(reinsertionResult.summary.animation.completionState, .completed)
-        XCTAssertEqual(reinsertionResult.summary.insertedSectionCount, 1)
-        XCTAssertEqual(reinsertionResult.summary.keptSectionCount, 1)
-        XCTAssertEqual(reinsertionResult.summary.insertedCount, 1)
-        XCTAssertEqual(reinsertionResult.summary.refreshIDChangedCount, 0)
+        XCTAssertEqual(reinsertionResult.animation.completionState, .completed)
+        XCTAssertEqual(reinsertionResult.insertedSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.keptSectionCount, 1)
+        XCTAssertEqual(reinsertionResult.insertedRowCount, 1)
+        XCTAssertEqual(reinsertionResult.refreshIDChangedCount, 0)
         XCTAssertEqual(collectionView.numberOfSections, 2)
         XCTAssertEqual(adapter.sectionIndex(for: 20), 1)
         XCTAssertEqual(
@@ -606,43 +606,43 @@ final class ListKitCoreTests: XCTestCase {
         )
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {}
             ListSection(1) {}
         }
 
-        let reorderResult = await adapter.applyAndWait(
+        let reorderResult = await adapter.apply(
             transaction: ListTransaction(animation: .enabled)
         ) {
             ListSection(1) {}
             ListSection(0) {}
         }
 
-        XCTAssertEqual(reorderResult.summary.movedSectionCount, 1)
-        XCTAssertEqual(reorderResult.summary.movedCount, 0)
-        XCTAssertTrue(reorderResult.summary.animation.snapshotAnimated)
-        XCTAssertEqual(reorderResult.summary.animation.animatedSectionCount, 1)
+        XCTAssertEqual(reorderResult.movedSectionCount, 1)
+        XCTAssertEqual(reorderResult.movedRowCount, 0)
+        XCTAssertTrue(reorderResult.animation.snapshotAnimated)
+        XCTAssertEqual(reorderResult.animation.animatedSectionCount, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 1), 0)
 
-        let deleteLeadingResult = await adapter.applyAndWait(
+        let deleteLeadingResult = await adapter.apply(
             transaction: ListTransaction(animation: .enabled)
         ) {
             ListSection(0) {}
         }
 
-        XCTAssertEqual(deleteLeadingResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(deleteLeadingResult.summary.deletedCount, 0)
-        XCTAssertTrue(deleteLeadingResult.summary.animation.snapshotAnimated)
-        XCTAssertEqual(deleteLeadingResult.summary.animation.animatedSectionCount, 1)
-        XCTAssertTrue(deleteLeadingResult.summary.animation.layoutInvalidated)
+        XCTAssertEqual(deleteLeadingResult.deletedSectionCount, 1)
+        XCTAssertEqual(deleteLeadingResult.deletedRowCount, 0)
+        XCTAssertTrue(deleteLeadingResult.animation.snapshotAnimated)
+        XCTAssertEqual(deleteLeadingResult.animation.animatedSectionCount, 1)
+        XCTAssertTrue(deleteLeadingResult.animation.layoutInvalidated)
         XCTAssertEqual(collectionView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 0)
 
         let noSections: [ListSection<Int>] = []
-        let deleteAllResult = await adapter.applyAndWait(
+        let deleteAllResult = await adapter.apply(
             options: .init(
                 transaction: ListTransaction(animation: .enabled),
                 applicationMode: .reloadData
@@ -651,10 +651,10 @@ final class ListKitCoreTests: XCTestCase {
             noSections
         }
 
-        XCTAssertEqual(deleteAllResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(deleteAllResult.summary.deletedCount, 0)
-        XCTAssertFalse(deleteAllResult.summary.animation.snapshotAnimated)
-        XCTAssertEqual(deleteAllResult.summary.animation.animatedSectionCount, 0)
+        XCTAssertEqual(deleteAllResult.deletedSectionCount, 1)
+        XCTAssertEqual(deleteAllResult.deletedRowCount, 0)
+        XCTAssertFalse(deleteAllResult.animation.snapshotAnimated)
+        XCTAssertEqual(deleteAllResult.animation.animatedSectionCount, 0)
         XCTAssertEqual(collectionView.numberOfSections, 0)
     }
 
@@ -665,7 +665,7 @@ final class ListKitCoreTests: XCTestCase {
         )
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -679,16 +679,16 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        let result = await adapter.applyAndWait(transaction: .disabled) {
+        let result = await adapter.apply(transaction: .disabled) {
             ListSection(2) {
                 Row("two", model: "Two", cell: NormalUserCell.self) { _, _, _ in }
             }
         }
 
-        XCTAssertEqual(result.summary.deletedSectionCount, 2)
-        XCTAssertEqual(result.summary.keptSectionCount, 1)
-        XCTAssertEqual(result.summary.deletedCount, 2)
-        XCTAssertEqual(result.summary.keptCount, 1)
+        XCTAssertEqual(result.deletedSectionCount, 2)
+        XCTAssertEqual(result.keptSectionCount, 1)
+        XCTAssertEqual(result.deletedRowCount, 2)
+        XCTAssertEqual(result.keptRowCount, 1)
         XCTAssertEqual(collectionView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 2)
         XCTAssertEqual(adapter.indexPaths(forRowID: "two", in: 2), [IndexPath(item: 0, section: 0)])
@@ -712,7 +712,7 @@ final class ListKitCoreTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -729,7 +729,7 @@ final class ListKitCoreTests: XCTestCase {
         collectionView.selectItem(at: IndexPath(item: 0, section: 1), animated: false, scrollPosition: [])
         let selectedIdentity = try XCTUnwrap(adapter.itemIdentity(at: IndexPath(item: 0, section: 1)))
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             ListSection(1) {
                 Row("selected", model: "Selected", cell: NormalUserCell.self) { _, _, _ in }
                     .focusable()
@@ -743,7 +743,7 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(adapter.collectionView(collectionView, canFocusItemAt: shiftedIndexPath))
 
         let noSections: [ListSection<Int>] = []
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             noSections
         }
 
@@ -769,7 +769,7 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             section(0, rows: 0..<3)
@@ -791,7 +791,7 @@ final class ListKitCoreTests: XCTestCase {
         collectionView.layoutIfNeeded()
         let initialViewportY = initialAttributes.frame.minY - collectionView.contentOffset.y
 
-        let preserveResult = await adapter.applyAndWait(
+        let preserveResult = await adapter.apply(
             transaction: ListTransaction.disabled.scrollBehavior(
                 .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 2))
             )
@@ -813,10 +813,10 @@ final class ListKitCoreTests: XCTestCase {
             initialViewportY,
             accuracy: 0.5
         )
-        XCTAssertEqual(preserveResult.summary.animation.anchorCompensation, 0, accuracy: 0.5)
+        XCTAssertEqual(preserveResult.animation.anchorCompensation, 0, accuracy: 0.5)
         XCTAssertEqual(collectionView.contentInset.bottom, 0, accuracy: 0.5)
 
-        let removeAnchorResult = await adapter.applyAndWait(
+        let removeAnchorResult = await adapter.apply(
             transaction: ListTransaction.disabled.scrollBehavior(
                 .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 2))
             )
@@ -824,8 +824,8 @@ final class ListKitCoreTests: XCTestCase {
             section(1, rows: 0..<6)
         }
 
-        XCTAssertEqual(removeAnchorResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(removeAnchorResult.summary.animation.anchorCompensation, 0, accuracy: 0.5)
+        XCTAssertEqual(removeAnchorResult.deletedSectionCount, 1)
+        XCTAssertEqual(removeAnchorResult.animation.anchorCompensation, 0, accuracy: 0.5)
         XCTAssertEqual(collectionView.contentInset.bottom, 0, accuracy: 0.5)
         XCTAssertTrue(adapter.indexPaths(forRowID: "anchor", in: 2).isEmpty)
     }
@@ -865,7 +865,7 @@ final class ListKitCoreTests: XCTestCase {
             )
         }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -874,7 +874,7 @@ final class ListKitCoreTests: XCTestCase {
             outlineSection(headerVersion: 1)
         }
 
-        let deleteResult = await adapter.applyAndWait(
+        let deleteResult = await adapter.apply(
             transaction: ListTransaction(animation: .enabled)
         ) {
             ListSection(0) {
@@ -882,13 +882,13 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(deleteResult.summary.deletedSectionCount, 1)
-        XCTAssertEqual(deleteResult.summary.deletedCount, 2)
-        XCTAssertEqual(deleteResult.summary.animation.outlineAnimatedSectionCount, 0)
-        XCTAssertTrue(deleteResult.summary.animation.layoutInvalidated)
+        XCTAssertEqual(deleteResult.deletedSectionCount, 1)
+        XCTAssertEqual(deleteResult.deletedRowCount, 2)
+        XCTAssertEqual(deleteResult.animation.outlineAnimatedSectionCount, 0)
+        XCTAssertTrue(deleteResult.animation.layoutInvalidated)
         XCTAssertEqual(collectionView.numberOfSections, 1)
 
-        let reinsertResult = await adapter.applyAndWait(
+        let reinsertResult = await adapter.apply(
             transaction: ListTransaction(animation: .enabled)
         ) {
             ListSection(0) {
@@ -897,11 +897,11 @@ final class ListKitCoreTests: XCTestCase {
             outlineSection(headerVersion: 2)
         }
 
-        XCTAssertEqual(reinsertResult.summary.insertedSectionCount, 1)
-        XCTAssertEqual(reinsertResult.summary.insertedCount, 2)
-        XCTAssertEqual(reinsertResult.summary.supplementaryRefreshIDChangedCount, 0)
-        XCTAssertEqual(reinsertResult.summary.animation.outlineAnimatedSectionCount, 1)
-        XCTAssertTrue(reinsertResult.summary.animation.layoutInvalidated)
+        XCTAssertEqual(reinsertResult.insertedSectionCount, 1)
+        XCTAssertEqual(reinsertResult.insertedRowCount, 2)
+        XCTAssertEqual(reinsertResult.supplementaryRefreshIDChangedCount, 0)
+        XCTAssertEqual(reinsertResult.animation.outlineAnimatedSectionCount, 1)
+        XCTAssertTrue(reinsertResult.animation.layoutInvalidated)
         XCTAssertEqual(adapter.indexPaths(forRowID: "parent", in: 1), [IndexPath(item: 0, section: 1)])
         XCTAssertEqual(adapter.indexPaths(forRowID: "child", in: 1), [IndexPath(item: 1, section: 1)])
     }
@@ -916,7 +916,7 @@ final class ListKitCoreTests: XCTestCase {
             diagnosticsIssues: []
         )
 
-        XCTAssertEqual(plan.initialSummary.movedCount, 1)
+        XCTAssertEqual(plan.initialSummary.movedRowCount, 1)
         XCTAssertEqual(plan.initialSummary.movedSectionCount, 0)
         XCTAssertEqual(plan.initialSummary.keptSectionCount, 1)
         XCTAssertEqual(plan.changedSectionCount, 1)
@@ -940,8 +940,8 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(insertionAndDeletion.initialSummary.deletedSectionCount, 1)
         XCTAssertEqual(insertionAndDeletion.initialSummary.movedSectionCount, 0)
         XCTAssertEqual(insertionAndDeletion.initialSummary.keptSectionCount, 1)
-        XCTAssertEqual(insertionAndDeletion.initialSummary.insertedCount, 0)
-        XCTAssertEqual(insertionAndDeletion.initialSummary.deletedCount, 0)
+        XCTAssertEqual(insertionAndDeletion.initialSummary.insertedRowCount, 0)
+        XCTAssertEqual(insertionAndDeletion.initialSummary.deletedRowCount, 0)
         XCTAssertEqual(insertionAndDeletion.changedSectionCount, 2)
         XCTAssertTrue(insertionAndDeletion.hasSnapshotChanges)
 
@@ -962,7 +962,7 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(reordering.initialSummary.deletedSectionCount, 0)
         XCTAssertEqual(reordering.initialSummary.movedSectionCount, 1)
         XCTAssertEqual(reordering.initialSummary.keptSectionCount, 2)
-        XCTAssertEqual(reordering.initialSummary.movedCount, 0)
+        XCTAssertEqual(reordering.initialSummary.movedRowCount, 0)
         XCTAssertEqual(reordering.changedSectionCount, 1)
         XCTAssertTrue(reordering.hasSnapshotChanges)
     }
@@ -983,9 +983,9 @@ final class ListKitCoreTests: XCTestCase {
             diagnosticsIssues: []
         )
 
-        XCTAssertEqual(plan.initialSummary.insertedCount, 1)
-        XCTAssertEqual(plan.initialSummary.deletedCount, 1)
-        XCTAssertEqual(plan.initialSummary.movedCount, 0)
+        XCTAssertEqual(plan.initialSummary.insertedRowCount, 1)
+        XCTAssertEqual(plan.initialSummary.deletedRowCount, 1)
+        XCTAssertEqual(plan.initialSummary.movedRowCount, 0)
         XCTAssertEqual(plan.initialSummary.movedSectionCount, 0)
         XCTAssertEqual(plan.changedSectionCount, 2)
     }
@@ -999,13 +999,13 @@ final class ListKitCoreTests: XCTestCase {
         )
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        let result = await adapter.applyAndWait(transaction: .disabled) {
+        let result = await adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row("only", model: "Only", cell: NormalUserCell.self) { _, _, _ in }
             }
         }
 
-        XCTAssertEqual(result.summary.animation.anchorCompensation, 0)
+        XCTAssertEqual(result.animation.anchorCompensation, 0)
         XCTAssertEqual(collectionView.contentInset.bottom, 0)
     }
 
@@ -1018,14 +1018,14 @@ final class ListKitCoreTests: XCTestCase {
         )
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row("anchor", model: "Anchor", cell: NormalUserCell.self) { _, _, _ in }
             }
         }
         collectionView.layoutIfNeeded()
 
-        let result = await adapter.applyAndWait(
+        let result = await adapter.apply(
             transaction: ListTransaction.disabled.scrollBehavior(
                 .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 0))
             )
@@ -1036,7 +1036,7 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(result.summary.animation.anchorCompensation, 0)
+        XCTAssertEqual(result.animation.anchorCompensation, 0)
         XCTAssertEqual(collectionView.contentInset.bottom, 0)
     }
 
@@ -1066,7 +1066,7 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             sections(activityCount: 4)
@@ -1082,7 +1082,7 @@ final class ListKitCoreTests: XCTestCase {
         collectionView.layoutIfNeeded()
         let initialViewportY = initialAttributes.frame.minY - collectionView.contentOffset.y
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(
                 transaction: ListTransaction.disabled.scrollBehavior(
                     .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 0))
@@ -1102,7 +1102,7 @@ final class ListKitCoreTests: XCTestCase {
         )
         XCTAssertGreaterThan(collectionView.contentInset.bottom, 0)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(
                 transaction: ListTransaction.disabled.scrollBehavior(
                     .preserveVisiblePosition(of: ListScrollTarget("anchor", in: 0))
@@ -1127,7 +1127,7 @@ final class ListKitCoreTests: XCTestCase {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -1146,7 +1146,7 @@ final class ListKitCoreTests: XCTestCase {
         }
         let initialOutlineAnimationGeneration = adapter.outlineAnimationGeneration
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: ListTransaction(animation: .enabled), applicationMode: .differences)
         ) {
             ListSection(0) {
@@ -1165,7 +1165,7 @@ final class ListKitCoreTests: XCTestCase {
 
         XCTAssertEqual(adapter.outlineAnimationGeneration, initialOutlineAnimationGeneration)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: ListTransaction(animation: .enabled), applicationMode: .differences)
         ) {
             ListSection(0) {
@@ -1423,7 +1423,10 @@ final class ListKitCoreTests: XCTestCase {
         var selectedID: Int?
         var receivedEvent: UserEvent?
 
-        adapter.apply(transaction: .disabled) {
+        adapter.onEvent(UserEvent.self) { event, _ in
+            receivedEvent = event
+        }
+        await adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, context in
                     context.send(UserEvent.avatarTap(userID: 1))
@@ -1433,10 +1436,6 @@ final class ListKitCoreTests: XCTestCase {
                 }
             }
         }
-        .onEvent(UserEvent.self) { event, _ in
-            receivedEvent = event
-        }
-
         adapter.collectionView(collectionView, didSelectItemAt: IndexPath(item: 0, section: 0))
         _ = adapter.collectionView(collectionView, cellForItemAt: IndexPath(item: 0, section: 0))
 
@@ -1563,8 +1562,8 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertTrue(result.summary.diagnosticsIssues.contains { $0.kind == .duplicateSection })
-        XCTAssertEqual(result.summary.animation.completionState, .completed)
+        XCTAssertTrue(result.diagnosticsIssues.contains { $0.kind == .duplicateSection })
+        XCTAssertEqual(result.animation.completionState, .completed)
         XCTAssertEqual(collectionView.numberOfSections, 0)
     }
 
@@ -1592,7 +1591,7 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertTrue(result.summary.diagnosticsIssues.contains { $0.kind == .duplicateSection })
+        XCTAssertTrue(result.diagnosticsIssues.contains { $0.kind == .duplicateSection })
         XCTAssertEqual(collectionView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 9)
         XCTAssertEqual(adapter.rowIdentifier(at: IndexPath(item: 0, section: 0), as: String.self), "valid")
@@ -1624,7 +1623,7 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertTrue(result.summary.diagnosticsIssues.contains { $0.kind == .duplicateSection })
+        XCTAssertTrue(result.diagnosticsIssues.contains { $0.kind == .duplicateSection })
         XCTAssertEqual(tableView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 9)
         XCTAssertEqual(adapter.rowIdentifier(at: IndexPath(row: 0, section: 0), as: String.self), "valid")
@@ -1658,10 +1657,10 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(result.summary.insertedCount, 1)
-        XCTAssertEqual(result.summary.keptCount, 1)
-        XCTAssertEqual(result.summary.refreshIDChangedCount, 1)
-        XCTAssertEqual(result.summary.snapshotRefreshCount, 1)
+        XCTAssertEqual(result.insertedRowCount, 1)
+        XCTAssertEqual(result.keptRowCount, 1)
+        XCTAssertEqual(result.refreshIDChangedCount, 1)
+        XCTAssertEqual(result.snapshotRefreshCount, 1)
 
         let duplicateResult = adapter.apply(
             options: ListApplyOptions(
@@ -1675,7 +1674,7 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertTrue(duplicateResult.summary.diagnosticsIssues.contains { $0.kind == .duplicateRow })
+        XCTAssertTrue(duplicateResult.diagnosticsIssues.contains { $0.kind == .duplicateRow })
     }
 
     func testApplyRefreshShortcutUsesApplyLevelStrategy() {
@@ -1708,10 +1707,10 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(result.summary.keptCount, 1)
-        XCTAssertEqual(result.summary.refreshIDChangedCount, 1)
-        XCTAssertEqual(result.summary.snapshotRefreshCount, 1)
-        XCTAssertEqual(result.summary.visibleRefreshCount, 0)
+        XCTAssertEqual(result.keptRowCount, 1)
+        XCTAssertEqual(result.refreshIDChangedCount, 1)
+        XCTAssertEqual(result.snapshotRefreshCount, 1)
+        XCTAssertEqual(result.visibleRefreshCount, 0)
     }
 
     func testModelAwareRowEventsAndPrefetchReceiveModel() {
@@ -1920,7 +1919,7 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let indexPath = IndexPath(item: 0, section: 0)
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row("controlled", model: "Controlled", cell: NormalUserCell.self) { _, _, _ in }
                     .selected(true)
@@ -1928,7 +1927,7 @@ final class ListKitCoreTests: XCTestCase {
         }
         XCTAssertEqual(collectionView.indexPathsForSelectedItems, [indexPath])
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row("controlled", model: "Controlled", cell: NormalUserCell.self) { _, _, _ in }
                     .selected(false)
@@ -1936,7 +1935,7 @@ final class ListKitCoreTests: XCTestCase {
         }
         XCTAssertTrue(collectionView.indexPathsForSelectedItems?.isEmpty ?? true)
 
-        _ = await adapter.applyAndWait(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row("controlled", model: "Controlled", cell: NormalUserCell.self) { _, _, _ in }
                     .selected(true)
@@ -1993,6 +1992,9 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var receivedEvent: UserEvent?
 
+        adapter.onEvent(UserEvent.self) { event, _ in
+            receivedEvent = event
+        }
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: EventCell.self) { _, _, _ in }
@@ -2003,10 +2005,6 @@ final class ListKitCoreTests: XCTestCase {
                     })
             }
         }
-        .onEvent(UserEvent.self) { event, _ in
-            receivedEvent = event
-        }
-
         let cell = adapter.collectionView(collectionView, cellForItemAt: IndexPath(item: 0, section: 0)) as? EventCell
         cell?.onButtonTap?()
 
@@ -2812,7 +2810,7 @@ final class ListKitCoreTests: XCTestCase {
         var configuredCount = 0
         var badgePrefix = "one"
 
-        func applyBadge(refreshID: Int) -> ListApplyResult<Int> {
+        func applyBadge(refreshID: Int) -> ListApplySummary {
             let applyCompleted = expectation(description: "badge apply \(refreshID)")
             let result = adapter.apply(transaction: .disabled, completion: { _ in
                 applyCompleted.fulfill()
@@ -2858,7 +2856,7 @@ final class ListKitCoreTests: XCTestCase {
         collectionView.layoutIfNeeded()
         let refreshedBadges = visibleBadgeViews(in: collectionView, kind: kind)
 
-        XCTAssertEqual(result.summary.supplementaryRefreshIDChangedCount, 1)
+        XCTAssertEqual(result.supplementaryRefreshIDChangedCount, 1)
         XCTAssertEqual(adapter.lastApplySummary.visibleSupplementaryRefreshCount, initialBadgeCount)
         XCTAssertEqual(configuredCount, countBeforeRefresh + initialBadgeCount)
         XCTAssertEqual(Set(refreshedBadges.map(\.value)), ["two-0", "two-1"])
@@ -2871,7 +2869,7 @@ final class ListKitCoreTests: XCTestCase {
         var configuredCount = 0
         var badgePrefix = "one"
 
-        func applyBadge(refreshID: Int) -> ListApplyResult<Int> {
+        func applyBadge(refreshID: Int) -> ListApplySummary {
             let applyCompleted = expectation(description: "never badge apply \(refreshID)")
             let result = adapter.apply(transaction: .disabled, completion: { _ in
                 applyCompleted.fulfill()
@@ -2917,7 +2915,7 @@ final class ListKitCoreTests: XCTestCase {
         collectionView.layoutIfNeeded()
         let badgesAfterApply = visibleBadgeViews(in: collectionView, kind: kind)
 
-        XCTAssertEqual(result.summary.supplementaryRefreshIDChangedCount, 1)
+        XCTAssertEqual(result.supplementaryRefreshIDChangedCount, 1)
         XCTAssertEqual(adapter.lastApplySummary.visibleSupplementaryRefreshCount, 0)
         XCTAssertEqual(configuredCount, countBeforeRefresh)
         XCTAssertEqual(Set(badgesAfterApply.map(\.value)), ["one-0", "one-1"])
@@ -3104,9 +3102,9 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(plan.shouldApplyDiffable)
         XCTAssertEqual(plan.snapshotRefreshItems, [keptNew.identity])
         XCTAssertTrue(plan.shouldRunVisibleRefresh)
-        XCTAssertEqual(plan.initialSummary.insertedCount, 1)
-        XCTAssertEqual(plan.initialSummary.deletedCount, 1)
-        XCTAssertEqual(plan.initialSummary.keptCount, 1)
+        XCTAssertEqual(plan.initialSummary.insertedRowCount, 1)
+        XCTAssertEqual(plan.initialSummary.deletedRowCount, 1)
+        XCTAssertEqual(plan.initialSummary.keptRowCount, 1)
         XCTAssertEqual(plan.initialSummary.refreshIDChangedCount, 1)
         XCTAssertEqual(plan.initialSummary.snapshotRefreshCount, 1)
         XCTAssertEqual(plan.initialSummary.supplementaryRefreshIDChangedCount, 1)

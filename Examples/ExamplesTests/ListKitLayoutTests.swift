@@ -73,7 +73,7 @@ struct ListKitLayoutTests {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {
@@ -101,7 +101,7 @@ struct ListKitLayoutTests {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var expansionChanges: [Bool] = []
 
-        _ = await adapter.applyAndWait(
+        _ = await adapter.apply(
             options: .init(transaction: .disabled, applicationMode: .reloadData)
         ) {
             ListSection(0) {

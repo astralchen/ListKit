@@ -192,8 +192,8 @@ private enum RowIDSource<ID> {
     case inherited
 }
 
-/// 业务 model 不强制要求 `Sendable`，事件闭包又统一在 MainActor 回调。
-/// 这个盒子只用于消除“把非 Sendable model 捕获到 MainActor 闭包”的误报风险。
+/// 业务 model 不强制要求 `Sendable`；强类型 model 事件只允许在 MainActor 回调中读取。
+/// 这个盒子必须保持私有，不能扩散到公开 Sendable 值或后台执行路径。
 private struct MainActorValueBox<Value>: @unchecked Sendable {
     let value: Value
 }

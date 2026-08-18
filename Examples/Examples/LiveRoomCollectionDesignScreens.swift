@@ -76,12 +76,12 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
                 transaction: transaction,
                 applicationMode: applicationMode
             )
-            let result = await collectionAdapter.applyAndWait(options: options) {
+            let result = await collectionAdapter.apply(options: options) {
                 sections
             }
             guard !Task.isCancelled else { return }
 
-            self.viewModel.recordCollectionApply(result.summary)
+            self.viewModel.recordCollectionApply(result)
             collectionAdapter.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
             if self.viewModel.pendingScrollMessageID != nil {
                 self.viewModel.clearPendingScroll()
