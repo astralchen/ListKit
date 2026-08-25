@@ -2,7 +2,7 @@
 
 ## Architecture
 
-增强版继续沿用“声明式描述树 -> 类型擦除 -> diffable snapshot -> 精准刷新”的架构。本轮只在核心模型上增加元数据和诊断能力，不引入业务状态管理，也不让业务 model conform ListKit 私有协议。
+增强版继续沿用“声明式描述树 -> 类型擦除 -> diffable snapshot -> 精准刷新”的架构。本轮只在核心模型上增加元数据和诊断能力，不引入外部状态管理，也不让 model 遵守 ListKit 私有协议。
 
 ```mermaid
 flowchart LR
@@ -119,7 +119,7 @@ Row(model: user, cell: UserCell.self) { cell, user, context in
 }
 ```
 
-内部使用 MainActor 专用捕获盒子保存 model，避免强制业务 model conform `Sendable`。
+内部使用 MainActor 专用捕获盒子保存 model，避免强制 model 遵守 `Sendable`。
 
 ## Cell Event Binding
 

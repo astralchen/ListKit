@@ -80,9 +80,9 @@ public struct TableListContext {
         self.eventDispatcher = eventDispatcher
     }
 
-    /// 向 table adapter 发送业务事件。
+    /// 向 table adapter 发送列表事件。
     ///
-    /// - Parameter event: 遵守 `ListEvent` 的业务事件。
+    /// - Parameter event: 遵守 `ListEvent` 的事件值。
     @MainActor public func send<Event>(_ event: Event) where Event: ListEvent {
         eventDispatcher(event, self)
     }
@@ -192,7 +192,7 @@ private enum TableRowIDSource<ID> {
     case inherited
 }
 
-/// 业务 model 不强制要求 `Sendable`；强类型 model 事件只允许在 MainActor 回调中读取。
+/// Model 不强制遵守 `Sendable`；强类型 model 事件只允许在 MainActor 回调中读取。
 /// 这个盒子必须保持私有，不能扩散到公开 Sendable 值或后台执行路径。
 private struct TableMainActorValueBox<Value>: @unchecked Sendable {
     let value: Value
@@ -259,7 +259,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 创建带显式 id 的 row。
     ///
     /// - Parameters:
-    ///   - id: row 的稳定业务身份。
+    ///   - id: row 的稳定身份。
     ///   - model: 配置 cell 使用的数据。
     ///   - cellType: cell 类型。
     ///   - configure: cell 配置闭包。
@@ -313,7 +313,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         self.configure = configure
     }
 
-    /// 设置同一业务 row 的展示变体。
+    /// 设置同一 row id 的展示变体。
     ///
     /// - Parameter variant: 参与 identity 的展示变体。
     public func variant<Variant>(_ variant: Variant) -> Self where Variant: Hashable & Sendable {
@@ -598,7 +598,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     ///
     /// - Parameters:
     ///   - bind: 在 cell 上安装事件触发闭包。
-    ///   - makeEvent: 根据当前 model 生成业务事件。
+    ///   - makeEvent: 根据当前 model 生成事件。
     public func onCellEvent<Event>(
         _ bind: @escaping @MainActor (Cell, @escaping @MainActor () -> Void) -> Void,
         send makeEvent: @escaping @MainActor (Model) -> Event
@@ -1284,7 +1284,7 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     /// ```
     ///
     /// - Parameters:
-    ///   - id: section 的稳定业务身份。
+    ///   - id: section 的稳定身份。
     ///   - rows: row builder。
     ///   - header: header builder，最多使用第一个 header。
     ///   - footer: footer builder，最多使用第一个 footer。

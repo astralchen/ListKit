@@ -20,7 +20,7 @@
 - WHEN 旧页面使用 `CollectionViewController` THE SYSTEM SHALL 改为显式持有 `CollectionListAdapter<Section>`。
 - WHEN 旧页面使用 `CollectionViewSectionType` THE SYSTEM SHALL 改为 `ListSection` DSL。
 - WHEN 行数据变化 THE SYSTEM SHALL 使用稳定 row identity 和必要的 `refreshID`。
-- WHEN cell 或 supplementary 内部按钮触发业务动作 THE SYSTEM SHALL 通过 ListKit context/event 或 Row 选择回调转发到页面。
+- WHEN cell 或 supplementary 内部按钮触发自定义动作 THE SYSTEM SHALL 通过 ListKit context/event 或 Row 选择回调转发到调用方。
 
 ## Requirement 3: 迁移旧 item 模型
 
@@ -34,7 +34,7 @@
 
 ## Requirement 4: ListKit 补齐 UIKit 工具能力
 
-**User Story:** 作为迁移者，我希望 ListKit 提供 CellKit 里被业务页面广泛使用的 UIKit 便捷能力。
+**User Story:** 作为迁移者，我希望 ListKit 提供 CellKit 中常用的 UIKit 便捷能力。
 
 ### Acceptance Criteria
 

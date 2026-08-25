@@ -26,4 +26,4 @@
 
 ## Gesture Scope
 
-ListKit supplementary tap 使用私有 `ListTapGestureRecognizer`，复用时只移除 ListKit 自己安装的 recognizer，保留业务 view 原有手势。
+ListKit supplementary tap 使用私有 `ListTapGestureRecognizer`，复用时只移除 ListKit 自己安装的 recognizer，保留 view 上已有的其他手势。

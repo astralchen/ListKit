@@ -4,7 +4,7 @@
 
 `CollectionListAdapter` 基于内部 `sections` 和 diffable snapshot 暴露稳定查询能力：
 
-- `indexPaths(forRowID:in:)` 按业务 rowID 和可选 sectionID 返回当前 indexPath。
+- `indexPaths(forRowID:in:)` 按 rowID 和可选 sectionID 返回当前 indexPath。
 - `itemCount(in:)` 返回 section 当前 row 数量。
 - `scrollToLastItem(in:at:animated:)` 封装空 section 判断和滚动到底部。
 
@@ -23,7 +23,7 @@
 
 App 页面直接构建 `ListSection`：
 
-- 普通业务模型用 `Row(model:id:cell:)`。
+- 普通数据模型用 `Row(model:id:cell:)`。
 - 多 cell 或保留旧配置器的复杂场景用 `ProviderRow`，但不再定义 App 级 provider 协议。
 - 原 `AppListCellItem` 类型改成普通 view model/configurer，或在页面内联配置闭包。
 

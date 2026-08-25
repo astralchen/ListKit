@@ -23,7 +23,7 @@ public final class CollectionListAdapter<SectionID>: NSObject, UICollectionViewD
 where SectionID: Hashable & Sendable {
     /// 滚动回调转发对象。
     ///
-    /// `CollectionListAdapter` 会接管 `collectionView.delegate`，页面需要
+    /// `CollectionListAdapter` 会接管 `collectionView.delegate`，调用方需要
     /// `scrollViewDidScroll` 等回调时设置此属性。
     public weak var scrollDelegate: UIScrollViewDelegate?
 
@@ -44,8 +44,8 @@ where SectionID: Hashable & Sendable {
 
     /// flow layout 回调转发对象。
     ///
-    /// 仅用于仍在使用 `UICollectionViewDelegateFlowLayout` 的页面；使用
-    /// `makeCompositionalLayout()` 的页面通常不需要它。
+    /// 仅用于仍在使用 `UICollectionViewDelegateFlowLayout` 的调用方；使用
+    /// `makeCompositionalLayout()` 时通常不需要它。
     public weak var layoutDelegate: UICollectionViewDelegateFlowLayout?
 
     /// cell/supplementary 展示回调转发对象。
@@ -321,10 +321,10 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    /// 使用 diffable `reconfigureItems` 轻量重配匹配业务 ID 的 Row。
+    /// 使用 diffable `reconfigureItems` 轻量重配匹配 row id 的 Row。
     ///
     /// iOS 15+ 保留现有 Cell 并支持自适应尺寸更新；iOS 14 回退为 reload。
-    /// 同一业务 ID 对应多个展示变体时会全部重配。
+    /// 同一 row id 对应多个展示变体时会全部重配。
     @discardableResult
     public func reconfigureRows<RowID>(
         forRowID rowID: RowID,
@@ -340,7 +340,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用 diffable `reconfigureItems` 批量重配匹配业务 ID 的 Row。
+    /// 使用 diffable `reconfigureItems` 批量重配匹配 row id 的 Row。
     @discardableResult
     public func reconfigureRows<RowID>(
         forRowIDs rowIDs: [RowID],
@@ -357,7 +357,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用 diffable `reloadItems` 重新创建匹配业务 ID 的 Row 并重新计算尺寸。
+    /// 使用 diffable `reloadItems` 重新创建匹配 row id 的 Row 并重新计算尺寸。
     @discardableResult
     public func reloadRows<RowID>(
         forRowID rowID: RowID,
@@ -373,7 +373,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用 diffable `reloadItems` 批量重新创建匹配业务 ID 的 Row。
+    /// 使用 diffable `reloadItems` 批量重新创建匹配 row id 的 Row。
     @discardableResult
     public func reloadRows<RowID>(
         forRowIDs rowIDs: [RowID],
@@ -1077,10 +1077,10 @@ where SectionID: Hashable & Sendable {
         await apply(options: ListApplyOptions(transaction: transaction), content)
     }
 
-    /// 绑定自定义业务事件。
+    /// 绑定自定义列表事件。
     ///
     /// 事件可以从 row、header 或 footer 的 configure 闭包中通过 `context.send(...)`
-    /// 发出，再由页面在 adapter 上集中处理。
+    /// 发出，再由调用方在 adapter 上集中处理。
     /// - Parameters:
     ///   - eventType: 要接收的事件类型。
     ///   - handler: 主线程回调的事件处理闭包。
@@ -1647,7 +1647,7 @@ where SectionID: Hashable & Sendable {
             ?? .zero
     }
 
-    /// 返回指定 section index 当前对应的业务 section id。
+    /// 返回指定 section index 当前对应的 section id。
     ///
     /// - Parameter sectionIndex: section 在当前 snapshot 中的位置。
     /// - Returns: 越界时返回 `nil`。
@@ -1663,15 +1663,15 @@ where SectionID: Hashable & Sendable {
         sections[safe: sectionIndex]?.rows.count ?? 0
     }
 
-    /// 返回指定业务 section 当前 row 数量。
+    /// 返回指定 section 当前的 row 数量。
     ///
-    /// - Parameter sectionID: 要查询的业务 section id。
+    /// - Parameter sectionID: 要查询的 section id。
     /// - Returns: section 内 row 数量；不存在时返回 0。
     public func itemCount(in sectionID: SectionID) -> Int {
         sections.first { $0.id == sectionID }?.rows.count ?? 0
     }
 
-    /// 返回业务 section 当前所在位置。
+    /// 返回 section 当前所在位置。
     public func sectionIndex(for sectionID: SectionID) -> Int? {
         sections.firstIndex { $0.id == sectionID }
     }
@@ -1703,13 +1703,13 @@ where SectionID: Hashable & Sendable {
         indexPath(for: identity) != nil
     }
 
-    /// 根据业务 row id 查询当前 indexPath。
+    /// 根据 row id 查询当前 indexPath。
     ///
     /// - Parameters:
-    ///   - rowID: 业务 row id。
-    ///   - sectionID: 可选的业务 section id；为 `nil` 时查询所有 section。
+    ///   - rowID: row 的稳定 id。
+    ///   - sectionID: 可选的 section id；为 `nil` 时查询所有 section。
     /// - Returns: 当前描述树中匹配 row id 的 index paths。
-    /// - Note: 查询基于 adapter 当前描述树，页面不需要维护第二套 sections。
+    /// - Note: 查询基于 adapter 当前描述树，调用方不需要维护第二套 sections。
     public func indexPaths<RowID>(
         forRowID rowID: RowID,
         in sectionID: SectionID? = nil
@@ -1734,7 +1734,7 @@ where SectionID: Hashable & Sendable {
     /// 滚动到指定 section 或全列表的最后一个 row。
     ///
     /// - Parameters:
-    ///   - sectionID: 可选的业务 section id；为 `nil` 时滚动到全列表最后一项。
+    ///   - sectionID: 可选的 section id；为 `nil` 时滚动到全列表最后一项。
     ///   - scrollPosition: 目标 item 在 collection view 中的滚动位置。
     ///   - animated: 是否使用滚动动画。
     /// - Returns: 找到可滚动目标并发起滚动时返回 `true`。
@@ -1754,8 +1754,8 @@ where SectionID: Hashable & Sendable {
     /// 轻量重配当前可见 row。
     ///
     /// - Parameters:
-    ///   - rowID: 业务 row id。
-    ///   - sectionID: 可选的业务 section id；为 `nil` 时匹配所有 section。
+    ///   - rowID: row 的稳定 id。
+    ///   - sectionID: 可选的 section id；为 `nil` 时匹配所有 section。
     /// - Returns: 实际重配的可见 cell 数量。
     /// - Note: 此方法不触发 diffable reload，也不重新计算自适应高度。
     @discardableResult
@@ -1781,8 +1781,8 @@ where SectionID: Hashable & Sendable {
     /// 通过 diffable snapshot reload 当前可见 row。
     ///
     /// - Parameters:
-    ///   - rowID: 业务 row id。
-    ///   - sectionID: 可选的业务 section id；为 `nil` 时匹配所有 section。
+    ///   - rowID: row 的稳定 id。
+    ///   - sectionID: 可选的 section id；为 `nil` 时匹配所有 section。
     /// - Returns: 实际 reload 的可见 item 数量。
     /// - Note: 需要重新量高或更新布局时使用此方法。
     @discardableResult
@@ -1804,7 +1804,7 @@ where SectionID: Hashable & Sendable {
     ///
     /// - Parameters:
     ///   - kind: supplementary element kind。
-    ///   - sectionID: 可选的业务 section id；为 `nil` 时匹配所有 section。
+    ///   - sectionID: 可选的 section id；为 `nil` 时匹配所有 section。
     /// - Returns: 实际重配的可见 supplementary view 数量。
     @discardableResult
     public func reconfigureVisibleSupplementaries(
@@ -1818,8 +1818,8 @@ where SectionID: Hashable & Sendable {
     ///
     /// - Parameters:
     ///   - kind: supplementary element kind。
-    ///   - rowID: 业务 row id。
-    ///   - sectionID: 可选的业务 section id；为 `nil` 时匹配所有 section。
+    ///   - rowID: row 的稳定 id。
+    ///   - sectionID: 可选的 section id；为 `nil` 时匹配所有 section。
     /// - Returns: 实际重配的可见 supplementary view 数量。
     @discardableResult
     public func reconfigureVisibleSupplementaries<RowID>(
@@ -1842,7 +1842,7 @@ where SectionID: Hashable & Sendable {
     ///   - fallback: legacy `layoutID` section 使用的 layout provider。
     ///   - diagnostics: layout provider 期间发现前置条件不满足时的处理方式。
     /// - Returns: 可直接赋值给 collection view 的 compositional layout。
-    /// - Note: 页面仍需要显式把返回的 layout 赋给 `collectionView.collectionViewLayout`。
+    /// - Note: 调用方仍需显式把返回的 layout 赋给 `collectionView.collectionViewLayout`。
     public func makeCompositionalLayout(
         configuration: ListCompositionalLayoutConfiguration = .init(),
         fallback: ((

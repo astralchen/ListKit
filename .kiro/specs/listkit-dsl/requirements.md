@@ -8,7 +8,7 @@
 
 1. WHEN 工程引入新列表框架 THE SYSTEM SHALL 创建本地 SPM `SharePackage/ListKit`，模块名和产品名均为 `ListKit`。
 2. WHEN 旧页面尚未迁移 THE SYSTEM SHALL 允许 `CellKit` 与 `ListKit` 并行存在。
-3. WHEN 新页面使用 ListKit THE SYSTEM SHALL 不要求业务 model conform 框架协议。
+3. WHEN 新页面使用 ListKit THE SYSTEM SHALL 不要求 model 遵守框架协议。
 4. WHEN 包级构建运行 THE SYSTEM SHALL 支持 iOS 14+ 和 Swift 6。
 
 ## Requirement 2: SwiftUI-like DSL
@@ -38,13 +38,13 @@
 
 ## Requirement 4: 事件系统
 
-**User Story:** 作为开发者，我希望 Row/Header/Footer 都能处理标准事件，也能抛出业务自定义事件。
+**User Story:** 作为开发者，我希望 Row/Header/Footer 都能处理标准事件，也能发出自定义事件。
 
 ### Acceptance Criteria
 
 1. WHEN Row 被选中、展示、结束展示、预取或取消预取 THE SYSTEM SHALL 提供对应 modifier。
 2. WHEN Header/Footer 需要点击事件 THE SYSTEM SHALL 通过 `.onTap` 或 section 级 `.onHeaderTap` / `.onFooterTap` 处理。
-3. WHEN cell 内部按钮触发业务动作 THE SYSTEM SHALL 允许通过 `context.send(Event)` 发送类型安全自定义事件。
+3. WHEN cell 内部按钮触发自定义动作 THE SYSTEM SHALL 允许通过 `context.send(Event)` 发送类型安全事件。
 4. WHEN 页面监听自定义事件 THE SYSTEM SHALL 支持 `.onEvent(Event.self) { event, context in ... }`。
 5. WHEN 页面需要 UIKit 高级交互 THE SYSTEM SHALL 支持 context menu 和 swipe actions。
 

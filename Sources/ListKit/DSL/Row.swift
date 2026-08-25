@@ -73,7 +73,7 @@ extension ListSelectionMode {
 
 /// 类型擦除后的 Row 描述。
 ///
-/// - Note: 页面通常不直接创建它；`Row`、`ProviderRow` 和 `ListStateRow` 会在
+/// - Note: 调用方通常不直接创建它；`Row`、`ProviderRow` 和 `ListStateRow` 会在
 /// `ListSection` 构建阶段转成 `AnyListRow`，再交给 `CollectionListAdapter`
 /// 做 diff、dequeue、可见刷新和事件回调。
 public struct AnyListRow {
@@ -125,7 +125,7 @@ public struct AnyListRow {
 
 /// 可以放入 `ListSection` row builder 的元素协议。
 ///
-/// - Important: 页面代码优先使用 `Row(...)`、`ForEach(...)`、`ListStateRow`；
+/// - Important: 调用方优先使用 `Row(...)`、`ForEach(...)`、`ListStateRow`；
 /// 自定义 conform 通常只用于框架内部扩展或迁移桥接。
 public protocol ListRowRepresentable {
     @MainActor func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
@@ -192,7 +192,7 @@ private enum RowIDSource<ID> {
     case inherited
 }
 
-/// 业务 model 不强制要求 `Sendable`；强类型 model 事件只允许在 MainActor 回调中读取。
+/// Model 不强制遵守 `Sendable`；强类型 model 事件只允许在 MainActor 回调中读取。
 /// 这个盒子必须保持私有，不能扩散到公开 Sendable 值或后台执行路径。
 private struct MainActorValueBox<Value>: @unchecked Sendable {
     let value: Value
@@ -202,19 +202,19 @@ private struct MainActorValueBox<Value>: @unchecked Sendable {
 ///
 /// - Usage:
 /// ```swift
-/// ForEach(users, id: \.userID) { user in
-///     if user.isVIP {
-///         Row(model: user, cell: VIPUserCell.self) { cell, user, _ in
-///             cell.configure(user)
+/// ForEach(items, id: \.id) { item in
+///     if item.isHighlighted {
+///         Row(model: item, cell: HighlightedCell.self) { cell, item, _ in
+///             cell.configure(item)
 ///         }
 ///     } else {
-///         Row(model: user, cell: NormalUserCell.self) { cell, user, _ in
-///             cell.configure(user)
+///         Row(model: item, cell: DefaultCell.self) { cell, item, _ in
+///             cell.configure(item)
 ///         }
 ///     }
 /// }
 /// ```
-/// - Note: `Cell.self` 会参与 identity，同一个业务 id 切换 cell 类型时会触发 delete/insert。
+/// - Note: `Cell.self` 会参与 identity，同一个 row id 切换 cell 类型时会触发 delete/insert。
 public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Sendable, Cell: UICollectionViewCell {
     private typealias CellEventBinder = @MainActor (Cell, Model, ListContext) -> Void
 
@@ -254,8 +254,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     /// 创建带显式 id 的 Row。
     ///
     /// - Parameters:
-    ///   - id: 业务 row id。
-    ///   - model: 配置 cell 时使用的业务数据。
+    ///   - id: row 的稳定 id。
+    ///   - model: 配置 cell 时使用的数据。
     ///   - cellType: 要注册和 dequeue 的 cell 类型。
     ///   - configure: 每次创建或重配 cell 时执行的配置闭包。
     public init(
@@ -273,8 +273,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     /// 使用 key path 从 model 中读取 Row 身份。
     ///
     /// - Parameters:
-    ///   - model: 配置 cell 时使用的业务数据。
-    ///   - id: 指向业务 row id 的 key path。
+    ///   - model: 配置 cell 时使用的数据。
+    ///   - id: 指向 row 稳定 id 的 key path。
     ///   - cellType: 要注册和 dequeue 的 cell 类型。
     ///   - configure: 每次创建或重配 cell 时执行的配置闭包。
     public init(
@@ -292,8 +292,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     /// 使用闭包从 model 中生成 Row 身份。
     ///
     /// - Parameters:
-    ///   - model: 配置 cell 时使用的业务数据。
-    ///   - id: 生成业务 row id 的闭包。
+    ///   - model: 配置 cell 时使用的数据。
+    ///   - id: 生成 row 稳定 id 的闭包。
     ///   - cellType: 要注册和 dequeue 的 cell 类型。
     ///   - configure: 每次创建或重配 cell 时执行的配置闭包。
     public init(
@@ -308,7 +308,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         self.configure = configure
     }
 
-    /// 给同一个业务 id 增加展示变体。
+    /// 给同一个 row id 增加展示变体。
     ///
     /// 当同一个 model 可能用同一个 cell 类型展示为不同 UI 节点时使用。`variant`
     /// 会参与 identity，因此变化时 diffable 会执行 delete + insert。
@@ -359,7 +359,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
-    /// 选择事件的强类型 model 重载，页面不需要再额外捕获 model。
+    /// 选择事件的强类型 model 重载，调用方无需额外捕获 model。
     ///
     /// - Parameter handler: cell 被选中时收到 model 和 context 的闭包。
     /// - Returns: 绑定事件后的 Row。
@@ -438,7 +438,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
-    /// 设置用户点击当前 disclosure Row 时的 outline 动画策略。
+    /// 设置点击当前 disclosure Row 时的 outline 动画策略。
     public func outlineAnimation(_ policy: ListAnimationPolicy) -> Self {
         var copy = self
         copy.rowOutlineAnimation = policy
@@ -562,7 +562,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     ///
     /// - Parameters:
     ///   - bind: 把发送闭包安装到 cell 的闭包。
-    ///   - makeEvent: 使用当前 model 创建业务事件的闭包。
+    ///   - makeEvent: 使用当前 model 创建事件的闭包。
     /// - Returns: 绑定事件后的 Row。
     public func onCellEvent<Event>(
         _ bind: @escaping @MainActor (Cell, @escaping @MainActor () -> Void) -> Void,
@@ -760,7 +760,7 @@ public extension Row where ID == InheritedRowID {
     /// ForEach 内部 Row 的最简写法，身份继承自外层 `ForEach(id:)`。
     ///
     /// - Parameters:
-    ///   - model: 配置 cell 时使用的业务数据。
+    ///   - model: 配置 cell 时使用的数据。
     ///   - cellType: 要注册和 dequeue 的 cell 类型。
     ///   - configure: 每次创建或重配 cell 时执行的配置闭包。
     /// - Important: 此 initializer 需要放在 `ForEach(_:id:)` 内使用。
@@ -781,7 +781,7 @@ public extension Row where Model: Identifiable, ID == Model.ID, Model.ID: Sendab
     /// 单个 `Identifiable` model 的最简写法，默认使用 `model.id` 作为 Row 身份。
     ///
     /// - Parameters:
-    ///   - model: 提供 `id` 且用于配置 cell 的业务数据。
+    ///   - model: 提供 `id` 且用于配置 cell 的数据。
     ///   - cellType: 要注册和 dequeue 的 cell 类型。
     ///   - configure: 每次创建或重配 cell 时执行的配置闭包。
     init(
@@ -798,7 +798,7 @@ public extension Row where Model: Identifiable, ID == Model.ID, Model.ID: Sendab
 
 /// ListKit 内置轻量状态 Row 身份。
 ///
-/// 它只描述 UI，不管理网络请求或页面状态机。页面决定什么时候展示 empty/loading/failure。
+/// 它只描述 UI，不管理数据加载或外部状态机。调用方决定何时展示 empty/loading/failure。
 public enum ListStateRowKind: Hashable, Sendable {
     case empty
     case loading
@@ -809,10 +809,10 @@ public enum ListStateRowKind: Hashable, Sendable {
 ///
 /// - Usage:
 /// ```swift
-/// ListSection(.users) {
-///     if users.isEmpty {
+/// ListSection(.content) {
+///     if items.isEmpty {
 ///         ListStateRow.empty(EmptyCell.self) { cell, _ in
-///             cell.titleLabel.text = "暂无用户"
+///             cell.titleLabel.text = "暂无内容"
 ///         }
 ///     }
 /// }
@@ -866,7 +866,7 @@ public enum ListStateRow {
 
 /// 多个 Row 的组合容器。
 ///
-/// - Note: 页面通常通过 `ForEach` 或 result builder 自然组合，不需要直接创建 `RowGroup`。
+/// - Note: 调用方通常通过 `ForEach` 或 result builder 自然组合，不需要直接创建 `RowGroup`。
 public struct RowGroup: ListRowRepresentable {
     private let rows: [any ListRowRepresentable]
 
@@ -1001,12 +1001,12 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     /// 用 cell 类型作为展示 identity 的 ProviderRow。
     ///
     /// - Parameters:
-    ///   - id: 业务 row id。
+    ///   - id: row 的稳定 id。
     ///   - cellType: 用于 presentation identity 和默认注册的 cell 类型。
     ///   - register: 可选的自定义注册闭包。
     ///   - cellProvider: 创建或 dequeue cell 的闭包。
     ///   - configureVisibleCell: 轻量重配可见 cell 时调用的闭包。
-    /// - Important: 这是迁移兼容入口；新页面应优先使用强类型 `Row`。
+    /// - Important: 这是迁移兼容入口；新接入代码应优先使用强类型 `Row`。
     public init<Cell>(
         _ id: ID,
         cell cellType: Cell.Type,
@@ -1026,7 +1026,7 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     /// 完全自定义展示 identity 的 ProviderRow。
     ///
     /// - Parameters:
-    ///   - id: 业务 row id。
+    ///   - id: row 的稳定 id。
     ///   - presentationID: 自定义展示身份。
     ///   - register: 注册 cell 或相关 reusable view 的闭包。
     ///   - cellProvider: 创建或 dequeue cell 的闭包。

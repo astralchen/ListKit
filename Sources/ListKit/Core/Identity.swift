@@ -11,9 +11,9 @@ public struct AnyListID: Hashable, CustomStringConvertible, @unchecked Sendable 
     private let valueType: ObjectIdentifier
     private let valueDescription: String
 
-    /// 类型擦除任意业务 id。
+    /// 类型擦除任意数据 id。
     ///
-    /// - Parameter id: 任意 `Hashable & Sendable` 的业务 id。
+    /// - Parameter id: 任意遵守 `Hashable & Sendable` 的数据 id。
     public init<ID>(_ id: ID) where ID: Hashable & Sendable {
         self.value = AnyHashable(id)
         self.valueType = ObjectIdentifier(ID.self)
@@ -45,7 +45,7 @@ public struct AnyListID: Hashable, CustomStringConvertible, @unchecked Sendable 
 /// `Row(model:cell:)` 在 `ForEach(id:)` 内使用时的占位 ID 类型。
 ///
 /// - Note: 开发者通常不会直接接触这个类型。它的存在是为了让 Swift 能推断出：
-/// “这个 Row 的业务身份来自外层 ForEach，而不是 Row 自己重复传入一次”。
+/// Row 的稳定身份来自外层 `ForEach`，无需在 Row 中重复传入。
 public struct InheritedRowID: Hashable, Sendable {
     private init() {}
 }

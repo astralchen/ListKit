@@ -36,4 +36,4 @@
 - Rebirth app 内直接管理的 UITableView 页面已迁移到 `TableListAdapter`；`SwipeCellKit` 会话列表按 app-side bridge 保留。
 - 宏探索继续放入 P2，避免一次改动过大。
 - 当前增强实现保持 UIKit 相关 API 在 `@MainActor` 使用路径上执行。
-- 业务 model 仍不需要 conform ListKit 协议；带 model 事件重载不会额外要求 model conform `Sendable`。
+- Model 仍不需要遵守 ListKit 协议；带 model 的事件重载不会额外要求 model 遵守 `Sendable`。

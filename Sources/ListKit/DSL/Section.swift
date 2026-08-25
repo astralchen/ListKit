@@ -5,23 +5,23 @@ import UIKit
 /// 一个 ListKit section 的完整描述。
 ///
 /// - Note: `ListSection` 同时承载 rows、header/footer/supplementary、layout、selection 和
-/// section 背景装饰。页面每次数据变化后重新构建描述树，adapter 根据 identity 和
+/// section 背景装饰。调用方在数据变化后重新构建描述树，adapter 根据 identity 和
 /// refresh policy 判断 diff、重配或保持不动。
 ///
 /// - Usage:
 /// ```swift
-/// ListSection(.users) {
-///     ForEach(users, id: \.userID) { user in
-///         Row(model: user, cell: UserCell.self) { cell, user, _ in
-///             cell.configure(user)
+/// ListSection(.content) {
+///     ForEach(items, id: \.id) { item in
+///         Row(model: item, cell: ItemCell.self) { cell, item, _ in
+///             cell.configure(item)
 ///         }
-///         .refreshID(user.profileVersion)
+///         .refreshID(item.version)
 ///     }
 /// } layout: {
 ///     ListLayout(spacing: 8)
 /// } header: {
-///     Header(TitleHeaderView.self, id: "users-title") { view, _ in
-///         view.titleLabel.text = "用户"
+///     Header(TitleHeaderView.self, id: "section-title") { view, _ in
+///         view.titleLabel.text = "Section"
 ///     }
 ///     .layout(height: .estimated(44), pinned: true)
 /// } background: {
@@ -29,7 +29,7 @@ import UIKit
 /// }
 /// ```
 public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
-    /// 业务 section id。
+    /// section 的稳定 id。
     public let id: SectionID
     /// 类型擦除后的 row 描述。
     public var rows: [AnyListRow]
@@ -72,7 +72,7 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
     /// 创建 section，并用 builder 同时声明 rows、layout、supplementary 和背景。
     ///
     /// - Parameters:
-    ///   - id: 业务 section id。
+    ///   - id: section 的稳定 id。
     ///   - rows: 生成当前 section rows 的 builder。
     ///   - layout: 生成当前 section 主 layout 的 builder。
     ///   - header: 生成 header supplementary 的 builder。
@@ -240,7 +240,7 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
         return copy
     }
 
-    /// 绑定 section 布局标识，页面可用它在 compositional layout provider 里查找布局。
+    /// 绑定 section 布局标识，调用方可用它在 compositional layout provider 中查找布局。
     ///
     /// - Parameter layoutID: 外部 layout provider 使用的稳定布局 id。
     /// - Returns: 绑定布局 id 后的 section。
@@ -384,7 +384,7 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
     ///
     /// - Parameter content: 生成 supplementary layout 元数据的 builder。
     /// - Returns: 应用 supplementary layouts 后的 section。
-    /// - Note: 新页面优先把 header/footer 的布局写在 `Header(...).layout(...)` 上。
+    /// - Note: 新接入代码优先把 header/footer 布局写在 `Header(...).layout(...)` 上。
     public func supplementaryLayouts(
         @ListSupplementaryLayoutBuilder _ content: () -> [ListSupplementaryLayout]
     ) -> Self {

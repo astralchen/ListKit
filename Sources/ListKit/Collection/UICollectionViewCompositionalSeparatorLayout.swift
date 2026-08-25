@@ -15,7 +15,7 @@ final class SectionSeparatorDecorationView: UICollectionReusableView {
 
 /// 支持轻量分隔线 decoration 的 compositional layout。
 ///
-/// - Note: 这是 CellKit 迁移期保留的 UIKit 工具能力。新页面如果只需要普通 ListKit DSL，
+/// - Note: 这是 CellKit 迁移期保留的 UIKit 工具能力。新接入代码如果只需要普通 ListKit DSL，
 /// 优先使用 `adapter.makeCompositionalLayout()`；只有确实需要布局层自动画分隔线时
 /// 才使用这个 layout 子类。
 open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewCompositionalLayout {

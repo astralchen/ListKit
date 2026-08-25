@@ -26,13 +26,13 @@ public struct ListScrollTarget: Hashable, Sendable {
     let rowID: AnyListID
     let sectionID: AnyListID?
 
-    /// 使用业务 Row id 创建目标。
+    /// 使用 Row id 创建刷新目标。
     public init<RowID>(_ rowID: RowID) where RowID: Hashable & Sendable {
         self.rowID = AnyListID(rowID)
         self.sectionID = nil
     }
 
-    /// 使用业务 Row id 和 section id 创建无歧义目标。
+    /// 使用 Row id 和 section id 创建无歧义的刷新目标。
     public init<RowID, SectionID>(
         _ rowID: RowID,
         in sectionID: SectionID
@@ -353,7 +353,7 @@ public struct ListAnimationSummary: Equatable, Sendable {
 /// 通常为 `.submitted`。completion、async `apply` 和完成后的 `lastApplySummary`
 /// 返回最终状态，才包含实际执行的可见刷新、layout、滚动和内容过渡统计。
 ///
-/// 这些字段用于 diagnostics、日志、性能观察和测试断言；不应作为业务数据状态的唯一来源。
+/// 这些字段用于 diagnostics、日志、性能观察和测试断言；不应作为数据源状态的唯一依据。
 public struct ListApplySummary: Equatable, Sendable {
     /// 新插入的 Section 数量。
     public let insertedSectionCount: Int

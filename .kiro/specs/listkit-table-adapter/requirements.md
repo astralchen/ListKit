@@ -30,7 +30,7 @@
 - WHEN 判断内容刷新 THE SYSTEM SHALL 复用 `refreshID`、`RowRefreshPolicy` 和 `ListApplyRefreshStrategy` 语义。
 - WHEN 发现重复 section/row/header/footer identity THE SYSTEM SHALL 复用 ListKit diagnostics 风格，在 diffable apply 前给出清晰问题。
 - WHEN apply 完成 THE SYSTEM SHALL 输出与 `ListApplySummary` 等价的 insert/delete/keep/snapshotRefresh/visibleRefresh 统计。
-- WHEN row/header/footer 发送业务事件 THE SYSTEM SHALL 复用 `ListEvent` 类型约束。
+- WHEN row/header/footer 发送自定义事件 THE SYSTEM SHALL 复用 `ListEvent` 类型约束。
 
 ### Requirement 3: Apply API 对齐
 
@@ -125,10 +125,10 @@
 - WHEN adapter 初始化 THE SYSTEM SHALL 接管 `tableView.dataSource`、`tableView.delegate` 和 `tableView.prefetchDataSource`。
 - WHEN 页面设置 forwarding delegate THE SYSTEM SHALL 转发 adapter 未消费或可组合的 UITableViewDelegate/UIScrollViewDelegate 回调。
 - WHEN 第三方库需要成为 table delegate THE SYSTEM SHALL 不由 ListKit 强行接管该库；页面应使用 app-side bridge。
-- WHEN 首版实现 THE SYSTEM SHALL 不迁移 Rebirth 业务页面，只提供框架能力和测试。
+- WHEN 首版实现 THE SYSTEM SHALL 不迁移 Rebirth 接入代码，只提供框架能力和测试。
 
 ## Out of Scope
 
 - 不把现有 `Row`、`ListSection`、`Supplementary` 泛化为跨 UICollectionView/UITableView public API。
 - 不在 ListKit package 引入 `SwipeCellKit` 或其他第三方依赖。
-- 不在首版实现中迁移 Rebirth 业务页面；本 spec 只提供 ListKit 框架能力和测试覆盖。
+- 不在首版实现中迁移 Rebirth 接入代码；本 spec 只提供 ListKit 框架能力和测试覆盖。

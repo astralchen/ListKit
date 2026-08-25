@@ -282,10 +282,10 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    /// 使用 diffable `reconfigureItems` 轻量重配匹配业务 ID 的 Row。
+    /// 使用 diffable `reconfigureItems` 轻量重配匹配 row id 的 Row。
     ///
     /// iOS 15+ 保留现有 Cell 并支持自适应尺寸更新；iOS 14 回退为 reload。
-    /// 同一业务 ID 对应多个展示变体时会全部重配。
+    /// 同一 row id 对应多个展示变体时会全部重配。
     @discardableResult
     public func reconfigureRows<RowID>(
         forRowID rowID: RowID,
@@ -301,7 +301,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用 diffable `reconfigureItems` 批量重配匹配业务 ID 的 Row。
+    /// 使用 diffable `reconfigureItems` 批量重配匹配 row id 的 Row。
     @discardableResult
     public func reconfigureRows<RowID>(
         forRowIDs rowIDs: [RowID],
@@ -318,7 +318,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用 diffable `reloadItems` 重新创建匹配业务 ID 的 Row 并重新计算尺寸。
+    /// 使用 diffable `reloadItems` 重新创建匹配 row id 的 Row 并重新计算尺寸。
     @discardableResult
     public func reloadRows<RowID>(
         forRowID rowID: RowID,
@@ -334,7 +334,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用 diffable `reloadItems` 批量重新创建匹配业务 ID 的 Row。
+    /// 使用 diffable `reloadItems` 批量重新创建匹配 row id 的 Row。
     @discardableResult
     public func reloadRows<RowID>(
         forRowIDs rowIDs: [RowID],
@@ -1016,7 +1016,7 @@ where SectionID: Hashable & Sendable {
         await apply(options: ListApplyOptions(transaction: transaction), content)
     }
 
-    /// 绑定自定义业务事件。
+    /// 绑定自定义列表事件。
     ///
     /// - Parameters:
     ///   - eventType: 事件类型。
@@ -1537,31 +1537,31 @@ where SectionID: Hashable & Sendable {
         if !sameObject(scrollDelegate, tableDelegate) { tableDelegate?.scrollViewDidEndDecelerating?(scrollView) }
     }
 
-    /// 返回指定 section index 当前对应的业务 section id。
+    /// 返回指定 section index 当前对应的 section id。
     ///
     /// - Parameter sectionIndex: 当前 table section index。
-    /// - Returns: 匹配的业务 section id；越界时返回 `nil`。
+    /// - Returns: 匹配的 section id；越界时返回 `nil`。
     public func sectionIdentifier(at sectionIndex: Int) -> SectionID? {
         sections[safe: sectionIndex]?.id
     }
 
-    /// 返回指定业务 section 当前 row 数量。
+    /// 返回指定 section 当前的 row 数量。
     ///
-    /// - Parameter sectionID: 业务 section id。
+    /// - Parameter sectionID: section 的稳定 id。
     /// - Returns: 当前 row 数量。
     public func rowCount(in sectionID: SectionID) -> Int {
         sections.first { $0.id == sectionID }?.rows.count ?? 0
     }
 
-    /// 返回指定业务 section 当前 item 数量。
+    /// 返回指定 section 当前的 item 数量。
     ///
-    /// - Parameter sectionID: 业务 section id。
+    /// - Parameter sectionID: section 的稳定 id。
     /// - Returns: 当前 item 数量。UITableView 中 item 等同于 row。
     public func itemCount(in sectionID: SectionID) -> Int {
         rowCount(in: sectionID)
     }
 
-    /// 返回业务 section 当前所在位置。
+    /// 返回 section 当前所在位置。
     public func sectionIndex(for sectionID: SectionID) -> Int? {
         sections.firstIndex { $0.id == sectionID }
     }
@@ -1593,10 +1593,10 @@ where SectionID: Hashable & Sendable {
         indexPath(for: identity) != nil
     }
 
-    /// 根据业务 row id 查询当前 indexPath。
+    /// 根据 row id 查询当前 indexPath。
     ///
     /// - Parameters:
-    ///   - rowID: 业务 row id。
+    ///   - rowID: row 的稳定 id。
     ///   - sectionID: 可选 section 范围。
     /// - Returns: 当前匹配的 index path 列表。
     public func indexPaths<RowID>(
@@ -1643,7 +1643,7 @@ where SectionID: Hashable & Sendable {
     /// 轻量重配当前可见 row。
     ///
     /// - Parameters:
-    ///   - rowID: 业务 row id。
+    ///   - rowID: row 的稳定 id。
     ///   - sectionID: 可选 section 范围。
     /// - Returns: 被重配的可见 row 数量。
     @discardableResult
@@ -1674,7 +1674,7 @@ where SectionID: Hashable & Sendable {
     /// 通过 diffable snapshot reload 当前可见 row。
     ///
     /// - Parameters:
-    ///   - rowID: 业务 row id。
+    ///   - rowID: row 的稳定 id。
     ///   - sectionID: 可选 section 范围。
     /// - Returns: 被 reload 的可见 row 数量。
     @discardableResult

@@ -5,7 +5,7 @@ import ObjectiveC
 
 /// 类型擦除后的 supplementary 描述。
 ///
-/// - Note: 页面通常不直接创建它；`Header`、`Footer`、`SectionSupplementary`、
+/// - Note: 调用方通常不直接创建它；`Header`、`Footer`、`SectionSupplementary`、
 /// `Supplementary` 和 `ProviderSupplementary` 会在 section 构建阶段转成
 /// `AnySupplementary`。
 public struct AnySupplementary {
@@ -100,7 +100,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
     ///
     /// - Parameter handler: supplementary 被点击时调用的闭包。
     /// - Returns: 绑定点击事件后的 supplementary。
-    /// - Note: ListKit 只移除自己安装的点击手势，不会清理业务 view 已有手势。
+    /// - Note: ListKit 只移除自己安装的点击手势，不会清理 view 上已有的其他手势。
     public func onTap(_ handler: @escaping @MainActor (ListContext) -> Void) -> Self {
         mapSupplementary { supplementary in
             AnySupplementary(
@@ -351,7 +351,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
 
 /// Header/Footer/自定义 supplementary 的描述模型。
 ///
-/// - Note: 页面通常通过 `ListSection.header(...)` / `footer(...)` 使用它；需要自定义 kind 时再直接用
+/// - Note: 调用方通常通过 `ListSection.header(...)` / `footer(...)` 使用它；需要自定义 kind 时再直接用
 /// `supplementary(_:_:id:configure:)`。
 public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICollectionReusableView {
     private let id: ID
@@ -492,8 +492,8 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
 
 /// Provider-backed supplementary escape hatch for mixed migration pages.
 ///
-/// - Important: 正常页面优先使用 `Header`、`Footer`、`SectionSupplementary` 或
-/// `ListSection.header/footer/supplementary`。只有旧页面已经封装了 view provider
+/// - Important: 常规接入优先使用 `Header`、`Footer`、`SectionSupplementary` 或
+/// `ListSection.header/footer/supplementary`。只有现有代码已经封装了 view provider
 /// 并且短期内不能拆开时，才使用这个迁移入口。
 public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     private let id: ID

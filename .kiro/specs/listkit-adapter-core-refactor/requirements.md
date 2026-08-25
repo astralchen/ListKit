@@ -4,7 +4,7 @@
 
 `CollectionListAdapter` 和 `TableListAdapter` 当前分别维护 apply、diagnostics、summary、refresh decision 和 event routing 规则。两者 UIKit 边界不同，但核心规则应只有一份，避免共享基础设施在修 bug 时出现分叉。
 
-本规格只抽取纯 Swift core。Collection 继续负责 `UICollectionView`、supplementary、compositional layout 和 layout invalidation；Table 继续负责 `UITableView`、row/header/footer delegate。ListKit 尚未对外发布，可以调整内部结构和必要 public API，但本次不主动迁移 Rebirth 业务页面。
+本规格只抽取纯 Swift core。Collection 继续负责 `UICollectionView`、supplementary、compositional layout 和 layout invalidation；Table 继续负责 `UITableView`、row/header/footer delegate。ListKit 尚未对外发布，可以调整内部结构和必要 public API，但本次不主动迁移 Rebirth 接入代码。
 
 ## Requirements
 
@@ -57,4 +57,4 @@
 
 - 不合并 Collection DSL 和 Table DSL。
 - 不把 compositional layout、UITableView delegate、diffable data source apply 迁入 core。
-- 不主动迁移 Rebirth 业务页面调用点。
+- 不主动迁移 Rebirth 调用点。

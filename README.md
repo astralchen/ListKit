@@ -2,7 +2,7 @@
 
 用声明式 DSL 驱动 `UICollectionView` 与 `UITableView` 的 UIKit 列表框架。
 
-ListKit 让页面在数据变化时重新描述列表结构，再由 adapter 负责 diffable snapshot、复用视图注册、内容刷新和事件分发。业务 model 不需要遵守框架协议，也不需要手动维护 index path。
+ListKit 让调用方在数据变化时重新描述列表结构，再由 adapter 负责 diffable snapshot、复用视图注册、内容刷新和事件分发。Model 不需要遵守框架协议，也不需要手动维护 index path。
 
 ```swift
 adapter.apply {
@@ -20,7 +20,7 @@ adapter.apply {
 ## 特性
 
 - 同时支持 `UICollectionView` 和 `UITableView`，共享一致的 identity、刷新、事件与 apply 语义。
-- 基于 diffable data source；用稳定业务 ID 描述变化，不让业务逻辑依赖位置。
+- 基于 diffable data source；用稳定 ID 描述变化，避免状态更新依赖位置。
 - Swift result builder DSL，支持 `if`、`switch`、`ForEach`、状态 Row 和层级列表。
 - 自动注册并类型安全地 dequeue cell、header 和 footer；同名 nib 会被自动发现。
 - Collection 内置 list、grid、横向滚动、自定义 compositional layout、supplementary 和 section decoration。
@@ -33,7 +33,7 @@ adapter.apply {
 - [UICollectionView 快速开始](#uicollectionview-快速开始)
 - [UITableView 快速开始](#uitableview-快速开始)
 - [Identity 与刷新](#identity-与刷新)
-- [条件内容与页面状态](#条件内容与页面状态)
+- [条件内容与视图状态](#条件内容与视图状态)
 - [Selection](#selection)
 - [Layout 与 Supplementary](#layout-与-supplementary)
 - [事件](#事件)
@@ -199,11 +199,11 @@ final class UsersViewController: UIViewController {
 }
 ```
 
-关键点是 adapter 必须由页面强引用；列表数据变化时只更新业务状态并再次调用 `render()`。
+关键点是 adapter 必须由调用方强引用；列表数据变化时只更新数据源状态并再次调用 `render()`。
 
 ## UITableView 快速开始
 
-Table 使用独立 DSL，避免把 collection-only API 暴露给 table 页面：
+Table 使用独立 DSL，与 collection-only API 保持隔离：
 
 ```swift
 enum Section: Hashable, Sendable {
@@ -236,7 +236,7 @@ func render(messages: [Message]) {
 
 ### 自定义 Table Header / Footer
 
-系统文字标题适合简单页面；需要自定义视图时使用 header/footer builder：
+系统文字标题适合简单布局；需要自定义视图时使用 header/footer builder：
 
 ```swift
 TableSection(.messages) {
@@ -290,7 +290,7 @@ TableRow(model: message, id: \.id, cell: MessageCell.self) { cell, message, _ in
 }
 ```
 
-启用 reordering 时，页面仍需切换 table view 的 editing 状态：
+启用 reordering 时，调用方仍需切换 table view 的 editing 状态：
 
 ```swift
 tableView.setEditing(true, animated: true)
@@ -314,11 +314,11 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
 .refreshPolicy(.whenRefreshIDChanges)
 ```
 
-同一个业务 ID 切换 cell 类型时，`Cell.self` 的变化会自然产生 delete + insert。需要用同一个 cell 类型表达多个展示分支时，可以用 `.variant(...)` 显式区分。
+同一个 row ID 切换 cell 类型时，`Cell.self` 的变化会自然产生 delete + insert。需要用同一个 cell 类型表达多个展示分支时，可以用 `.variant(...)` 显式区分。
 
 ### Row ID 的几种写法
 
-在 `ForEach` 内，Row 默认继承外层 ID，这是列表页面最常用的写法：
+在 `ForEach` 内，Row 默认继承外层 ID，这是最常用的列表写法：
 
 ```swift
 ForEach(users, id: \.userID) { user in
@@ -344,7 +344,7 @@ Row(model: user, cell: UserCell.self) { cell, user, _ in
 }
 ```
 
-也可以通过 key path 或闭包明确指定业务身份：
+也可以通过 key path 或闭包明确指定稳定身份：
 
 ```swift
 Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
@@ -437,8 +437,8 @@ adapter.apply(options: options) {
 仍保证目标内容被刷新，但不承诺只重建目标 Cell。iOS 15+ 才能稳定区分
 `reconfigureItems`、`reloadItems` 和 reload-data reset。
 
-Row API 接受业务 ID，不要求页面构造 ListKit 内部的复合 identity；批量刷新使用
-`forRowIDs:`。省略 section 时，同一业务 ID 在所有 section 中的匹配项都会刷新：
+Row API 接受 row ID，不要求调用方构造 ListKit 内部的复合 identity；批量刷新使用
+`forRowIDs:`。省略 section 时，同一 row ID 在所有 section 中的匹配项都会刷新：
 
 ```swift
 adapter.reconfigureRows(forRowID: userID, in: .users)
@@ -482,9 +482,9 @@ Row(model: score, id: \.playerID, cell: ScoreCell.self) { cell, score, _ in
 .contentTransition(.opacity(duration: 0.18))
 ```
 
-## 条件内容与页面状态
+## 条件内容与视图状态
 
-Result builder 支持 `if`、`if let`、`switch` 和数组表达式。页面状态仍由业务层管理，ListKit 只负责描述当前应该显示什么：
+Result builder 支持 `if`、`if let`、`switch` 和数组表达式。视图状态仍由调用方管理，ListKit 只负责描述当前应该显示什么：
 
 ```swift
 ListSection(.users) {
@@ -618,7 +618,7 @@ ListSection(.recentSearches) {
 
 ### 条件 Layout、Header 与背景
 
-需要让布局元数据和页面状态一起变化时，可以使用 `ListSection` 的 builders：
+需要让布局元数据和视图状态一起变化时，可以使用 `ListSection` 的 builders：
 
 ```swift
 ListSection(.dashboard) {
@@ -722,7 +722,7 @@ ListSection(.inbox) {
 
 ### 接入已有 Layout Provider
 
-旧页面可以继续用 `.layout("legacy-id")` 保存布局标识，并在 fallback 中返回原来的 `NSCollectionLayoutSection`：
+现有接入代码可以继续用 `.layout("legacy-id")` 保存布局标识，并在 fallback 中返回原来的 `NSCollectionLayoutSection`：
 
 ```swift
 adapter.apply {
@@ -742,7 +742,7 @@ collectionView.collectionViewLayout = adapter.makeCompositionalLayout { section,
 }
 ```
 
-新页面优先使用 `.list(...)`、`.grid(...)`、`.horizontal(...)` 或 `.custom(...)`；fallback 主要用于渐进迁移。
+新接入代码优先使用 `.list(...)`、`.grid(...)`、`.horizontal(...)` 或 `.custom(...)`；fallback 主要用于渐进迁移。
 
 ## 事件
 
@@ -761,7 +761,7 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
 }
 ```
 
-Cell 内部产生的业务事件可以通过强类型路由统一交给页面处理：
+Cell 内部产生的事件可以通过强类型路由统一交给调用方处理：
 
 ```swift
 enum UserListEvent: ListEvent {
@@ -827,7 +827,7 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
 
 ## 实时列表查询与可见刷新
 
-Adapter 保存的是当前已经提交的描述树，因此页面不需要额外维护一套 sections 来查询位置：
+Adapter 保存的是当前已经提交的描述树，因此调用方不需要额外维护一套 sections 来查询位置：
 
 ```swift
 let count = adapter.itemCount(in: .messages)
@@ -900,11 +900,11 @@ ListSection(.files) {
 }
 ```
 
-展开状态由业务层保存。下一次 render 时继续把状态传给 `isExpanded`，即可保持声明式单向数据流。
+展开状态由调用方保存。下一次 render 时继续把状态传给 `isExpanded`，即可保持声明式单向数据流。
 
 ## Apply、动画与滚动
 
-普通页面使用同步 `apply`。需要等待 diffable、selection、可见刷新和滚动全部完成时，
+常规更新使用同步 `apply`。需要等待 diffable、selection、可见刷新和滚动全部完成时，
 使用 async `apply`：
 
 ```swift
@@ -972,7 +972,7 @@ let transaction = ListTransaction.automatic
 
 `apply` 会立即返回 summary，这时 `summary.animation.completionState` 通常是 `.submitted`，
 用于观察本次提交计划。需要最终可见刷新、layout、滚动和内容过渡统计时，使用 completion
-或 async `apply`。摘要适合日志、性能观察和测试断言，不应替代业务数据状态：
+或 async `apply`。摘要适合日志、性能观察和测试断言，不应替代数据源状态：
 
 ```swift
 let summary = await adapter.apply {
@@ -1024,9 +1024,9 @@ for issue in summary.diagnosticsIssues {
 
 ## 自动注册与手写 Data Source
 
-标准 `Row`、`TableRow`、header、footer 和 supplementary 都会自动注册 class 或同名 nib，不需要页面手动调用 `register`。
+标准 `Row`、`TableRow`、header、footer 和 supplementary 都会自动注册 class 或同名 nib，不需要调用方手动调用 `register`。
 
-如果旧页面仍然使用手写 `UICollectionViewDataSource`，可以复用 `.lk` 命名空间中的类型安全 helper：
+如果现有代码仍然使用手写 `UICollectionViewDataSource`，可以复用 `.lk` 命名空间中的类型安全 helper：
 
 ```swift
 let cellRegistration: UICollectionView.CellRegistration<UserCell, User> = collectionView.lk.cellRegistration(
@@ -1054,7 +1054,7 @@ let cell: UserTableCell = tableView.lk.dequeue(UserTableCell.self, for: indexPat
 
 ## Adapter 所有权
 
-Adapter 会接管 UIKit 的 data source、delegate 与 prefetch data source。请将 adapter 作为页面的强引用属性保存；如果其他对象还需要接收未被 ListKit 覆盖的 delegate 回调，可以设置 forwarding delegate：
+Adapter 会接管 UIKit 的 data source、delegate 与 prefetch data source。请由调用方强引用 adapter；如果其他对象还需要接收未被 ListKit 覆盖的 delegate 回调，可以设置 forwarding delegate：
 
 ```swift
 adapter.collectionDelegate = self
@@ -1079,7 +1079,7 @@ Collection 的原生 drag/drop 仍可直接使用 `dragDelegate` 与 `dropDelega
 
 ## 示例与测试
 
-`Examples/` 包含 collection 与 table 两套完整页面，演示 layout、selection、事件、刷新、swipe、context menu 和 reordering。
+`Examples/` 包含 collection 与 table 两套完整示例，演示 layout、selection、事件、刷新、swipe、context menu 和 reordering。
 
 ListKit 是 iOS/UIKit 框架，有效验收项是 iOS Simulator 或 generic iOS Simulator 的
 `xcodebuild`。裸跑 `swift test` 会走 macOS SwiftPM 构建路径，macOS target 没有

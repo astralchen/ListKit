@@ -2,7 +2,7 @@ import UIKit
 
 // MARK: - Events
 
-/// 自定义业务事件标记协议。
+/// 自定义列表事件标记协议。
 public protocol ListEvent: Sendable {}
 
 /// Row/Header/Footer 配置和事件闭包收到的上下文。
@@ -21,7 +21,7 @@ public struct ListContext {
     public let identity: AnyListIdentity
     /// 当前 section 的稳定身份。
     public var sectionID: AnyListID { identity.sectionID }
-    /// 当前 row 或 supplementary 的稳定业务 id。
+    /// 当前 row 或 supplementary 的稳定数据 id。
     public var itemID: AnyListID { identity.rowID }
     /// 事件发生时的位置。列表变化后该位置可能失效，跨刷新逻辑应优先使用 `identity`。
     public let indexPath: IndexPath
@@ -52,7 +52,7 @@ public struct ListContext {
     ///   - indexPath: 当前 cell 或 supplementary 的 index path。
     ///   - collectionView: 当前 collection view。
     ///   - eventDispatcher: adapter 持有的事件分发闭包。
-    /// - Note: 这个初始化器仅供 ListKit 内部构造 context；页面通过 row/supplementary 的
+    /// - Note: 这个初始化器仅供 ListKit 内部构造 context；调用方通过 row/supplementary 的
     /// configure 或事件闭包接收 `ListContext`。
     init(
         identity: AnyListIdentity,
@@ -66,14 +66,14 @@ public struct ListContext {
         self.eventDispatcher = eventDispatcher
     }
 
-    /// 向 adapter 发送业务事件。
+    /// 向 adapter 发送列表事件。
     ///
-    /// - Parameter event: 遵守 `ListEvent` 的业务事件。
+    /// - Parameter event: 遵守 `ListEvent` 的事件值。
     @MainActor public func send<Event>(_ event: Event) where Event: ListEvent {
         eventDispatcher(event, self)
     }
 
-    /// 取回强类型 sectionID，避免页面在事件里手动保存额外状态。
+    /// 取回强类型 sectionID，避免调用方在事件处理期间维护重复状态。
     ///
     /// - Parameter type: 要恢复的 section id 类型。
     /// - Returns: 类型匹配时返回原始 section id，否则返回 `nil`。

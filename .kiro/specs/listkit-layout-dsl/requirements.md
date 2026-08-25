@@ -37,7 +37,7 @@
 
 ## Requirement 4: Item-Level Supplementary Layout
 
-**User Story:** 作为业务页面开发者，我希望 badge、角标等 custom supplementary 可以挂到每个 item 上。
+**User Story:** 作为 UIKit 开发者，我希望 badge、角标等 custom supplementary 可以挂到每个 item 上。
 
 ### Acceptance Criteria
 

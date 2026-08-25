@@ -362,7 +362,7 @@ public func HorizontalLayout(
     )
 }
 
-/// 横向 section 的滚动行为，避免页面直接依赖 UIKit 枚举。
+/// 横向 section 的滚动行为，避免调用方直接依赖 UIKit 枚举。
 public enum ListOrthogonalScrollingBehavior: Hashable, Sendable {
     case none
     case continuous
@@ -890,7 +890,7 @@ public struct ListSupplementaryLayout: Hashable, Sendable {
     ///   - width: supplementary 宽度。
     ///   - height: supplementary 高度。
     ///   - zIndex: supplementary 层级。
-    /// - Note: 业务代码通常优先使用 `BoundarySupplementaryLayout` 或 `ItemSupplementaryLayout`。
+    /// - Note: 调用方通常优先使用 `BoundarySupplementaryLayout` 或 `ItemSupplementaryLayout`。
     public init(
         kind: String,
         placement: ListSupplementaryPlacement,

@@ -49,5 +49,5 @@ git diff --check
 ## Remaining Follow-up
 
 - [ ] 手动回归：派对页、搜索页、房间公屏、座位列表、个人主页列表。
-- [ ] 按业务优先级继续迁移更多 CellKit 页面。
+- [ ] 按迁移优先级继续迁移更多 CellKit 页面。
 - [ ] 后续评估 UITableView DSL adapter 是否纳入 ListKit。

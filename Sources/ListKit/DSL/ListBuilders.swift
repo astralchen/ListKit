@@ -29,7 +29,7 @@ private struct InheritedIDRowScope: ListRowRepresentable {
 /// ```
 /// - Parameters:
 ///   - data: 要遍历的数据序列。
-///   - id: 指向元素业务 id 的 key path。
+///   - id: 指向元素稳定 id 的 key path。
 ///   - content: 为每个元素生成 rows 的 builder。
 /// - Returns: 可放入 `ListSection` 的 row 组合。
 /// - Note: 内部使用 `Row(model:cell:)` 时会自动继承 `ForEach(id:)` 的身份。
@@ -48,7 +48,7 @@ private struct InheritedIDRowScope: ListRowRepresentable {
 ///
 /// - Parameters:
 ///   - data: 要遍历的数据序列。
-///   - id: 为元素生成业务 id 的闭包。
+///   - id: 为元素生成稳定 id 的闭包。
 ///   - content: 为每个元素生成 rows 的 builder。
 /// - Returns: 可放入 `ListSection` 的 row 组合。
 @MainActor public func ForEach<Data, ID>(
@@ -64,7 +64,7 @@ private struct InheritedIDRowScope: ListRowRepresentable {
 
 /// `ListSection` rows 的 result builder。
 ///
-/// 支持 `if`、`if/else`、`for`、数组和空分支，让页面用声明式方式 rebuild rows。
+/// 支持 `if`、`if/else`、`for`、数组和空分支，让调用方以声明式方式 rebuild rows。
 @resultBuilder
 public enum ListRowBuilder {
     public static func buildExpression(_ expression: any ListRowRepresentable) -> [any ListRowRepresentable] {
@@ -324,7 +324,7 @@ public enum ListSectionBackgroundBuilder {
 
 /// 独立构建 section 数组的 helper。
 ///
-/// - Note: 页面可以先组合 sections，再调用 `adapter.apply(sections)`。
+/// - Note: 调用方可以先组合 sections，再调用 `adapter.apply(sections)`。
 public enum ListSectionsBuilder<SectionID> where SectionID: Hashable & Sendable {
     /// 执行 section builder 并返回 section 数组。
     ///

@@ -2,7 +2,7 @@
 
 ## Phase P0: Spec
 
-- [x] Task 1: 新增本 Kiro requirements/design/tasks，明确抽 pure Swift core，不迁移业务页面。
+- [x] Task 1: 新增本 Kiro requirements/design/tasks，明确抽 pure Swift core，不迁移应用调用点。
 - [x] Task 2: 更新 README Kiro spec 列表，补充 adapter core refactor 入口。
 
 ## Phase P1: Characterization Tests

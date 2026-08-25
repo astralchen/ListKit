@@ -2,7 +2,7 @@
 
 ## Architecture
 
-`ListKit` 是 `CellKit` 的并行替代方案，只依赖 UIKit/Foundation，不依赖 Rebirth 业务代码和第三方 UI 库。核心链路是：
+`ListKit` 是 `CellKit` 的并行替代方案，只依赖 UIKit/Foundation，不依赖 Rebirth 应用代码和第三方 UI 库。核心链路是：
 
 ```text
 声明式描述树 -> 内部类型擦除 -> Diffable snapshot -> 精准刷新 -> 事件分发
@@ -12,10 +12,10 @@
 
 - `CollectionListAdapter<SectionID>`：绑定 `UICollectionView`，管理 diffable data source、snapshot、刷新和事件分发。
 - `ListSection<SectionID>`：描述 section、rows、header/footer/custom supplementary。
-- `Row<ID, Model, Cell>`：描述业务身份、model、cell 类型、配置闭包和事件。
+- `Row<ID, Model, Cell>`：描述稳定身份、model、cell 类型、配置闭包和事件。
 - `Supplementary<ID, View>`：描述 header/footer/custom supplementary。
 - `ListContext`：向配置和事件闭包提供 `sectionID`、`indexPath`、`collectionView` 和 `context.send(...)`。
-- `AnyListRow` / `AnySupplementary` / `AnyListID` / `AnyListIdentity`：内部类型擦除，避免业务 model conform 框架协议。
+- `AnyListRow` / `AnySupplementary` / `AnyListID` / `AnyListIdentity`：内部类型擦除，避免 model 遵守框架协议。
 
 ## Public API
 
@@ -41,7 +41,7 @@ adapter.apply(animatingDifferences: false) {
 }
 ```
 
-重点逻辑：`ForEach(data, id:)` 会把当前元素 id 下传给内部 `Row(model:cell:)`。这样常见列表不需要在 `ForEach` 和 `Row` 上重复写两次业务 id。
+重点逻辑：`ForEach(data, id:)` 会把当前元素 id 下传给内部 `Row(model:cell:)`。这样常见列表不需要在 `ForEach` 和 `Row` 上重复写两次稳定 id。
 
 ### 单个 Row
 
@@ -118,14 +118,14 @@ Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, context in
 
 adapter.apply { ... }
     .onEvent(UserListEvent.self) { event, context in
-        // 页面统一处理业务事件
+        // 调用方统一处理列表事件
     }
 ```
 
 ## Error Handling
 
 - `Row(model:cell:)` 如果既不是 `Identifiable` 单个 model，也没有位于 `ForEach(id:)` 继承作用域内，会触发明确的 precondition failure，提示使用 `Row(model:id:cell:)` 或显式 id。
-- dequeue 使用强类型泛型 API；如果业务注册/类型错误，会以 UIKit 原有错误形式暴露，便于定位。
+- dequeue 使用强类型泛型 API；如果注册或类型不匹配，会以 UIKit 原有错误形式暴露，便于定位。
 - `context.send(...)` 只在 `@MainActor` 分发，避免 UIKit 事件越过主线程。
 
 ## Testing

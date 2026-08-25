@@ -9,7 +9,7 @@ Layout DSL 继续遵循 ListKit 的描述树思路：section 保存轻量、可 
 - `ListSectionLayout`: section 主布局描述，包含 `.list(...)`、`.grid(...)`、`.horizontal(...)`。
 - `ListCustomSectionLayout`: 自定义 compositional layout 逃生口，使用 `.layout(.custom(id:) { ... })` 绑定到 section。
 - `ListLayoutDimension`: 映射到 `NSCollectionLayoutDimension`，支持 absolute、estimated、fractionalWidth、fractionalHeight。
-- `ListLayoutInsets`: 使用 top/leading/bottom/trailing 保存 spacing，避免业务层直接依赖不可 Hash 的 UIKit inset 类型。
+- `ListLayoutInsets`: 使用 top/leading/bottom/trailing 保存 spacing，避免调用方直接依赖不可 Hash 的 UIKit inset 类型。
 - `ListSupplementaryLayout`: 描述 supplementary kind、placement、width、height、zIndex。
 - `ListSupplementaryPlacement`: `.boundary(...)` 或 `.itemSupplementary(...)`。
 - `ListSupplementaryAnchor`: top、bottom、leading、trailing 及四角位置。

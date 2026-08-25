@@ -48,7 +48,7 @@
 
 ### Acceptance Criteria
 
-- WHEN cell 内部按钮触发业务动作 THE SYSTEM SHALL 支持 `.onCellEvent(...)` 绑定 cell 事件入口。
+- WHEN cell 内部按钮触发自定义动作 THE SYSTEM SHALL 支持 `.onCellEvent(...)` 绑定 cell 事件入口。
 - WHEN `.onCellEvent(...)` 触发 THE SYSTEM SHALL 使用 `context.send(Event)` 分发强类型 `ListEvent`。
 - WHEN 页面已有自定义写法 THE SYSTEM SHALL 继续支持在 configure 闭包里手动调用 `context.send(...)`。
 

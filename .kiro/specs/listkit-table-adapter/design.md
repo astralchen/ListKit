@@ -174,7 +174,7 @@ ListKit 只内置 UIKit 原生能力：
 - `UISwipeActionsConfiguration`
 - iOS 13+ context menu
 
-`SwipeCellKit` 不进入 ListKit package 依赖。`ConversationListViewController` 这类页面如果需要迁移，应在 Rebirth App 层提供 bridge：将 `TableRow` 的业务事件和页面现有 SwipeCellKit delegate 连接起来，或者让该页面继续自管第三方 swipe delegate。
+`SwipeCellKit` 不进入 ListKit package 依赖。`ConversationListViewController` 这类页面如果需要迁移，应在 Rebirth App 层提供 bridge：将 `TableRow` 事件和现有 SwipeCellKit delegate 连接起来，或者让调用方继续自管第三方 swipe delegate。
 
 ## Diagnostics and Tests
 

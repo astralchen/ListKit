@@ -95,4 +95,4 @@ raw kind 用 `BackgroundDecoration(kind:contentInsets:zIndex:)`；固定背景�
 
 ## Registration
 
-`CollectionListAdapter` 在 rebuild lookup tables 或创建 compositional layout 时，对 typed background decoration 执行 `layout.registerDecorationView(View.self, forKind:)`。raw kind API 不注册 view，适合业务已在 custom layout 中手动注册的场景。
+`CollectionListAdapter` 在 rebuild lookup tables 或创建 compositional layout 时，对 typed background decoration 执行 `layout.registerDecorationView(View.self, forKind:)`。raw kind API 不注册 view，适合调用方已在 custom layout 中手动注册的场景。
