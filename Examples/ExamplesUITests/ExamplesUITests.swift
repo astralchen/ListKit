@@ -3,6 +3,17 @@ import XCTest
 final class ExamplesUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
+        let originalOrientation = MainActor.assumeIsolated {
+            XCUIDevice.shared.orientation
+        }
+        MainActor.assumeIsolated {
+            XCUIDevice.shared.orientation = .portrait
+        }
+        addTeardownBlock {
+            MainActor.assumeIsolated {
+                XCUIDevice.shared.orientation = originalOrientation
+            }
+        }
     }
 
     @MainActor

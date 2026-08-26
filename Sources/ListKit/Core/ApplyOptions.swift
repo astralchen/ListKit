@@ -13,11 +13,11 @@ public enum ListAnimationPolicy: Equatable, Sendable {
     case disabled
 }
 
-/// 连续 async apply 的调度方式。
+/// 连续列表 mutation 的调度方式。
 public enum ListUpdatePolicy: Equatable, Sendable {
-    /// 新 apply 立即提交；尚未完成的旧 apply 会以 `.superseded` 结束。
+    /// 合并兼容的 pending mutation，并让被更新请求取代的旧请求以 `.superseded` 结束。
     case coalesceLatest
-    /// 等待前一个 async apply 完成后再按调用顺序提交。
+    /// 等待前一个 mutation 完成后再严格按调用顺序提交。
     case serial
 }
 
@@ -44,9 +44,13 @@ public struct ListScrollTarget: Hashable, Sendable {
 
 /// apply 后目标在 viewport 中的位置。
 public enum ListScrollPosition: Equatable, Sendable {
+    /// 将目标对齐到 viewport 顶部。
     case top
+    /// 将目标对齐到 viewport 中心。
     case center
+    /// 将目标对齐到 viewport 底部。
     case bottom
+    /// 仅滚动到足以显示目标的最近位置。
     case nearest
 }
 
@@ -104,16 +108,35 @@ public struct ListScrollBehavior: Equatable, Sendable {
 /// `ListTransaction` 只暴露 UIKit 能稳定兑现的系统动画开关；diffable 的 duration 和
 /// curve 仍由 UIKit 决定。Row 自身内容过渡通过 `contentTransition(_:)` 单独描述。
 public struct ListTransaction: Equatable, Sendable {
+    /// diffable snapshot 提交是否请求动画。
     public var snapshotAnimation: ListAnimationPolicy
+    /// Collection outline section snapshot 提交是否请求动画。
     public var outlineAnimation: ListAnimationPolicy
+    /// 布局失效和自适应尺寸重测量是否请求动画。
     public var layoutAnimation: ListAnimationPolicy
+    /// 可见 Row 内容过渡是否允许动画。
     public var contentAnimation: ListAnimationPolicy
+    /// transaction 声明的滚动行为是否请求动画。
     public var scrollAnimation: ListAnimationPolicy
+    /// 连续 mutation 使用合并还是严格串行调度。
     public var updatePolicy: ListUpdatePolicy
+    /// apply 完成结构更新后执行的滚动行为。
     public var scrollBehavior: ListScrollBehavior
+    /// `.automatic` 动画策略是否遵循系统 Reduce Motion 设置。
     public var respectsReduceMotion: Bool
 
     /// 创建 transaction。未单独指定的作用域继承 `animation`。
+    ///
+    /// - Parameters:
+    ///   - animation: 所有未单独指定动画策略的默认值。
+    ///   - snapshotAnimation: diffable snapshot 动画策略。
+    ///   - outlineAnimation: Collection outline 动画策略。
+    ///   - layoutAnimation: 布局更新动画策略。
+    ///   - contentAnimation: 可见内容过渡动画策略。
+    ///   - scrollAnimation: 滚动动画策略。
+    ///   - updatePolicy: 连续 mutation 的调度方式。
+    ///   - scrollBehavior: apply 后执行的滚动行为。
+    ///   - respectsReduceMotion: 自动动画是否遵循 Reduce Motion。
     public init(
         animation: ListAnimationPolicy = .automatic,
         snapshotAnimation: ListAnimationPolicy? = nil,
@@ -135,10 +158,15 @@ public struct ListTransaction: Equatable, Sendable {
         self.respectsReduceMotion = respectsReduceMotion
     }
 
+    /// 所有动画作用域均为 `.automatic` 的默认 transaction。
     public static let automatic = ListTransaction()
+    /// 禁用所有动画作用域的 transaction。
     public static let disabled = ListTransaction(animation: .disabled)
 
     /// 同时设置所有动画作用域。
+    ///
+    /// - Parameter policy: 应用于 snapshot、outline、layout、content 和 scroll 的策略。
+    /// - Returns: 更新后的 transaction 副本。
     public func animation(_ policy: ListAnimationPolicy) -> Self {
         var copy = self
         copy.snapshotAnimation = policy
@@ -149,54 +177,66 @@ public struct ListTransaction: Equatable, Sendable {
         return copy
     }
 
+    /// 设置 diffable snapshot 动画策略并返回更新后的副本。
     public func snapshotAnimation(_ policy: ListAnimationPolicy) -> Self {
         var copy = self
         copy.snapshotAnimation = policy
         return copy
     }
 
+    /// 设置 Collection outline 动画策略并返回更新后的副本。
     public func outlineAnimation(_ policy: ListAnimationPolicy) -> Self {
         var copy = self
         copy.outlineAnimation = policy
         return copy
     }
 
+    /// 设置布局更新动画策略并返回更新后的副本。
     public func layoutAnimation(_ policy: ListAnimationPolicy) -> Self {
         var copy = self
         copy.layoutAnimation = policy
         return copy
     }
 
+    /// 设置可见内容过渡动画策略并返回更新后的副本。
     public func contentAnimation(_ policy: ListAnimationPolicy) -> Self {
         var copy = self
         copy.contentAnimation = policy
         return copy
     }
 
+    /// 设置滚动动画策略并返回更新后的副本。
     public func scrollAnimation(_ policy: ListAnimationPolicy) -> Self {
         var copy = self
         copy.scrollAnimation = policy
         return copy
     }
 
+    /// 设置连续 mutation 的调度方式并返回更新后的副本。
     public func updatePolicy(_ policy: ListUpdatePolicy) -> Self {
         var copy = self
         copy.updatePolicy = policy
         return copy
     }
 
+    /// 设置 apply 后的滚动行为并返回更新后的副本。
     public func scrollBehavior(_ behavior: ListScrollBehavior) -> Self {
         var copy = self
         copy.scrollBehavior = behavior
         return copy
     }
 
+    /// 设置自动动画是否遵循 Reduce Motion，并返回更新后的副本。
     public func respectsReduceMotion(_ enabled: Bool = true) -> Self {
         var copy = self
         copy.respectsReduceMotion = enabled
         return copy
     }
 
+    /// 将声明式动画策略解析为本次提交可直接执行的布尔配置。
+    ///
+    /// `.automatic` 会同时考虑系统 Reduce Motion 与 `respectsReduceMotion`；显式
+    /// `.enabled` / `.disabled` 不受系统设置改写。
     func resolved(reduceMotionEnabled: Bool) -> ListResolvedTransaction {
         func resolve(_ policy: ListAnimationPolicy) -> Bool {
             switch policy {
@@ -231,14 +271,23 @@ public struct ListTransaction: Equatable, Sendable {
     }
 }
 
+/// `ListTransaction` 结合当前系统环境后得到的不可变执行配置。
 struct ListResolvedTransaction {
+    /// diffable snapshot 是否使用差异动画。
     let snapshotAnimation: Bool
+    /// outline 展开或折叠是否使用动画。
     let outlineAnimation: Bool
+    /// layout 更新是否包裹在动画事务中。
     let layoutAnimation: Bool
+    /// 可见内容重配是否执行 Row 声明的内容过渡。
     let contentAnimation: Bool
+    /// apply 后的滚动或锚点恢复是否使用动画。
     let scrollAnimation: Bool
+    /// 连续 mutation 的排队与合并策略。
     let updatePolicy: ListUpdatePolicy
+    /// snapshot 完成后的滚动或可见锚点行为。
     let scrollBehavior: ListScrollBehavior
+    /// 本次解析是否因 Reduce Motion 关闭了至少一个 `.automatic` 动画。
     let reduceMotionApplied: Bool
 }
 
@@ -248,27 +297,64 @@ struct ListResolvedTransaction {
 public enum ListApplyRefreshStrategy: Equatable, Sendable {
     /// 按 Row policy 自动选择 diffable 或可见刷新。
     case automatic
-    /// 不标记 snapshot refresh，只重配符合 Row policy 的可见节点。
+    /// 将自动刷新限制到符合 Row policy 的可见节点，并继续尊重 Row action。
     case visibleOnly
-    /// 只执行 `refreshID` 驱动的 diffable refresh，不额外重配可见节点。
-    case diffableOnly
-    /// 忽略 Row policy，对所有新旧 snapshot 中都存在的 Row 执行 diffable reload。
-    case forceReload
+    /// 只执行 `refreshID` 变化驱动的刷新，不额外处理其他可见节点。
+    case refreshIDChangesOnly
+    /// 忽略 Row policy，对所有新旧 snapshot 中都存在的 Row 执行 reload。
+    case reloadKeptRows
+}
+
+/// 主动 Row 刷新的目标范围。
+public enum ListRefreshScope: Equatable, Sendable {
+    /// 刷新当前已提交 snapshot 中所有匹配的展示身份。
+    case allMatching
+    /// 只刷新当前可见的匹配展示身份。
+    case visible
+}
+
+/// Row 重配后的布局处理方式。
+public enum ListRefreshLayoutPolicy: Equatable, Sendable {
+    /// ListKit 不额外请求布局失效。
+    case none
+    /// 重配完成后主动请求列表重新测量布局。
+    case invalidate
+}
+
+/// Row 内容刷新时使用的 UIKit 生命周期。
+public enum ListRefreshAction: Equatable, Sendable {
+    /// 使用 diffable reconfigure 保留现有 Cell，不进入 `prepareForReuse`，并按需请求布局失效。
+    case reconfigure(layout: ListRefreshLayoutPolicy)
+    /// 请求完整 reload/configuration 路径；UIKit 不保证最终 Cell 对象地址发生变化。
+    case reload
 }
 
 /// diffable snapshot 的提交方式。
 public enum ListSnapshotApplicationMode: Equatable, Sendable {
+    /// 使用 diffable 差异提交；是否显示 snapshot 动画由 transaction 决定。
     case differences
+    /// 使用 reload-data 语义提交完整 snapshot，不计算界面差异动画。
     case reloadData
 }
 
 /// `apply` 的完整配置。
 public struct ListApplyOptions: Sendable {
+    /// 控制动画、调度策略、滚动行为和 Reduce Motion 处理。
     public var transaction: ListTransaction
+    /// 决定 kept Row 在 apply 期间何时进入自动刷新，以及是否强制 reload。
     public var refreshStrategy: ListApplyRefreshStrategy
+    /// 决定 snapshot 使用差异提交还是 reload-data 提交。
     public var applicationMode: ListSnapshotApplicationMode
+    /// 控制重复 identity 等结构问题的检查与报告方式。
     public var diagnostics: ListDiagnosticsOptions
 
+    /// 创建一次 apply 使用的完整配置。
+    ///
+    /// - Parameters:
+    ///   - transaction: 动画、队列、滚动和 Reduce Motion 配置。
+    ///   - refreshStrategy: kept Row 的自动刷新策略。
+    ///   - applicationMode: diffable snapshot 的提交方式。
+    ///   - diagnostics: 提交前结构检查配置。
     public init(
         transaction: ListTransaction = .automatic,
         refreshStrategy: ListApplyRefreshStrategy = .automatic,
@@ -294,6 +380,42 @@ public enum ListApplyCompletionState: Equatable, Sendable {
     case superseded
     /// async 任务在提交更新前已经取消。
     case cancelledBeforeCommit
+}
+
+/// 一次主动 Row 或 Section 刷新的提交与完成摘要。
+public struct ListRefreshSummary: Equatable, Sendable {
+    /// 输入去重后的 Row ID 或 Section ID 数量。
+    public let requestedTargetCount: Int
+    /// 最终执行时在已提交 snapshot 中匹配到的 presentation identity 或 Section 数量。
+    public let matchedTargetCount: Int
+    /// 实际通过 reconfigure 原地配置的可见 Cell 数量。
+    public let visibleReconfiguredCount: Int
+    /// 实际提交 reload 的 presentation identity 或 Section 数量。
+    public let reloadedTargetCount: Int
+    /// ListKit 是否为本次刷新主动请求了布局失效或重新测量。
+    public let layoutInvalidated: Bool
+    /// 同步返回通常为 `.submitted`；completion/async 返回最终状态。
+    public let completionState: ListApplyCompletionState
+
+    /// 创建一次定向 Row 或 Section 刷新的观测摘要。
+    ///
+    /// 调用方通常读取 adapter 返回的实例；此初始化方法主要用于日志、测试以及对
+    /// ListKit 结果进行值语义转发。
+    public init(
+        requestedTargetCount: Int = 0,
+        matchedTargetCount: Int = 0,
+        visibleReconfiguredCount: Int = 0,
+        reloadedTargetCount: Int = 0,
+        layoutInvalidated: Bool = false,
+        completionState: ListApplyCompletionState = .submitted
+    ) {
+        self.requestedTargetCount = requestedTargetCount
+        self.matchedTargetCount = matchedTargetCount
+        self.visibleReconfiguredCount = visibleReconfiguredCount
+        self.reloadedTargetCount = reloadedTargetCount
+        self.layoutInvalidated = layoutInvalidated
+        self.completionState = completionState
+    }
 }
 
 /// ListKit 在本次 apply 中调度和观测到的动画、布局与滚动摘要。
@@ -322,6 +444,7 @@ public struct ListAnimationSummary: Equatable, Sendable {
     /// 是否因为系统 Reduce Motion 设置关闭了动画。
     public let reduceMotionApplied: Bool
 
+    /// 创建一次 apply 的动画与完成状态摘要。
     public init(
         completionState: ListApplyCompletionState = .submitted,
         snapshotAnimated: Bool = false,
@@ -390,6 +513,7 @@ public struct ListApplySummary: Equatable, Sendable {
     /// 本次 apply 的提交/完成与动画观测摘要。
     public let animation: ListAnimationSummary
 
+    /// 创建一次 apply 的结构、刷新、诊断和动画摘要。
     public init(
         insertedSectionCount: Int = 0,
         deletedSectionCount: Int = 0,

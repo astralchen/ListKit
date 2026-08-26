@@ -9,9 +9,13 @@ import ObjectiveC
 /// `Supplementary` 和 `ProviderSupplementary` 会在 section 构建阶段转成
 /// `AnySupplementary`。
 public struct AnySupplementary {
+    /// 包含 Section、supplementary ID、view 类型和展示变体的稳定 identity。
     public let identity: AnyListIdentity
+    /// UIKit supplementary element kind。
     public let kind: String
+    /// 调用方提供的内容版本，用于判断可见 supplementary 是否需要重配。
     public let refreshID: AnyListID?
+    /// identity 保持不变时决定自动重配的触发条件。
     public let refreshPolicy: RowRefreshPolicy
 
     let register: @MainActor (UICollectionView) -> Void
@@ -36,6 +40,7 @@ public struct AnySupplementary {
 /// }
 /// ```
 public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Sendable {
+    /// UIKit supplementary element kind。
     public let kind: String
     var layout: ListSupplementaryLayout?
     private let makeSupplementaryProvider: @MainActor (SectionID) -> AnySupplementary

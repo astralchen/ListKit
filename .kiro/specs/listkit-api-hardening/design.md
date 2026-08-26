@@ -14,10 +14,10 @@
 
 实时页面通过 adapter API 刷新当前可见 row：
 
-- `reconfigureVisibleRows(forRowID:in:)` 只调用 row 的 `configureVisibleCell` 和 display handler，适合状态轻刷新。
-- `reloadVisibleRows(forRowID:in:)` 通过 diffable snapshot reload 当前可见 identity，适合自适应高度或内部布局变化。
+- `reconfigureRows(forRowID:in:scope:layout:)` 使用 diffable `reconfigureItems` 保留 Cell；`scope: .visible` 表达可见范围，`layout: .invalidate` 显式请求重新测量。
+- `reloadRows(forRowID:in:scope:)` 通过 diffable snapshot reload 匹配 identity；它进入完整配置路径，但不保证 Cell 对象地址变化。
 
-两者都只影响当前可见 indexPath，返回实际刷新数量。
+同步方法返回 submitted summary；completion/async 返回最终刷新数量和完成状态。
 
 ## App DSL Migration
 

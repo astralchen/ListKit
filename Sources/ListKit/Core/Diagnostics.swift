@@ -27,7 +27,9 @@ public enum ListDiagnosticsIssueKind: Equatable, Sendable {
 /// - Important: 诊断在 diffable apply 前执行。这样重复 identity 会先被 ListKit 捕获，
 /// 而不是等 `UICollectionViewDiffableDataSource` 用更隐晦的异常崩溃。
 public struct ListDiagnosticsIssue: Equatable, Sendable {
+    /// 问题分类，用于程序化筛选和测试断言。
     public let kind: ListDiagnosticsIssueKind
+    /// 面向开发者的具体问题描述。
     public let message: String
 }
 
@@ -43,7 +45,9 @@ public enum ListDiagnosticsMode: Equatable, Sendable {
 
 /// diagnostics 配置。
 public struct ListDiagnosticsOptions: Sendable {
+    /// 发现问题时禁用检查、跳过提交并警告，或触发 assertion。
     public var mode: ListDiagnosticsMode
+    /// 是否在 DEBUG 构建中输出每次 apply 的 summary。
     public var logsApplySummary: Bool
 
     /// 创建 diagnostics 配置。
@@ -56,7 +60,9 @@ public struct ListDiagnosticsOptions: Sendable {
         self.logsApplySummary = logsApplySummary
     }
 
+    /// 禁用结构拦截和 summary 日志的配置。
     public static let disabled = ListDiagnosticsOptions(mode: .disabled, logsApplySummary: false)
+    /// DEBUG 场景的默认配置：发现问题时警告并输出 apply summary。
     public static let debugDefault = ListDiagnosticsOptions()
 }
 

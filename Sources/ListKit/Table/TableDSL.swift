@@ -49,12 +49,18 @@ public struct InheritedTableRowID: Hashable, Sendable {
 public struct TableListContext {
     /// 当前 row/header/footer 的稳定展示身份。
     public let identity: AnyListIdentity
+    /// 当前展示身份所属的类型擦除 Section ID。
     public var sectionID: AnyListID { identity.sectionID }
+    /// 当前展示身份对应的类型擦除 Row 或 supplementary ID。
     public var itemID: AnyListID { identity.rowID }
     /// 事件发生时的位置；跨刷新逻辑应优先使用 `identity`。
     public let indexPath: IndexPath
     private let tableViewReference: TableListViewReference
 
+    /// 事件发生时关联的 table view。
+    ///
+    /// adapter 已释放 table view 时访问该属性会触发前置条件失败；需要弱生命周期
+    /// 查询时使用 `tableViewIfAvailable`。
     public var tableView: UITableView {
         guard let tableView = tableViewReference.tableView else {
             preconditionFailure("ListKit: TableListContext tableView was released")
@@ -62,6 +68,7 @@ public struct TableListContext {
         return tableView
     }
 
+    /// table view 尚未释放时返回其实例，否则返回 `nil`。
     public var tableViewIfAvailable: UITableView? {
         tableViewReference.tableView
     }
@@ -95,10 +102,12 @@ public struct TableListContext {
         sectionID.typed(type)
     }
 
+    /// 取回强类型 Row 或 supplementary ID。
     public func item<ID>(as type: ID.Type = ID.self) -> ID? where ID: Hashable & Sendable {
         itemID.typed(type)
     }
 
+    /// 取回强类型 Row ID；等价于 `item(as:)`。
     public func row<ID>(as type: ID.Type = ID.self) -> ID? where ID: Hashable & Sendable {
         item(as: type)
     }
@@ -115,18 +124,33 @@ private final class TableListViewReference {
 
 /// 类型擦除后的 table row 描述。
 public struct AnyTableRow {
+    /// 包含 Section、Row ID 和展示变体的稳定 identity。
     public let identity: AnyListIdentity
+    /// 调用方提供的内容版本；用于 apply 时判断 kept Row 是否需要刷新。
     public let refreshID: AnyListID?
+    /// identity 保持不变时决定自动刷新的触发条件。
     public let refreshPolicy: RowRefreshPolicy
+    /// 自动或主动刷新触发后使用的 Cell 生命周期与布局行为。
+    public let refreshAction: ListRefreshAction
+    /// controlled selection 的目标状态；`nil` 表示由 UIKit/用户交互维护。
     public let isSelected: Bool?
+    /// 是否禁止当前 Row 进入选择状态。
     public let isSelectionDisabled: Bool
+    /// 是否允许焦点系统聚焦当前 Row；`nil` 使用 UIKit 默认值。
     public let isFocusable: Bool?
+    /// 焦点移动是否同步改变选择；`nil` 使用 UIKit 默认值。
     public let selectionFollowsFocus: Bool?
+    /// 是否允许 spring-loading；`nil` 使用 UIKit 默认值。
     public let isSpringLoadingEnabled: Bool?
+    /// Row 的实际高度策略；`nil` 使用 table view 默认高度。
     public let height: TableRowHeight?
+    /// 单独覆盖的估算高度；`nil` 使用 `height` 或 table view 默认值。
     public let estimatedHeight: CGFloat?
+    /// Row 的缩进层级；`nil` 使用 Cell/UITableView 默认值。
     public let indentationLevel: Int?
+    /// 编辑状态下是否保持系统缩进；`nil` 使用 UIKit 默认值。
     public let shouldIndentWhileEditing: Bool?
+    /// 相同 identity 的可见内容重配时使用的过渡效果。
     public let contentTransition: ListContentTransition
 
     let register: @MainActor (UITableView) -> Void
@@ -169,9 +193,11 @@ public struct AnyTableRow {
 
 /// 可以放入 `TableSection` row builder 的元素协议。
 public protocol TableRowRepresentable {
+    /// 在指定 Section 中生成类型擦除后的 Table Row。
     @MainActor func eraseToAnyTableRows<SectionID>(sectionID: SectionID) -> [AnyTableRow]
         where SectionID: Hashable & Sendable
 
+    /// 使用外层 `TableForEach` 传入的可选 identity 生成类型擦除后的 Table Row。
     @MainActor func eraseToAnyTableRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -223,6 +249,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     private var rowVariant: AnyListID?
     private var rowRefreshID: AnyListID?
     private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
+    private var rowRefreshAction: ListRefreshAction = .reconfigure(layout: .none)
     private var rowContentTransition: ListContentTransition = .identity
     private var rowIsSelected: Bool?
     private var rowIsSelectionDisabled = false
@@ -337,6 +364,20 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
         var copy = self
         copy.rowRefreshPolicy = policy
+        return copy
+    }
+
+    /// 设置内容刷新时使用的 Cell 生命周期和布局行为。
+    ///
+    /// `refreshPolicy(_:)` 决定何时刷新；本方法只决定触发后执行 reconfigure、
+    /// reconfigure 并重测量布局，还是 reload。默认值为
+    /// `.reconfigure(layout: .none)`。
+    ///
+    /// - Parameter action: 当前 Row 的刷新动作。
+    /// - Returns: 应用刷新动作后的 TableRow。
+    public func refreshAction(_ action: ListRefreshAction) -> Self {
+        var copy = self
+        copy.rowRefreshAction = action
         return copy
     }
 
@@ -758,6 +799,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
             identity: identity,
             refreshID: rowRefreshID,
             refreshPolicy: rowRefreshPolicy,
+            refreshAction: rowRefreshAction,
             isSelected: rowIsSelected,
             isSelectionDisabled: rowIsSelectionDisabled,
             isFocusable: rowIsFocusable,
@@ -985,9 +1027,13 @@ enum TableSectionSupplementaryKind: Hashable, Sendable {
 
 /// 类型擦除后的 table header/footer 描述。
 public struct AnyTableSectionSupplementary {
+    /// header/footer 的稳定展示 identity。
     public let identity: AnyListIdentity
+    /// 调用方提供的内容版本，用于判断可见 header/footer 是否需要重配。
     public let refreshID: AnyListID?
+    /// identity 保持不变时决定自动重配的触发条件。
     public let refreshPolicy: RowRefreshPolicy
+    /// header/footer 的高度策略。
     public let height: TableRowHeight?
 
     let kind: TableSectionSupplementaryKind
@@ -1215,6 +1261,7 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
     }
 }
 
+/// 将条件、数组和可用性分支组合成 Table Section header/footer 描述。
 @resultBuilder
 public enum TableSectionSupplementaryBuilder<SectionID> where SectionID: Hashable & Sendable {
     public static func buildExpression(_ expression: TableSectionSupplementary<SectionID>) -> [TableSectionSupplementary<SectionID>] {
@@ -1256,15 +1303,23 @@ public enum TableSectionSupplementaryBuilder<SectionID> where SectionID: Hashabl
 
 /// 一个 UITableView section 的完整描述。
 public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
+    /// Section 的稳定数据 ID。
     public let id: SectionID
+    /// Section 当前包含的类型擦除 Row。
     public var rows: [AnyTableRow]
+    /// 可选的自定义 header 描述。
     public var header: AnyTableSectionSupplementary?
+    /// 可选的自定义 footer 描述。
     public var footer: AnyTableSectionSupplementary?
     /// section 选择模式，默认为根据 Row 选择意图自动解析。
     public var selectionMode: ListSelectionMode
+    /// Section index bar 中显示的标题；`nil` 表示不贡献索引项。
     public var indexTitle: String?
+    /// 使用系统文本 header 时显示的标题。
     public var headerTitle: String?
+    /// 使用系统文本 footer 时显示的标题。
     public var footerTitle: String?
+    /// 是否允许用户进入 UITableView 多选交互模式。
     public var allowsMultipleSelectionInteraction: Bool
 
     /// 创建 table section。

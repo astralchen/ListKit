@@ -77,16 +77,29 @@ extension ListSelectionMode {
 /// `ListSection` 构建阶段转成 `AnyListRow`，再交给 `CollectionListAdapter`
 /// 做 diff、dequeue、可见刷新和事件回调。
 public struct AnyListRow {
+    /// 包含 Section、Row ID 和展示变体的稳定 identity。
     public let identity: AnyListIdentity
+    /// 调用方提供的内容版本；用于 apply 时判断 kept Row 是否需要刷新。
     public let refreshID: AnyListID?
+    /// identity 保持不变时决定自动刷新的触发条件。
     public let refreshPolicy: RowRefreshPolicy
+    /// 自动或主动刷新触发后使用的 Cell 生命周期与布局行为。
+    public let refreshAction: ListRefreshAction
+    /// controlled selection 的目标状态；`nil` 表示由 UIKit/用户交互维护。
     public let isSelected: Bool?
+    /// 是否禁止当前 Row 进入选择状态。
     public let isSelectionDisabled: Bool
+    /// 是否允许焦点系统聚焦当前 Row；`nil` 使用 UIKit 默认值。
     public let isFocusable: Bool?
+    /// 焦点移动是否同步改变选择；`nil` 使用 UIKit 默认值。
     public let selectionFollowsFocus: Bool?
+    /// 是否允许 spring-loading；`nil` 使用 UIKit 默认值。
     public let isSpringLoadingEnabled: Bool?
+    /// outline Row 是否显示系统 disclosure indicator。
     public let showsOutlineDisclosure: Bool
+    /// 相同 identity 的可见内容重配时使用的过渡效果。
     public let contentTransition: ListContentTransition
+    /// outline section snapshot 发生结构变化时使用的动画策略。
     public let outlineAnimation: ListAnimationPolicy
 
     let register: @MainActor (UICollectionView) -> Void
@@ -128,17 +141,21 @@ public struct AnyListRow {
 /// - Important: 调用方优先使用 `Row(...)`、`ForEach(...)`、`ListStateRow`；
 /// 自定义 conform 通常只用于框架内部扩展或迁移桥接。
 public protocol ListRowRepresentable {
+    /// 在指定 Section 中生成类型擦除后的普通 Row。
     @MainActor func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
         where SectionID: Hashable & Sendable
 
+    /// 使用外层 `ForEach` 传入的可选 identity 生成类型擦除后的普通 Row。
     @MainActor func eraseToAnyListRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
     ) -> [AnyListRow] where SectionID: Hashable & Sendable
 
+    /// 在指定 Section 中生成 outline hierarchy 节点。
     @MainActor func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
         where SectionID: Hashable & Sendable
 
+    /// 使用外层 `ForEach` 传入的可选 identity 生成 outline hierarchy 节点。
     @MainActor func eraseToAnyListOutlineNodes<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -156,12 +173,14 @@ public extension ListRowRepresentable {
         eraseToAnyListRows(sectionID: sectionID)
     }
 
+    /// 默认把普通 Row 包装为没有子节点的 outline 节点。
     @MainActor func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
         where SectionID: Hashable & Sendable
     {
         eraseToAnyListRows(sectionID: sectionID).map { AnyListOutlineNode(row: $0) }
     }
 
+    /// 默认先应用继承 identity，再把普通 Row 包装为 outline 节点。
     @MainActor func eraseToAnyListOutlineNodes<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -172,10 +191,19 @@ public extension ListRowRepresentable {
 
 /// Section snapshot 使用的层级节点。叶子节点与普通 Row 完全一致。
 public struct AnyListOutlineNode {
+    /// 当前层级节点展示的 Row。
     public var row: AnyListRow
+    /// 当前节点的直接子节点。
     public var children: [AnyListOutlineNode]
+    /// 初次生成 section snapshot 时是否展开当前节点。
     public var isExpanded: Bool
 
+    /// 创建一个类型擦除后的 outline 节点。
+    ///
+    /// - Parameters:
+    ///   - row: 当前节点展示的 Row。
+    ///   - children: 当前节点的直接子节点。
+    ///   - isExpanded: 初始展开状态。
     public init(row: AnyListRow, children: [AnyListOutlineNode] = [], isExpanded: Bool = false) {
         self.row = row
         self.children = children
@@ -225,6 +253,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     private var rowVariant: AnyListID?
     private var rowRefreshID: AnyListID?
     private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
+    private var rowRefreshAction: ListRefreshAction = .reconfigure(layout: .none)
     private var rowIsSelected: Bool?
     private var rowIsSelectionDisabled = false
     private var rowIsFocusable: Bool?
@@ -339,6 +368,20 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
         var copy = self
         copy.rowRefreshPolicy = policy
+        return copy
+    }
+
+    /// 设置内容刷新时使用的 Cell 生命周期和布局行为。
+    ///
+    /// `refreshPolicy(_:)` 决定何时刷新；本方法只决定触发后执行 reconfigure、
+    /// reconfigure 并重测量布局，还是 reload。默认值为
+    /// `.reconfigure(layout: .none)`。
+    ///
+    /// - Parameter action: 当前 Row 的刷新动作。
+    /// - Returns: 应用刷新动作后的 Row。
+    public func refreshAction(_ action: ListRefreshAction) -> Self {
+        var copy = self
+        copy.rowRefreshAction = action
         return copy
     }
 
@@ -690,6 +733,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
             identity: identity,
             refreshID: rowRefreshID,
             refreshPolicy: rowRefreshPolicy,
+            refreshAction: rowRefreshAction,
             isSelected: rowIsSelected,
             isSelectionDisabled: rowIsSelectionDisabled,
             isFocusable: rowIsFocusable,
@@ -993,6 +1037,7 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     private var rowVariant: AnyListID?
     private var rowRefreshID: AnyListID?
     private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
+    private var rowRefreshAction: ListRefreshAction = .reconfigure(layout: .none)
     private var rowContentTransition: ListContentTransition = .identity
     private var rowSelectHandler: (@MainActor (ListContext) -> Void)?
     private var rowDisplayHandler: (@MainActor (UICollectionViewCell, ListContext) -> Void)?
@@ -1076,6 +1121,19 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
         return copy
     }
 
+    /// 设置 ProviderRow 内容刷新时使用的 Cell 生命周期和布局行为。
+    ///
+    /// Provider 返回的 Cell 类型发生变化时，必须同时改变 `presentationID`，使
+    /// diffable snapshot 执行 delete + insert；reload 不能代替展示 identity 变化。
+    ///
+    /// - Parameter action: 当前 ProviderRow 的刷新动作。
+    /// - Returns: 应用刷新动作后的 ProviderRow。
+    public func refreshAction(_ action: ListRefreshAction) -> Self {
+        var copy = self
+        copy.rowRefreshAction = action
+        return copy
+    }
+
     /// 设置 ProviderRow 的可见内容刷新过渡。
     public func contentTransition(_ transition: ListContentTransition) -> Self {
         var copy = self
@@ -1128,6 +1186,7 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
                 identity: identity,
                 refreshID: rowRefreshID,
                 refreshPolicy: rowRefreshPolicy,
+                refreshAction: rowRefreshAction,
                 isSelected: nil,
                 isSelectionDisabled: false,
                 isFocusable: nil,

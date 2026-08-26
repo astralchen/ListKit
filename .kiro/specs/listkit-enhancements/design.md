@@ -33,7 +33,7 @@ DEBUG 下默认 `.warning`。当存在诊断问题时，adapter 会输出 warnin
 adapter.apply(
     options: ListApplyOptions(
         animatingDifferences: false,
-        refreshStrategy: .diffableOnly,
+        refreshStrategy: .refreshIDChangesOnly,
         diagnostics: .init(mode: .warning)
     )
 ) {
@@ -86,8 +86,8 @@ Apply 级策略用于一次性覆盖：
 
 - `.automatic`: 使用 Row 级策略。
 - `.visibleOnly`: snapshot 不 reconfigure/reload，只刷新可见 cell。
-- `.diffableOnly`: 只做 snapshot reconfigure/reload。
-- `.forceReload`: 当前 snapshot items 全部 reconfigure/reload。
+- `.refreshIDChangesOnly`: 只做 snapshot reconfigure/reload。
+- `.reloadKeptRows`: 当前 snapshot items 全部 reconfigure/reload。
 
 ## Model-Aware Events
 

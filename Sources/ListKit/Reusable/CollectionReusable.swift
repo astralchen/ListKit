@@ -80,7 +80,7 @@ public struct ListKitCollectionViewNamespace {
     ///   - cellType: 要创建 registration 的 cell 类型。
     ///   - configuration: UIKit registration 配置闭包。
     /// - Returns: nib-backed 或 class-backed 的 `UICollectionView.CellRegistration`。
-    @available(iOS 14.0, tvOS 14.0, *)
+    @available(iOS 15.0, tvOS 14.0, *)
     @available(watchOS, unavailable)
     @MainActor public func cellRegistration<Cell, Item>(
         _ cellType: Cell.Type,
@@ -102,7 +102,7 @@ public struct ListKitCollectionViewNamespace {
     ///   - kind: supplementary element kind。
     ///   - configuration: UIKit registration 配置闭包。
     /// - Returns: nib-backed 或 class-backed 的 `UICollectionView.SupplementaryRegistration`。
-    @available(iOS 14.0, tvOS 14.0, *)
+    @available(iOS 15.0, tvOS 14.0, *)
     @available(watchOS, unavailable)
     @MainActor public func supplementaryRegistration<View>(
         _ viewType: View.Type,

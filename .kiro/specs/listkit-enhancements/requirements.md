@@ -114,8 +114,8 @@
 
 - WHEN 使用 `.automatic` THE SYSTEM SHALL 沿用 Row refresh policy。
 - WHEN 使用 `.visibleOnly` THE SYSTEM SHALL 跳过 diffable reconfigure/reload，只做可见重配。
-- WHEN 使用 `.diffableOnly` THE SYSTEM SHALL 只做 diffable reconfigure/reload，跳过默认可见重配。
-- WHEN 使用 `.forceReload` THE SYSTEM SHALL 对当前 snapshot item 执行 reconfigure/reload。
+- WHEN 使用 `.refreshIDChangesOnly` THE SYSTEM SHALL 只做 diffable reconfigure/reload，跳过默认可见重配。
+- WHEN 使用 `.reloadKeptRows` THE SYSTEM SHALL 对当前 snapshot item 执行 reconfigure/reload。
 
 ## Requirement 11: UITableView Adapter
 
@@ -146,4 +146,4 @@
 
 - WHEN P2 调研 THE SYSTEM SHALL 输出宏/代码生成设计结论。
 - WHEN API 未稳定 THE SYSTEM SHALL 不把宏作为默认实现路径。
-- WHEN 需要兼容 iOS 14 THE SYSTEM SHALL 确认宏只影响编译期，不引入运行时依赖。
+- WHEN 需要兼容最低 iOS 15 THE SYSTEM SHALL 确认宏只影响编译期，不引入额外运行时依赖。

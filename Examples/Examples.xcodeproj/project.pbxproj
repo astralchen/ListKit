@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		77D8FF4E2FDFFAA300D96158 /* Launch Screen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 77D8FF4D2FDFFAA300D96158 /* Launch Screen.storyboard */; };
 		77D900012FDFED7900D96158 /* ListKit in Frameworks */ = {isa = PBXBuildFile; productRef = 77D900022FDFED7900D96158 /* ListKit */; };
 /* End PBXBuildFile section */
 
@@ -32,7 +31,6 @@
 		77D8FEA92FDFED7600D96158 /* Examples.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Examples.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		77D8FEBF2FDFED7800D96158 /* ExamplesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ExamplesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		77D8FEC92FDFED7800D96158 /* ExamplesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ExamplesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		77D8FF4D2FDFFAA300D96158 /* Launch Screen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = "Launch Screen.storyboard"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -64,7 +62,7 @@
 			path = ExamplesUITests;
 			sourceTree = "<group>";
 		};
-		77D900122FE0100000D96158 /* ListKitTests */ = {
+		77D900122FE0100000D96158 /* ../Tests/ListKitTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ../Tests/ListKitTests;
 			sourceTree = "<group>";
@@ -100,10 +98,9 @@
 		77D8FEA02FDFED7600D96158 = {
 			isa = PBXGroup;
 			children = (
-				77D8FF4D2FDFFAA300D96158 /* Launch Screen.storyboard */,
 				77D8FEAB2FDFED7600D96158 /* Examples */,
 				77D8FEC22FDFED7800D96158 /* ExamplesTests */,
-				77D900122FE0100000D96158 /* ListKitTests */,
+				77D900122FE0100000D96158 /* ../Tests/ListKitTests */,
 				77D8FECC2FDFED7800D96158 /* ExamplesUITests */,
 				77D8FEAA2FDFED7600D96158 /* Products */,
 			);
@@ -160,7 +157,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				77D8FEC22FDFED7800D96158 /* ExamplesTests */,
-				77D900122FE0100000D96158 /* ListKitTests */,
+				77D900122FE0100000D96158 /* ../Tests/ListKitTests */,
 			);
 			name = ExamplesTests;
 			packageProductDependencies = (
@@ -244,7 +241,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				77D8FF4E2FDFFAA300D96158 /* Launch Screen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -316,7 +312,7 @@
 				INFOPLIST_KEY_UILaunchStoryboardName = "Launch Screen";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -347,7 +343,7 @@
 				INFOPLIST_KEY_UILaunchStoryboardName = "Launch Screen";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -417,7 +413,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -476,7 +472,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;

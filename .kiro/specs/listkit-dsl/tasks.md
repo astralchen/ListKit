@@ -2,7 +2,7 @@
 
 ## Completed
 
-- [x] Task 1: 创建 `SharePackage/ListKit` 本地 SPM，配置 iOS 14、Swift 6、`ListKit` library product。
+- [x] Task 1: 创建 `SharePackage/ListKit` 本地 SPM，配置 iOS 15、Swift 6、`ListKit` library product。
 - [x] Task 2: 实现 reusable 基础层：reuse id、自动 nib/class 注册、UICollectionView cell/supplementary 类型安全 dequeue。
 - [x] Task 3: 实现 DSL builder：`ListSectionBuilder`、`ListRowBuilder`、`ForEach`、条件分支支持。
 - [x] Task 4: 实现 Row/Supplementary 描述模型和内部类型擦除。

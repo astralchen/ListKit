@@ -9,7 +9,7 @@
 1. WHEN 工程引入新列表框架 THE SYSTEM SHALL 创建本地 SPM `SharePackage/ListKit`，模块名和产品名均为 `ListKit`。
 2. WHEN 旧页面尚未迁移 THE SYSTEM SHALL 允许 `CellKit` 与 `ListKit` 并行存在。
 3. WHEN 新页面使用 ListKit THE SYSTEM SHALL 不要求 model 遵守框架协议。
-4. WHEN 包级构建运行 THE SYSTEM SHALL 支持 iOS 14+ 和 Swift 6。
+4. WHEN 包级构建运行 THE SYSTEM SHALL 支持 iOS 15+ 和 Swift 6。
 
 ## Requirement 2: SwiftUI-like DSL
 

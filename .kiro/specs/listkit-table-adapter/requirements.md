@@ -64,8 +64,8 @@
 
 - WHEN `TableRow` identity 变化 THE SYSTEM SHALL 交给 UITableView diffable data source 执行插入/删除。
 - WHEN identity 不变且 `refreshID` 变化 THE SYSTEM SHALL 按 refresh policy 执行 reload/reconfigure 等价行为。
-- WHEN 只需要轻量更新可见 cell THE SYSTEM SHALL 提供 `reconfigureVisibleRows(forRowID:in:)`。
-- WHEN 需要重新量高或完整刷新 THE SYSTEM SHALL 提供 `reloadVisibleRows(forRowID:in:)`。
+- WHEN 只需要轻量更新可见 Cell THE SYSTEM SHALL 提供 `reconfigureRows(..., scope: .visible, layout: .none)`。
+- WHEN 保留 Cell 但需要重新量高 THE SYSTEM SHALL 提供 `reconfigureRows(..., layout: .invalidate)`；WHEN 需要完整配置路径 THE SYSTEM SHALL 提供 `reloadRows(...)`。
 - WHEN 使用 `.automaticVisible` THE SYSTEM SHALL 在 apply completion 后重配仍可见的旧 row。
 
 ### Requirement 6: Header 和 Footer

@@ -170,14 +170,18 @@ extension UIButton {
             layer.cornerRadius = 0
             layer.masksToBounds = false
         } else {
-            if #available(iOS 15.0, *) {
-                self.configuration = nil
+            var configuration = UIButton.Configuration.plain()
+            configuration.image = UIImage(systemName: symbolName)
+            configuration.imagePadding = 6
+            configuration.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 12, bottom: 11, trailing: 12)
+            configuration.baseForegroundColor = .white
+            configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+                var attributes = attributes
+                attributes.font = UIFont.preferredFont(forTextStyle: .subheadline)
+                return attributes
             }
-            setImage(UIImage(systemName: symbolName), for: .normal)
-            tintColor = .white
-            setTitleColor(.white, for: .normal)
+            self.configuration = configuration
             backgroundColor = .systemBlue
-            contentEdgeInsets = UIEdgeInsets(top: 11, left: 12, bottom: 11, right: 12)
             layer.cornerRadius = 12
             layer.masksToBounds = true
         }
@@ -189,7 +193,9 @@ extension UIButton {
             configuration.title = title
             self.configuration = configuration
         } else {
-            setTitle(" \(title)", for: .normal)
+            var configuration = configuration ?? UIButton.Configuration.plain()
+            configuration.title = title
+            self.configuration = configuration
         }
     }
 }
@@ -283,12 +289,19 @@ final class StudioControlPanelCell: UICollectionViewCell {
 
     private func makeChip(title: String) -> UIButton {
         let chip = UIButton(type: .system)
-        chip.titleLabel?.font = UIFont.preferredFont(forTextStyle: .caption1)
-        chip.setTitle(title, for: .normal)
-        chip.setTitleColor(.label, for: .normal)
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.baseForegroundColor = .label
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFont.preferredFont(forTextStyle: .caption1)
+            return attributes
+        }
+        chip.configuration = configuration
+        chip.titleLabel?.adjustsFontForContentSizeCategory = true
         chip.backgroundColor = .systemBackground
         chip.layer.cornerRadius = 12
-        chip.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
         return chip
     }
 

@@ -2,7 +2,7 @@
 
 - [x] Task 1: 新增本 Kiro requirements/design/tasks，并把旧优化任务的 follow-up 指向本 spec。
 - [x] Task 2: 为 `CollectionListAdapter` row lookup / visible refresh API 增加失败测试。
-- [x] Task 3: 实现 `indexPaths(forRowID:in:)`、`itemCount(in:)`、`scrollToLastItem(in:at:animated:)`、`reconfigureVisibleRows(forRowID:in:)`、`reloadVisibleRows(forRowID:in:)`。
+- [x] Task 3: 实现 `indexPaths(forRowID:in:)`、`itemCount(in:)`、`scrollToLastItem(in:at:animated:)`、`reconfigureRows(..., scope:)`、`reloadRows(..., scope:)`。
 - [x] Task 4: 第一批页面移除 `AppListSection/AppListCellItem`：PublicMessage、Toolbar、RoomSettings、RoomView。
 - [x] Task 5: 第二批页面移除 `AppListSection/AppListCellItem`：Community、Profile、Explore、Search 相关残留。
 - [x] Task 6: 删除 `Rebirth/Utilities/ListKitAppMigrationSupport.swift`，更新 ListKit README。

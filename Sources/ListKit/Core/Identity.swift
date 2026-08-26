@@ -28,14 +28,17 @@ public struct AnyListID: Hashable, CustomStringConvertible, @unchecked Sendable 
         value.base as? ID
     }
 
+    /// 同时包含原始值描述和类型标识的调试字符串。
     public var description: String {
         "\(valueDescription) <\(valueType)>"
     }
 
+    /// 比较原始值和原始类型；不同类型的相同文本值不会相等。
     public static func == (lhs: AnyListID, rhs: AnyListID) -> Bool {
         lhs.valueType == rhs.valueType && lhs.value == rhs.value
     }
 
+    /// 将原始类型和值共同写入哈希器。
     public func hash(into hasher: inout Hasher) {
         hasher.combine(valueType)
         hasher.combine(value)
@@ -55,9 +58,13 @@ public struct InheritedRowID: Hashable, Sendable {
 /// - Note: `refreshID` 不放进 identity，原因是：数据变了通常只需要刷新同一个展示节点；
 /// 只有 `rowID + Cell.self + variant` 变化时，才代表“这已经是另一个 UI 节点”，应交给 diffable 做 delete + insert。
 public struct AnyListIdentity: Hashable, Sendable {
+    /// identity 所属的 Section ID。
     public let sectionID: AnyListID
+    /// Row 或 supplementary 的稳定数据 ID。
     public let rowID: AnyListID
+    /// Cell 或 reusable view 类型形成的展示身份。
     public let presentationID: ObjectIdentifier
+    /// 同一数据 ID 的可选展示变体。
     public let variant: AnyListID?
 
     /// 创建展示节点 identity。

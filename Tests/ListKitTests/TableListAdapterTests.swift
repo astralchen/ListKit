@@ -704,7 +704,7 @@ final class TableListAdapterTests: XCTestCase {
         let adapter = TableListAdapter<Section>(tableView: tableView)
         let options = ListApplyOptions(
             transaction: .disabled,
-            refreshStrategy: .diffableOnly,
+            refreshStrategy: .refreshIDChangesOnly,
             diagnostics: .disabled
         )
 
@@ -846,13 +846,13 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(tableDelegate.didEndDisplayingCount, 1)
     }
 
-    func testTableLifecycleUsesCapturedRowWhenDeletedSectionIndexPathIsReused() {
+    func testTableLifecycleUsesCapturedRowWhenDeletedSectionIndexPathIsReused() async {
         let tableView = UITableView(frame: .zero, style: .plain)
         let adapter = TableListAdapter<Int>(tableView: tableView)
         var endedRowID: String?
         var cancelledRowID: String?
 
-        adapter.apply(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(0) {
                 TableRow("old", model: "Old", cell: MessageTableCell.self) { _, _, _ in }
                     .onEndDisplay { _, _, _ in endedRowID = "old" }
@@ -868,7 +868,7 @@ final class TableListAdapterTests: XCTestCase {
         adapter.tableView(tableView, willDisplay: oldCell, forRowAt: reusedIndexPath)
         adapter.tableView(tableView, prefetchRowsAt: [reusedIndexPath])
 
-        adapter.apply(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(1) {
                 TableRow("new", model: "New", cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -938,11 +938,11 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(deselectedMessageID, 10)
     }
 
-    func testTableAutomaticSelectionUsesRowIntent() {
+    func testTableAutomaticSelectionUsesRowIntent() async {
         let tableView = UITableView(frame: .zero, style: .plain)
         let adapter = TableListAdapter<Int>(tableView: tableView)
 
-        adapter.apply(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(0) {
                 TableRow("static", model: "Static", cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -951,7 +951,7 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertFalse(tableView.allowsSelection)
         XCTAssertNil(adapter.tableView(tableView, willSelectRowAt: IndexPath(row: 0, section: 0)))
 
-        adapter.apply(transaction: .disabled) {
+        _ = await adapter.apply(transaction: .disabled) {
             TableSection(0) {
                 TableRow("static", model: "Static", cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -1274,6 +1274,7 @@ final class TableListAdapterTests: XCTestCase {
         let secondIndexPath = IndexPath(row: 1, section: 0)
         let firstCell = try XCTUnwrap(tableView.cellForRow(at: firstIndexPath) as? MessageTableCell)
         let secondCell = try XCTUnwrap(tableView.cellForRow(at: secondIndexPath) as? MessageTableCell)
+        let baselinePrepareForReuseCount = firstCell.prepareForReuseCount
         XCTAssertEqual(firstCell.textValue, "A")
         XCTAssertEqual(secondCell.textValue, "B")
 
@@ -1281,36 +1282,39 @@ final class TableListAdapterTests: XCTestCase {
         rowTexts[2] = "B2"
 
         let reconfigureCompleted = expectation(description: "targeted row reconfigure completed")
-        XCTAssertEqual(
-            adapter.reconfigureRows(
-                forRowIDs: [1, 1],
-                in: .messages,
-                transaction: .disabled,
-                completion: { reconfigureCompleted.fulfill() }
-            ),
-            1
+        let reconfigureSubmission = adapter.reconfigureRows(
+            forRowIDs: [1, 1],
+            in: .messages,
+            transaction: .disabled,
+            completion: { summary in
+                XCTAssertEqual(summary.matchedTargetCount, 1)
+                XCTAssertEqual(summary.visibleReconfiguredCount, 1)
+                reconfigureCompleted.fulfill()
+            }
         )
+        XCTAssertEqual(reconfigureSubmission.requestedTargetCount, 1)
+        XCTAssertEqual(reconfigureSubmission.completionState, .submitted)
         wait(for: [reconfigureCompleted], timeout: 1)
 
         let reconfiguredFirstCell = try XCTUnwrap(
             tableView.cellForRow(at: firstIndexPath) as? MessageTableCell
         )
-        if #available(iOS 15.0, tvOS 15.0, *) {
-            XCTAssertTrue(reconfiguredFirstCell === firstCell)
-        }
+        XCTAssertTrue(reconfiguredFirstCell === firstCell)
+        XCTAssertEqual(reconfiguredFirstCell.prepareForReuseCount, baselinePrepareForReuseCount)
         XCTAssertEqual(reconfiguredFirstCell.textValue, "A2")
         XCTAssertEqual((tableView.cellForRow(at: secondIndexPath) as? MessageTableCell)?.textValue, "B")
 
         let reloadCompleted = expectation(description: "targeted row reload completed")
-        XCTAssertEqual(
-            adapter.reloadRows(
-                forRowID: 2,
-                in: .messages,
-                transaction: .disabled,
-                completion: { reloadCompleted.fulfill() }
-            ),
-            1
+        let reloadSubmission = adapter.reloadRows(
+            forRowID: 2,
+            in: .messages,
+            transaction: .disabled,
+            completion: { summary in
+                XCTAssertEqual(summary.reloadedTargetCount, 1)
+                reloadCompleted.fulfill()
+            }
         )
+        XCTAssertEqual(reloadSubmission.completionState, .submitted)
         wait(for: [reloadCompleted], timeout: 1)
 
         let reloadedSecondCell = try XCTUnwrap(
@@ -1318,17 +1322,19 @@ final class TableListAdapterTests: XCTestCase {
         )
         XCTAssertEqual(reloadedSecondCell.textValue, "B2")
 
-        var emptyReloadCompleted = false
-        XCTAssertEqual(
-            adapter.reloadRows(
-                forRowIDs: [Int](),
-                in: .messages,
-                transaction: .disabled,
-                completion: { emptyReloadCompleted = true }
-            ),
-            0
+        let emptyReloadCompleted = expectation(description: "empty reload completes next turn")
+        let emptyReloadSummary = adapter.reloadRows(
+            forRowIDs: [Int](),
+            in: .messages,
+            transaction: .disabled,
+            completion: { summary in
+                XCTAssertEqual(summary.completionState, .completed)
+                emptyReloadCompleted.fulfill()
+            }
         )
-        XCTAssertTrue(emptyReloadCompleted)
+        XCTAssertEqual(emptyReloadSummary.requestedTargetCount, 0)
+        XCTAssertEqual(emptyReloadSummary.completionState, .completed)
+        wait(for: [emptyReloadCompleted], timeout: 1)
     }
 
     func testReloadSectionsRefreshesRequestedSectionAndReloadsIndexTitles() throws {
@@ -1382,14 +1388,17 @@ final class TableListAdapterTests: XCTestCase {
         emptyHeader = "Empty 2"
 
         let reloadCompleted = expectation(description: "targeted section reload completed")
-        XCTAssertEqual(
-            adapter.reloadSections(
-                [.messages, .messages],
-                transaction: .disabled,
-                completion: { reloadCompleted.fulfill() }
-            ),
-            1
+        let sectionReloadSubmission = adapter.reloadSections(
+            [.messages, .messages],
+            transaction: .disabled,
+            completion: { summary in
+                XCTAssertEqual(summary.matchedTargetCount, 1)
+                XCTAssertEqual(summary.reloadedTargetCount, 1)
+                reloadCompleted.fulfill()
+            }
         )
+        XCTAssertEqual(sectionReloadSubmission.requestedTargetCount, 1)
+        XCTAssertEqual(sectionReloadSubmission.completionState, .submitted)
         wait(for: [reloadCompleted], timeout: 1)
         tableView.layoutIfNeeded()
 
@@ -1400,7 +1409,7 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(tableView.reloadSectionIndexTitlesCallCount, 2)
     }
 
-    func testTableAdapterVisibleRefreshAPIsTargetMatchingRows() {
+    func testTableAdapterScopedRefreshAPIsTargetMatchingRows() {
         let tableView = UITableView(frame: CGRect(x: 0, y: 0, width: 320, height: 240), style: .plain)
         let adapter = TableListAdapter<Section>(tableView: tableView)
         var configuredText = "A"
@@ -1420,10 +1429,43 @@ final class TableListAdapterTests: XCTestCase {
 
         configuredText = "A2"
 
-        XCTAssertEqual(adapter.reconfigureVisibleRows(forRowID: 1, in: .messages), 1)
-        XCTAssertEqual(adapter.reloadVisibleRows(forRowID: 1, in: .messages), 1)
-        XCTAssertEqual(adapter.reconfigureVisibleRows(forRowID: 999, in: .messages), 0)
-        XCTAssertEqual(adapter.reloadVisibleRows(forRowID: 999, in: .messages), 0)
+        let reconfigured = expectation(description: "visible row reconfigured")
+        let reconfigureSubmission = adapter.reconfigureRows(
+            forRowID: 1,
+            in: .messages,
+            scope: .visible,
+            transaction: .disabled
+        ) { summary in
+            XCTAssertEqual(summary.matchedTargetCount, 1)
+            XCTAssertEqual(summary.visibleReconfiguredCount, 1)
+            XCTAssertEqual(summary.completionState, .completed)
+            reconfigured.fulfill()
+        }
+        XCTAssertEqual(reconfigureSubmission.requestedTargetCount, 1)
+        XCTAssertEqual(reconfigureSubmission.completionState, .submitted)
+        wait(for: [reconfigured], timeout: 1)
+
+        let reloaded = expectation(description: "visible row reloaded")
+        _ = adapter.reloadRows(
+            forRowID: 1,
+            in: .messages,
+            scope: .visible,
+            transaction: .disabled
+        ) { summary in
+            XCTAssertEqual(summary.matchedTargetCount, 1)
+            XCTAssertEqual(summary.reloadedTargetCount, 1)
+            reloaded.fulfill()
+        }
+        wait(for: [reloaded], timeout: 1)
+
+        XCTAssertEqual(
+            adapter.reconfigureRows(forRowID: 999, in: .messages, scope: .visible).matchedTargetCount,
+            0
+        )
+        XCTAssertEqual(
+            adapter.reloadRows(forRowID: 999, in: .messages, scope: .visible).matchedTargetCount,
+            0
+        )
         XCTAssertTrue(adapter.scrollToLastRow(in: .messages, animated: false))
         XCTAssertFalse(adapter.scrollToLastRow(in: .empty, animated: false))
     }
@@ -1499,6 +1541,12 @@ private enum MessageEvent: ListEvent, Equatable {
 
 private final class MessageTableCell: UITableViewCell {
     var textValue: String?
+    var prepareForReuseCount = 0
+
+    override func prepareForReuse() {
+        prepareForReuseCount += 1
+        super.prepareForReuse()
+    }
 }
 
 private final class MessageHeaderView: UITableViewHeaderFooterView {

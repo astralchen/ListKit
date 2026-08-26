@@ -37,6 +37,7 @@ where SectionID: Hashable & Sendable {
     public weak var dragDelegate: UITableViewDragDelegate? {
         didSet { tableView?.dragDelegate = dragDelegate }
     }
+    /// 原生 drop delegate 逃生口；设置后直接安装到 table view。
     public weak var dropDelegate: UITableViewDropDelegate? {
         didSet { tableView?.dropDelegate = dropDelegate }
     }
@@ -53,26 +54,44 @@ where SectionID: Hashable & Sendable {
         set { dataSource.defaultRowAnimation = newValue }
     }
 
+    /// adapter 管理的 table view；弱持有以避免 view -> adapter -> view 环。
     private weak var tableView: UITableView?
+    /// 最近一次已接受 apply 的声明式 Section 描述树。
     private var sections: [TableSection<SectionID>] = []
+    /// 实际持有并提交 diffable snapshot 的 data source。
     private var dataSource: TableDiffableDataSource<SectionID>!
+    /// 当前描述树按 presentation identity 建立的 Row 查询表。
     private var rowsByIdentity: [AnyListIdentity: AnyTableRow] = [:]
+    /// Cell 开始展示时捕获的 Row，确保结束展示回调不受后续 snapshot 复用影响。
     private var displayedRowsByCell: [ObjectIdentifier: AnyTableRow] = [:]
+    /// header/footer 开始展示时捕获的 supplementary 描述。
     private var displayedSupplementariesByView: [ObjectIdentifier: TableDisplayedSupplementary] = [:]
+    /// 预取开始时捕获的 Row，确保取消预取时仍回调原始对象。
     private var prefetchedRowsByIndexPath: [IndexPath: AnyTableRow] = [:]
+    /// 每次接受新 apply 时递增，用于拒绝旧异步 completion 写回状态。
     private var applyGeneration = 0
+    /// 批量预取和取消预取的 adapter 级回调。
     private var prefetchRowsHandler: (@MainActor ([TableListContext]) -> Void)?
     private var cancelPrefetchingRowsHandler: (@MainActor ([TableListContext]) -> Void)?
+    /// 当前已展示上下文菜单对应的 Row 和原始 index path。
     private var activeContextMenu: (row: AnyTableRow, indexPath: IndexPath)?
+    /// 保持可见锚点时临时添加到 contentInset.bottom 的补偿量。
     private var preservedAnchorBottomInsetCompensation: CGFloat = 0
+    /// 应用锚点补偿前调用方设置的原始 bottom inset。
     private var temporaryAnchorBaseBottomInset: CGFloat?
+    /// async `.serial` apply 是否占用调用级槽位。
     private var isSerialApplyActive = false
+    /// 等待 serial 槽位的 async continuation，按调用顺序恢复。
     private var serialApplyWaiters: [CheckedContinuation<Void, Never>] = []
-    private var isMutationPipelineActive = false
+    /// 保证 apply、定向刷新和 reloadAll 不会重叠提交 UIKit mutation。
+    private let mutationCoordinator = ListMutationCoordinator()
+    /// reloadAll 单独保留当前描述树和滚动恢复参数，执行优先级低于已排队的普通 mutation。
     private var pendingReloadAllRequests: [ListReloadAllRequest] = []
+    /// 尚未执行的 apply、Row refresh 和 Section reload；目标在出队时重新解析。
+    private var pendingMutations: [ListPendingMutationRequest] = []
+    /// 防止 UIKit 尚有未提交更新时重复安排 reloadAll 重试定时器。
     private var isReloadAllRetryScheduled = false
-    private var targetedRefreshInFlightCount = 0
-    private var isPerformingSynchronousReloadMutation = false
+    /// 按事件类型保存 adapter 级处理闭包。
     private let eventRouter = ListEventRouter<TableListContext>()
 
     /// 创建 adapter 并接管 table view 的 data source、delegate 和 prefetch data source。
@@ -97,6 +116,7 @@ where SectionID: Hashable & Sendable {
         tableView.prefetchDataSource = self
     }
 
+    /// 同时报告 adapter 和已配置转发 delegate 支持的 Objective-C selector。
     public override func responds(to aSelector: Selector!) -> Bool {
         if super.responds(to: aSelector) { return true }
         return MainActor.assumeIsolated {
@@ -106,6 +126,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 将 ListKit 未实现的可选 UIKit delegate selector 转发给第一个匹配对象。
     public override func forwardingTarget(for aSelector: Selector!) -> Any? {
         if super.responds(to: aSelector) { return super.forwardingTarget(for: aSelector) }
         let target = MainActor.assumeIsolated {
@@ -242,8 +263,7 @@ where SectionID: Hashable & Sendable {
         )
         lastApplySummary = summary
 
-        if isMutationPipelineActive
-            || targetedRefreshInFlightCount > 0
+        if mutationCoordinator.isExecuting
             || !pendingReloadAllRequests.isEmpty
             || tableView?.hasUncommittedUpdates == true {
             enqueueReloadAll(request)
@@ -276,95 +296,258 @@ where SectionID: Hashable & Sendable {
             _ = reloadAll(
                 transaction: transaction,
                 transition: transition
-            ) { [weak self] summary in
+            ) { summary in
                 continuation.resume(returning: summary)
             }
         }
     }
 
-    /// 使用 diffable `reconfigureItems` 轻量重配匹配 row id 的 Row。
+    /// 保留现有 Cell，并重配单个 Row ID 对应的展示 identity。
     ///
-    /// iOS 15+ 保留现有 Cell 并支持自适应尺寸更新；iOS 14 回退为 reload。
-    /// 同一 row id 对应多个展示变体时会全部重配。
+    /// - Parameters:
+    ///   - rowID: Row 的业务稳定 ID。
+    ///   - sectionID: 可选的 Section 过滤条件；传入 `nil` 时允许跨 Section 匹配。
+    ///   - scope: 刷新全部匹配 identity，或只刷新当前可见目标。
+    ///   - layout: 重配完成后是否由 ListKit 主动请求自适应尺寸重测量。
+    ///   - transaction: snapshot、布局动画和 mutation 排队策略。
+    ///   - completion: mutation 完成、被替代或提交前取消后的最终摘要。
+    /// - Returns: 已正常入队时返回 `.submitted` 摘要；最终结果以 completion 为准。
     @discardableResult
     public func reconfigureRows<RowID>(
         forRowID rowID: RowID,
         in sectionID: SectionID? = nil,
+        scope: ListRefreshScope = .allMatching,
+        layout: ListRefreshLayoutPolicy = .none,
         transaction: ListTransaction = .automatic,
-        completion: (() -> Void)? = nil
-    ) -> Int where RowID: Hashable & Sendable {
+        completion: ((ListRefreshSummary) -> Void)? = nil
+    ) -> ListRefreshSummary where RowID: Hashable & Sendable {
         reconfigureRows(
             forRowIDs: [rowID],
             in: sectionID,
+            scope: scope,
+            layout: layout,
             transaction: transaction,
             completion: completion
         )
     }
 
-    /// 使用 diffable `reconfigureItems` 批量重配匹配 row id 的 Row。
+    /// 重配单个 Row，并等待配置和布局处理完成。
+    ///
+    /// - Returns: mutation 完成、被替代或提交前取消后的最终摘要。
+    public func reconfigureRows<RowID>(
+        forRowID rowID: RowID,
+        in sectionID: SectionID? = nil,
+        scope: ListRefreshScope = .allMatching,
+        layout: ListRefreshLayoutPolicy = .none,
+        transaction: ListTransaction = .automatic
+    ) async -> ListRefreshSummary where RowID: Hashable & Sendable {
+        await reconfigureRows(
+            forRowIDs: [rowID],
+            in: sectionID,
+            scope: scope,
+            layout: layout,
+            transaction: transaction
+        )
+    }
+
+    /// 保留现有 Cell，并批量重配匹配 Row ID 的展示 identity。
+    ///
+    /// 输入 ID 会先去重；请求真正出队时再从最新已提交 snapshot 解析目标，因此排队
+    /// 期间发生的 apply 不会留下陈旧 index path。空输入或零匹配也会在下一次
+    /// MainActor turn 调用一次 completion。
+    ///
+    /// - Parameters:
+    ///   - rowIDs: 要刷新的 Row ID；同一 ID 可以匹配多个 Section 或展示变体。
+    ///   - sectionID: 可选的 Section 过滤条件。
+    ///   - scope: 刷新全部匹配 identity，或只刷新当前可见目标。
+    ///   - layout: 重配后是否主动请求自适应尺寸重测量。
+    ///   - transaction: snapshot、布局动画和 mutation 排队策略。
+    ///   - completion: mutation 的最终摘要。
+    /// - Returns: 包含去重输入数量的 `.submitted` 摘要。
     @discardableResult
     public func reconfigureRows<RowID>(
         forRowIDs rowIDs: [RowID],
         in sectionID: SectionID? = nil,
+        scope: ListRefreshScope = .allMatching,
+        layout: ListRefreshLayoutPolicy = .none,
         transaction: ListTransaction = .automatic,
-        completion: (() -> Void)? = nil
-    ) -> Int where RowID: Hashable & Sendable {
+        completion: ((ListRefreshSummary) -> Void)? = nil
+    ) -> ListRefreshSummary where RowID: Hashable & Sendable {
         refreshRows(
-            matching: rowIDs,
-            in: sectionID,
-            mode: .reconfigure,
+            matching: rowIDs.map(AnyListID.init),
+            in: sectionID.map(AnyListID.init),
+            scope: scope,
+            action: .reconfigure(layout: layout),
             transaction: transaction,
             completion: completion
         )
     }
 
-    /// 使用 diffable `reloadItems` 重新创建匹配 row id 的 Row 并重新计算尺寸。
+    /// 重配匹配 Row，并等待配置和布局处理完成。
+    ///
+    /// - Returns: 包含最终匹配、可见重配、布局和 completion state 的摘要。
+    public func reconfigureRows<RowID>(
+        forRowIDs rowIDs: [RowID],
+        in sectionID: SectionID? = nil,
+        scope: ListRefreshScope = .allMatching,
+        layout: ListRefreshLayoutPolicy = .none,
+        transaction: ListTransaction = .automatic
+    ) async -> ListRefreshSummary where RowID: Hashable & Sendable {
+        if Task.isCancelled {
+            return ListRefreshSummary(
+                requestedTargetCount: Set(rowIDs.map(AnyListID.init)).count,
+                completionState: .cancelledBeforeCommit
+            )
+        }
+        return await withCheckedContinuation { continuation in
+            _ = reconfigureRows(
+                forRowIDs: rowIDs,
+                in: sectionID,
+                scope: scope,
+                layout: layout,
+                transaction: transaction,
+                completion: { continuation.resume(returning: $0) }
+            )
+        }
+    }
+
+    /// 通过完整 reload/configuration 路径刷新单个 Row ID。
+    ///
+    /// reload 会请求 UIKit 重新执行 provider/configuration，但不保证最终 Cell 对象
+    /// 地址发生变化。Cell 类型变化必须改用 presentation identity 的 delete + insert。
+    ///
+    /// - Returns: 已正常入队时返回 `.submitted` 摘要；最终结果以 completion 为准。
     @discardableResult
     public func reloadRows<RowID>(
         forRowID rowID: RowID,
         in sectionID: SectionID? = nil,
+        scope: ListRefreshScope = .allMatching,
         transaction: ListTransaction = .automatic,
-        completion: (() -> Void)? = nil
-    ) -> Int where RowID: Hashable & Sendable {
+        completion: ((ListRefreshSummary) -> Void)? = nil
+    ) -> ListRefreshSummary where RowID: Hashable & Sendable {
         reloadRows(
             forRowIDs: [rowID],
             in: sectionID,
+            scope: scope,
             transaction: transaction,
             completion: completion
         )
     }
 
-    /// 使用 diffable `reloadItems` 批量重新创建匹配 row id 的 Row。
+    /// Reload 单个 Row，并等待 UIKit 更新完成。
+    ///
+    /// - Returns: mutation 的最终摘要。
+    public func reloadRows<RowID>(
+        forRowID rowID: RowID,
+        in sectionID: SectionID? = nil,
+        scope: ListRefreshScope = .allMatching,
+        transaction: ListTransaction = .automatic
+    ) async -> ListRefreshSummary where RowID: Hashable & Sendable {
+        await reloadRows(
+            forRowIDs: [rowID],
+            in: sectionID,
+            scope: scope,
+            transaction: transaction
+        )
+    }
+
+    /// 通过完整 reload/configuration 路径批量刷新匹配 Row ID 的展示 identity。
+    ///
+    /// 输入 ID 会去重，scope 和 Section 过滤在请求真正执行时应用。
+    ///
+    /// - Parameters:
+    ///   - rowIDs: 要 reload 的 Row ID。
+    ///   - sectionID: 可选的 Section 过滤条件。
+    ///   - scope: reload 全部匹配 identity，或只 reload 当前可见目标。
+    ///   - transaction: snapshot 动画和 mutation 排队策略。
+    ///   - completion: mutation 的最终摘要。
+    /// - Returns: 包含去重输入数量的 `.submitted` 摘要。
     @discardableResult
     public func reloadRows<RowID>(
         forRowIDs rowIDs: [RowID],
         in sectionID: SectionID? = nil,
+        scope: ListRefreshScope = .allMatching,
         transaction: ListTransaction = .automatic,
-        completion: (() -> Void)? = nil
-    ) -> Int where RowID: Hashable & Sendable {
+        completion: ((ListRefreshSummary) -> Void)? = nil
+    ) -> ListRefreshSummary where RowID: Hashable & Sendable {
         refreshRows(
-            matching: rowIDs,
-            in: sectionID,
-            mode: .reload,
+            matching: rowIDs.map(AnyListID.init),
+            in: sectionID.map(AnyListID.init),
+            scope: scope,
+            action: .reload,
             transaction: transaction,
             completion: completion
         )
+    }
+
+    /// Reload 匹配 Row，并等待 UIKit 更新完成。
+    ///
+    /// - Returns: 包含最终匹配和 reload 数量的摘要。
+    public func reloadRows<RowID>(
+        forRowIDs rowIDs: [RowID],
+        in sectionID: SectionID? = nil,
+        scope: ListRefreshScope = .allMatching,
+        transaction: ListTransaction = .automatic
+    ) async -> ListRefreshSummary where RowID: Hashable & Sendable {
+        if Task.isCancelled {
+            return ListRefreshSummary(
+                requestedTargetCount: Set(rowIDs.map(AnyListID.init)).count,
+                completionState: .cancelledBeforeCommit
+            )
+        }
+        return await withCheckedContinuation { continuation in
+            _ = reloadRows(
+                forRowIDs: rowIDs,
+                in: sectionID,
+                scope: scope,
+                transaction: transaction,
+                completion: { continuation.resume(returning: $0) }
+            )
+        }
     }
 
     /// 使用 diffable `reloadSections` 刷新指定 Section 及其 header/footer。
     ///
     /// 不存在或重复的 section id 会被安全忽略。
+    ///
+    /// - Parameters:
+    ///   - sectionIDs: 要 reload 的 Section ID；重复值只计作一个请求目标。
+    ///   - transaction: snapshot 动画和 mutation 排队策略。
+    ///   - completion: mutation 的最终摘要。
+    /// - Returns: 包含去重输入数量的 `.submitted` 摘要。
     @discardableResult
     public func reloadSections(
         _ sectionIDs: [SectionID],
         transaction: ListTransaction = .automatic,
-        completion: (() -> Void)? = nil
-    ) -> Int {
+        completion: ((ListRefreshSummary) -> Void)? = nil
+    ) -> ListRefreshSummary {
         refreshSections(
-            sectionIDs,
+            sectionIDs.map(AnyListID.init),
             transaction: transaction,
             completion: completion
         )
+    }
+
+    /// Reload 指定 Section，并等待 UIKit 更新完成。
+    ///
+    /// - Returns: 包含最终匹配、reload 数量和 completion state 的摘要。
+    public func reloadSections(
+        _ sectionIDs: [SectionID],
+        transaction: ListTransaction = .automatic
+    ) async -> ListRefreshSummary {
+        if Task.isCancelled {
+            return ListRefreshSummary(
+                requestedTargetCount: Set(sectionIDs.map(AnyListID.init)).count,
+                completionState: .cancelledBeforeCommit
+            )
+        }
+        return await withCheckedContinuation { continuation in
+            _ = reloadSections(
+                sectionIDs,
+                transaction: transaction,
+                completion: { continuation.resume(returning: $0) }
+            )
+        }
     }
 
     /// 重新查询并刷新 table view 的 section index 标题。
@@ -372,6 +555,7 @@ where SectionID: Hashable & Sendable {
         tableView?.reloadSectionIndexTitles()
     }
 
+    /// 执行一次描述树提交；coordinator 忙碌时保存描述树并返回初始 `.submitted` 摘要。
     private func _apply(
         options: ListApplyOptions,
         completion: ((ListApplySummary) -> Void)?,
@@ -382,7 +566,7 @@ where SectionID: Hashable & Sendable {
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
         let diagnosticsIssues = ListDiagnostics.validate(Self.makeCoreSnapshots(from: newSections))
-        if isPerformingSynchronousReloadMutation {
+        if mutationCoordinator.isExecuting {
             let deferredPlan = ListApplyPlanner.makePlan(
                 old: Self.makeCoreSnapshots(from: sections),
                 new: Self.makeCoreSnapshots(from: newSections),
@@ -394,11 +578,22 @@ where SectionID: Hashable & Sendable {
             )
             lastApplySummary = deferredSummary
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
-            let deferredApply = TableMainActorCallbackBox { [weak self] in
-                guard let self else { return }
-                _ = self._apply(options: options, completion: completion) { newSections }
-            }
-            deferredApply.schedule()
+            enqueuePendingMutation(ListPendingMutationRequest(
+                kind: .apply,
+                updatePolicy: resolvedTransaction.updatePolicy,
+                start: { [weak self] in
+                    guard let self else { return }
+                    _ = self._apply(options: options, completion: completion) { newSections }
+                },
+                supersede: {
+                    completion?(deferredSummary.replacingAnimation(
+                        ListAnimationSummary(
+                            completionState: .superseded,
+                            reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                        )
+                    ))
+                }
+            ))
             return deferredSummary
         }
 
@@ -449,15 +644,13 @@ where SectionID: Hashable & Sendable {
             snapshot.appendItems(section.rows.map(\.identity), toSection: sectionID)
         }
 
-        let refreshItems = applyPlan.snapshotRefreshItems
-        if !refreshItems.isEmpty {
-            if options.refreshStrategy == .forceReload {
-                snapshot.reloadItems(refreshItems)
-            } else if #available(iOS 15.0, tvOS 15.0, *) {
-                snapshot.reconfigureItems(refreshItems)
-            } else {
-                snapshot.reloadItems(refreshItems)
-            }
+        // planner 已保证 reconfigure 与 reload 分组互斥；presentation identity 变化
+        // 已由结构 diff 处理，不会进入以下内容刷新路径。
+        if !applyPlan.snapshotReconfigureItems.isEmpty {
+            snapshot.reconfigureItems(applyPlan.snapshotReconfigureItems)
+        }
+        if !applyPlan.snapshotReloadItems.isEmpty {
+            snapshot.reloadItems(applyPlan.snapshotReloadItems)
         }
 
         let summary = applyPlan.initialSummary.replacingAnimation(
@@ -480,12 +673,20 @@ where SectionID: Hashable & Sendable {
             )
             completion?(supersededSummary)
         }
+        let mutationToken = mutationCoordinator.begin(updatePolicy: resolvedTransaction.updatePolicy)
+        let finishAsSuperseded = { [weak self] in
+            guard let self else { return }
+            self.mutationCoordinator.finish(mutationToken)
+            completeAsSuperseded()
+            self.performNextPendingMutationIfNeeded()
+        }
 
-        // Normalize UIKit's diffable completion onto a fresh main-actor turn.
+        // 将 UIKit 的 diffable completion 统一延迟到新的 MainActor turn，避免在
+        // UIKit 尚未退出内部提交栈时继续执行选择、布局或下一次 mutation。
         let didApplyBox = TableMainActorCallbackBox { [weak self] in
             guard let self else { return }
-            guard self.applyGeneration == generation else {
-                completeAsSuperseded()
+            guard self.applyGeneration == generation, !mutationToken.isSuperseded else {
+                finishAsSuperseded()
                 return
             }
             self.tableView?.reloadSectionIndexTitles()
@@ -494,8 +695,8 @@ where SectionID: Hashable & Sendable {
             self.reconcileSelection()
             let metrics = TableApplyAnimationMetrics()
             let animationCoordinator = ListAnimationCompletionCoordinator {
-                guard self.applyGeneration == generation else {
-                    completeAsSuperseded()
+                guard self.applyGeneration == generation, !mutationToken.isSuperseded else {
+                    finishAsSuperseded()
                     return
                 }
                 let scrollOutcome = self.performScrollBehavior(
@@ -522,17 +723,18 @@ where SectionID: Hashable & Sendable {
                     )
                 )
                 self.lastApplySummary = completedSummary
-                self.isMutationPipelineActive = false
+                self.mutationCoordinator.finish(mutationToken)
                 ListApplyLogger.logApplySummary(
                     completedSummary,
                     options: options,
                     prefix: "ListKit table apply summary"
                 )
                 completion?(completedSummary)
-                self.performNextPendingReloadAllIfNeeded()
+                self.performNextPendingMutationIfNeeded()
             }
 
             var needsLayoutInvalidation = options.applicationMode == .reloadData
+                || !applyPlan.snapshotLayoutInvalidationItems.isEmpty
             if applyPlan.shouldRunVisibleRefresh {
                 let refresh = self.refreshVisibleRowsIfNeeded(
                     applyPlan: applyPlan,
@@ -557,7 +759,6 @@ where SectionID: Hashable & Sendable {
         }
         let didApply = { didApplyBox.schedule() }
 
-        isMutationPipelineActive = true
         switch options.applicationMode {
         case .differences:
             dataSource.apply(
@@ -566,21 +767,18 @@ where SectionID: Hashable & Sendable {
                 completion: didApply
             )
         case .reloadData:
-            if #available(iOS 15.0, tvOS 15.0, *) {
-                dataSource.applySnapshotUsingReloadData(snapshot, completion: didApply)
-            } else {
-                dataSource.apply(snapshot, animatingDifferences: false, completion: didApply)
-            }
+            dataSource.applySnapshotUsingReloadData(snapshot, completion: didApply)
         }
 
         return summary
     }
 
+    /// 使用当前描述树生成 reloadAll summary，不重新执行调用方 builder。
     private func makeReloadAllPlan(transaction: ListTransaction) -> ListApplyPlan {
         let currentSnapshots = Self.makeCoreSnapshots(from: sections)
         let options = ListApplyOptions(
             transaction: transaction,
-            refreshStrategy: .forceReload,
+            refreshStrategy: .reloadKeptRows,
             applicationMode: .reloadData
         )
         return ListApplyPlanner.makePlan(
@@ -591,35 +789,73 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    private func refreshRows<RowID>(
-        matching rowIDs: [RowID],
-        in sectionID: SectionID?,
-        mode: ListTargetedRowRefreshMode,
+    /// 在真正执行时根据 Row ID、Section 和 scope 解析当前 snapshot 中的目标 identity。
+    private func refreshRows(
+        matching rowIDs: [AnyListID],
+        in sectionID: AnyListID?,
+        scope: ListRefreshScope,
+        action: ListRefreshAction,
         transaction: ListTransaction,
-        completion: (() -> Void)?
-    ) -> Int where RowID: Hashable & Sendable {
+        completion: ((ListRefreshSummary) -> Void)?
+    ) -> ListRefreshSummary {
+        let requestedTargetCount = Set(rowIDs).count
+        if mutationCoordinator.isExecuting {
+            enqueuePendingMutation(ListPendingMutationRequest(
+                rowIDs: rowIDs,
+                sectionID: sectionID,
+                scope: scope,
+                action: action,
+                transaction: transaction,
+                completion: completion,
+                execute: { [weak self] rowIDs, sectionID, scope, action, transaction, completion in
+                    guard let self else {
+                        completion?(ListRefreshSummary(
+                            requestedTargetCount: Set(rowIDs).count,
+                            completionState: .cancelledBeforeCommit
+                        ))
+                        return
+                    }
+                    _ = self.refreshRows(
+                        matching: rowIDs,
+                        in: sectionID,
+                        scope: scope,
+                        action: action,
+                        transaction: transaction,
+                        completion: completion
+                    )
+                }
+            ))
+            return ListRefreshSummary(requestedTargetCount: requestedTargetCount)
+        }
+
+        // 请求可能在队列中等待过其他 apply；这里必须读取最新已提交 snapshot，不能
+        // 使用入队时的 index path 或 presentation identity。
         let snapshot = dataSource.snapshot()
-        let targetRowIDs = Set(rowIDs.map(AnyListID.init))
-        let targetSectionID = sectionID.map(AnyListID.init)
+        let targetRowIDs = Set(rowIDs)
+        let visibleIdentities = Set((tableView?.indexPathsForVisibleRows ?? []).compactMap { row(at: $0)?.identity })
         let refreshItems = snapshot.itemIdentifiers.filter { identity in
             targetRowIDs.contains(identity.rowID)
-                && (targetSectionID.map { identity.sectionID == $0 } ?? true)
+                && (sectionID.map { identity.sectionID == $0 } ?? true)
                 && rowsByIdentity[identity] != nil
+                && (scope == .allMatching || visibleIdentities.contains(identity))
         }
         return refreshRows(
             refreshItems,
-            mode: mode,
+            requestedTargetCount: requestedTargetCount,
+            action: action,
             transaction: transaction,
             completion: completion
         )
     }
 
+    /// 将已解析 identity 写入 snapshot，并在 diffable 与布局阶段全部结束后完成请求。
     private func refreshRows(
         _ identities: [AnyListIdentity],
-        mode: ListTargetedRowRefreshMode,
+        requestedTargetCount: Int,
+        action: ListRefreshAction,
         transaction: ListTransaction,
-        completion: (() -> Void)?
-    ) -> Int {
+        completion: ((ListRefreshSummary) -> Void)?
+    ) -> ListRefreshSummary {
         var snapshot = dataSource.snapshot()
         let currentItems = Set(snapshot.itemIdentifiers)
         var seen: Set<AnyListIdentity> = []
@@ -629,49 +865,83 @@ where SectionID: Hashable & Sendable {
                 && seen.insert(identity).inserted
         }
         guard !refreshItems.isEmpty else {
-            completion?()
-            return 0
-        }
-        if isPerformingSynchronousReloadMutation {
-            let deferredRefresh = TableMainActorCallbackBox { [weak self] in
-                guard let self else {
-                    completion?()
-                    return
-                }
-                _ = self.refreshRows(
-                    refreshItems,
-                    mode: mode,
-                    transaction: transaction,
-                    completion: completion
-                )
+            let summary = ListRefreshSummary(
+                requestedTargetCount: requestedTargetCount,
+                completionState: .completed
+            )
+            if let completion {
+                // 即使没有匹配目标也延迟一个 MainActor turn，统一 completion 的重入时机。
+                TableMainActorCallbackBox { completion(summary) }.schedule()
             }
-            deferredRefresh.schedule()
-            return refreshItems.count
+            return summary
         }
-
-        switch mode {
-        case .reconfigure:
-            if #available(iOS 15.0, tvOS 15.0, *) {
-                snapshot.reconfigureItems(refreshItems)
-            } else {
-                snapshot.reloadItems(refreshItems)
-            }
+        let visibleIdentities = Set((tableView?.indexPathsForVisibleRows ?? []).compactMap { row(at: $0)?.identity })
+        let visibleReconfiguredCount: Int
+        let reloadedTargetCount: Int
+        let invalidatesLayout: Bool
+        // reconfigure 与 reload 的生命周期语义在此分流；只有调用方明确要求
+        // `.invalidate` 时，ListKit 才在 snapshot completion 后主动重测量 Table。
+        switch action {
+        case .reconfigure(let layout):
+            snapshot.reconfigureItems(refreshItems)
+            visibleReconfiguredCount = refreshItems.filter(visibleIdentities.contains).count
+            reloadedTargetCount = 0
+            invalidatesLayout = layout == .invalidate
         case .reload:
             snapshot.reloadItems(refreshItems)
+            visibleReconfiguredCount = 0
+            reloadedTargetCount = refreshItems.count
+            invalidatesLayout = false
         }
 
-        targetedRefreshInFlightCount += 1
+        let mutationToken = mutationCoordinator.begin(updatePolicy: transaction.updatePolicy)
         let resolvedTransaction = transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
-        let didRefreshBox = TableMainActorCallbackBox { [weak self] in
+        let finish = { [weak self] in
             guard let self else {
-                completion?()
+                completion?(ListRefreshSummary(
+                    requestedTargetCount: requestedTargetCount,
+                    matchedTargetCount: refreshItems.count,
+                    visibleReconfiguredCount: visibleReconfiguredCount,
+                    reloadedTargetCount: reloadedTargetCount,
+                    layoutInvalidated: invalidatesLayout,
+                    completionState: .cancelledBeforeCommit
+                ))
                 return
             }
-            self.targetedRefreshInFlightCount -= 1
-            completion?()
-            self.performNextPendingReloadAllIfNeeded()
+            // 先恢复内部可执行状态，再调用外部 completion，使 completion 内发起的
+            // 下一次刷新不会与当前 UIKit mutation 重叠。
+            self.mutationCoordinator.finish(mutationToken)
+            completion?(ListRefreshSummary(
+                requestedTargetCount: requestedTargetCount,
+                matchedTargetCount: refreshItems.count,
+                visibleReconfiguredCount: visibleReconfiguredCount,
+                reloadedTargetCount: reloadedTargetCount,
+                layoutInvalidated: invalidatesLayout,
+                completionState: .completed
+            ))
+            self.performNextPendingMutationIfNeeded()
+        }
+        let didRefreshBox = TableMainActorCallbackBox { [weak self] in
+            guard let self else {
+                finish()
+                return
+            }
+            guard invalidatesLayout, let tableView = self.tableView else {
+                finish()
+                return
+            }
+            if resolvedTransaction.layoutAnimation {
+                tableView.performBatchUpdates(nil) { _ in finish() }
+            } else {
+                UIView.performWithoutAnimation {
+                    tableView.beginUpdates()
+                    tableView.endUpdates()
+                    tableView.layoutIfNeeded()
+                }
+                finish()
+            }
         }
         dataSource.apply(
             snapshot,
@@ -679,58 +949,84 @@ where SectionID: Hashable & Sendable {
         ) {
             didRefreshBox.schedule()
         }
-        return refreshItems.count
+        return ListRefreshSummary(requestedTargetCount: requestedTargetCount)
     }
 
+    /// 在执行时过滤并去重当前 snapshot 中仍存在的 Section，然后提交 reloadSections。
     private func refreshSections(
-        _ sectionIDs: [SectionID],
+        _ sectionIDs: [AnyListID],
         transaction: ListTransaction,
-        completion: (() -> Void)?
-    ) -> Int {
+        completion: ((ListRefreshSummary) -> Void)?
+    ) -> ListRefreshSummary {
         var snapshot = dataSource.snapshot()
         let currentSectionIDs = Set(snapshot.sectionIdentifiers)
+        let requestedTargetCount = Set(sectionIDs).count
         var seen: Set<AnyListID> = []
         let refreshSectionIDs = sectionIDs.compactMap { sectionID -> AnyListID? in
-            let erasedID = AnyListID(sectionID)
-            guard currentSectionIDs.contains(erasedID), seen.insert(erasedID).inserted else {
+            guard currentSectionIDs.contains(sectionID), seen.insert(sectionID).inserted else {
                 return nil
             }
-            return erasedID
+            return sectionID
         }
         guard !refreshSectionIDs.isEmpty else {
-            completion?()
-            return 0
-        }
-        if isPerformingSynchronousReloadMutation {
-            let deferredRefresh = TableMainActorCallbackBox { [weak self] in
-                guard let self else {
-                    completion?()
-                    return
-                }
-                _ = self.refreshSections(
-                    sectionIDs,
-                    transaction: transaction,
-                    completion: completion
-                )
+            let summary = ListRefreshSummary(
+                requestedTargetCount: requestedTargetCount,
+                completionState: .completed
+            )
+            if let completion {
+                TableMainActorCallbackBox { completion(summary) }.schedule()
             }
-            deferredRefresh.schedule()
-            return refreshSectionIDs.count
+            return summary
+        }
+        if mutationCoordinator.isExecuting {
+            enqueuePendingMutation(ListPendingMutationRequest(
+                sectionIDs: sectionIDs,
+                transaction: transaction,
+                completion: completion,
+                execute: { [weak self] sectionIDs, transaction, completion in
+                    guard let self else {
+                        completion?(ListRefreshSummary(
+                            requestedTargetCount: Set(sectionIDs).count,
+                            completionState: .cancelledBeforeCommit
+                        ))
+                        return
+                    }
+                    _ = self.refreshSections(
+                        sectionIDs,
+                        transaction: transaction,
+                        completion: completion
+                    )
+                }
+            ))
+            return ListRefreshSummary(requestedTargetCount: requestedTargetCount)
         }
 
         snapshot.reloadSections(refreshSectionIDs)
-        targetedRefreshInFlightCount += 1
+        let mutationToken = mutationCoordinator.begin(updatePolicy: transaction.updatePolicy)
         let resolvedTransaction = transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
         let didRefreshBox = TableMainActorCallbackBox { [weak self] in
             guard let self else {
-                completion?()
+                completion?(ListRefreshSummary(
+                    requestedTargetCount: requestedTargetCount,
+                    matchedTargetCount: refreshSectionIDs.count,
+                    reloadedTargetCount: refreshSectionIDs.count,
+                    layoutInvalidated: true,
+                    completionState: .cancelledBeforeCommit
+                ))
                 return
             }
-            self.targetedRefreshInFlightCount -= 1
+            self.mutationCoordinator.finish(mutationToken)
             self.tableView?.reloadSectionIndexTitles()
-            completion?()
-            self.performNextPendingReloadAllIfNeeded()
+            completion?(ListRefreshSummary(
+                requestedTargetCount: requestedTargetCount,
+                matchedTargetCount: refreshSectionIDs.count,
+                reloadedTargetCount: refreshSectionIDs.count,
+                layoutInvalidated: true,
+                completionState: .completed
+            ))
+            self.performNextPendingMutationIfNeeded()
         }
         dataSource.apply(
             snapshot,
@@ -738,16 +1034,17 @@ where SectionID: Hashable & Sendable {
         ) {
             didRefreshBox.schedule()
         }
-        return refreshSectionIDs.count
+        return ListRefreshSummary(requestedTargetCount: requestedTargetCount)
     }
 
+    /// 执行完整 reloadData、布局、selection、supplementary 和滚动锚点恢复流程。
     private func performReloadAll(_ request: ListReloadAllRequest) {
         let resolvedTransaction = request.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
         let options = ListApplyOptions(
             transaction: request.transaction,
-            refreshStrategy: .forceReload,
+            refreshStrategy: .reloadKeptRows,
             applicationMode: .reloadData
         )
         let applyPlan = makeReloadAllPlan(transaction: request.transaction)
@@ -773,7 +1070,7 @@ where SectionID: Hashable & Sendable {
                 prefix: "ListKit table reload summary"
             )
             request.completion?(completedSummary)
-            performNextPendingReloadAllIfNeeded()
+            performNextPendingMutationIfNeeded()
             return
         }
 
@@ -792,7 +1089,7 @@ where SectionID: Hashable & Sendable {
 
         applyGeneration += 1
         let generation = applyGeneration
-        isMutationPipelineActive = true
+        let mutationToken = mutationCoordinator.begin(updatePolicy: request.transaction.updatePolicy)
         let metrics = TableApplyAnimationMetrics()
 
         let completeAsSuperseded = {
@@ -834,14 +1131,14 @@ where SectionID: Hashable & Sendable {
                 )
             )
             self.lastApplySummary = completedSummary
-            self.isMutationPipelineActive = false
+            self.mutationCoordinator.finish(mutationToken)
             ListApplyLogger.logApplySummary(
                 completedSummary,
                 options: options,
                 prefix: "ListKit table reload summary"
             )
             request.completion?(completedSummary)
-            self.performNextPendingReloadAllIfNeeded()
+            self.performNextPendingMutationIfNeeded()
         }
 
         let finishReloadedLayout = { [weak self] in
@@ -899,9 +1196,6 @@ where SectionID: Hashable & Sendable {
     }
 
     private func performSynchronousReloadMutation(_ mutation: () -> Void) {
-        let wasPerformingMutation = isPerformingSynchronousReloadMutation
-        isPerformingSynchronousReloadMutation = true
-        defer { isPerformingSynchronousReloadMutation = wasPerformingMutation }
         mutation()
     }
 
@@ -913,7 +1207,44 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 将 mutation 放入共享队列，并按 `.coalesceLatest` 规则合并或替代旧请求。
+    private func enqueuePendingMutation(_ request: ListPendingMutationRequest) {
+        // 只与队尾相邻且语义兼容的 targeted request 合并，避免跨过 serial 请求改变顺序。
+        if request.kind == .rowRefresh,
+           pendingMutations.last?.mergeCompatibleRowRefresh(request) == true {
+            return
+        }
+        if request.kind == .sectionReload,
+           pendingMutations.last?.mergeCompatibleSectionReload(request) == true {
+            return
+        }
+        var supersededRequests: [ListPendingMutationRequest] = []
+        if request.kind == .apply, request.updatePolicy == .coalesceLatest {
+            // 已提交给 UIKit 的 apply 继续自然完成，但其逻辑结果由新描述树取代。
+            mutationCoordinator.supersedeActive()
+            supersededRequests = pendingMutations.filter {
+                $0.kind == .apply && $0.updatePolicy == .coalesceLatest
+            }
+            pendingMutations.removeAll {
+                $0.kind == .apply && $0.updatePolicy == .coalesceLatest
+            }
+        }
+        pendingMutations.append(request)
+        supersededRequests.forEach { $0.supersede() }
+    }
+
+    /// 入队全量刷新；coalesceLatest reloadAll 覆盖尚未执行的 targeted mutation。
     private func enqueueReloadAll(_ request: ListReloadAllRequest) {
+        if request.transaction.updatePolicy == .coalesceLatest {
+            let supersededTargeted = pendingMutations.filter {
+                $0.updatePolicy == .coalesceLatest && $0.kind != .apply
+            }
+            pendingMutations.removeAll {
+                $0.updatePolicy == .coalesceLatest && $0.kind != .apply
+            }
+            supersededTargeted.forEach { $0.supersede() }
+        }
+
         var supersededRequests: [ListReloadAllRequest] = []
         if request.transaction.updatePolicy == .coalesceLatest {
             var retainedRequests: [ListReloadAllRequest] = []
@@ -928,8 +1259,7 @@ where SectionID: Hashable & Sendable {
         }
         pendingReloadAllRequests.append(request)
 
-        // Publish the new queue before invoking user callbacks. A superseded
-        // completion may synchronously call reloadAll again.
+        // 先发布新队列再调用外部回调；被替代请求的 completion 可能同步再次调用 reloadAll。
         for pendingRequest in supersededRequests {
             let resolved = pendingRequest.transaction.resolved(
                 reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
@@ -944,12 +1274,22 @@ where SectionID: Hashable & Sendable {
             )
             pendingRequest.completion?(supersededSummary)
         }
+        performNextPendingMutationIfNeeded()
+    }
+
+    /// coordinator 空闲时启动下一个普通 mutation，否则继续处理 reloadAll 队列。
+    private func performNextPendingMutationIfNeeded() {
+        guard !mutationCoordinator.isExecuting else { return }
+        if !pendingMutations.isEmpty {
+            pendingMutations.removeFirst().start()
+            return
+        }
         performNextPendingReloadAllIfNeeded()
     }
 
+    /// 在 UIKit 没有未提交更新时执行最早的 reloadAll 请求。
     private func performNextPendingReloadAllIfNeeded() {
-        guard !isMutationPipelineActive,
-              targetedRefreshInFlightCount == 0,
+        guard !mutationCoordinator.isExecuting,
               !pendingReloadAllRequests.isEmpty else { return }
         guard tableView?.hasUncommittedUpdates != true else {
             scheduleReloadAllRetry()
@@ -958,6 +1298,7 @@ where SectionID: Hashable & Sendable {
         performReloadAll(pendingReloadAllRequests.removeFirst())
     }
 
+    /// UIKit 正在提交内部更新时短暂退避，避免 reloadData 与未完成更新交错。
     private func scheduleReloadAllRetry() {
         guard !isReloadAllRetryScheduled else { return }
         isReloadAllRetryScheduled = true
@@ -965,7 +1306,7 @@ where SectionID: Hashable & Sendable {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.isReloadAllRetryScheduled = false
-                self.performNextPendingReloadAllIfNeeded()
+                self.performNextPendingMutationIfNeeded()
             }
         }
     }
@@ -995,7 +1336,7 @@ where SectionID: Hashable & Sendable {
         }
 
         let result = await withCheckedContinuation { continuation in
-            _ = _apply(options: options, completion: { [weak self] summary in
+            _ = _apply(options: options, completion: { summary in
                 continuation.resume(returning: summary)
             }) {
                 builtSections
@@ -1045,6 +1386,13 @@ where SectionID: Hashable & Sendable {
         return self
     }
 
+    // MARK: - UIKit Protocol Witnesses
+
+    // 以下公开方法实现 UITableView data source、delegate、prefetch 与 scroll delegate
+    // 契约。方法签名沿用 UIKit 文档；注释重点放在 ListKit 增加的 identity 解析、
+    // 生命周期捕获、事件转发、编辑和 selection 同步逻辑上。
+
+    /// 返回当前已接受描述树中的 Section 数量。
     public func numberOfSections(in tableView: UITableView) -> Int {
         sections.count
     }
@@ -1640,58 +1988,6 @@ where SectionID: Hashable & Sendable {
         return true
     }
 
-    /// 轻量重配当前可见 row。
-    ///
-    /// - Parameters:
-    ///   - rowID: row 的稳定 id。
-    ///   - sectionID: 可选 section 范围。
-    /// - Returns: 被重配的可见 row 数量。
-    @discardableResult
-    public func reconfigureVisibleRows<RowID>(
-        forRowID rowID: RowID,
-        in sectionID: SectionID? = nil
-    ) -> Int where RowID: Hashable & Sendable {
-        guard let tableView else { return 0 }
-        var reconfiguredCount = 0
-
-        for indexPath in visibleIndexPaths(matching: rowID, in: sectionID) {
-            guard let row = row(at: indexPath) else { continue }
-            let context = context(for: indexPath, identity: row.identity)
-            if let cell = tableView.cellForRow(at: indexPath) {
-                row.configureVisibleCell(cell, context)
-            } else if tableView.window == nil {
-                let cell = row.cellProvider(tableView, indexPath, context)
-                row.configureVisibleCell(cell, context)
-            } else {
-                continue
-            }
-            reconfiguredCount += 1
-        }
-
-        return reconfiguredCount
-    }
-
-    /// 通过 diffable snapshot reload 当前可见 row。
-    ///
-    /// - Parameters:
-    ///   - rowID: row 的稳定 id。
-    ///   - sectionID: 可选 section 范围。
-    /// - Returns: 被 reload 的可见 row 数量。
-    @discardableResult
-    public func reloadVisibleRows<RowID>(
-        forRowID rowID: RowID,
-        in sectionID: SectionID? = nil
-    ) -> Int where RowID: Hashable & Sendable {
-        let identities = visibleIndexPaths(matching: rowID, in: sectionID)
-            .compactMap { row(at: $0)?.identity }
-        return refreshRows(
-            identities,
-            mode: .reload,
-            transaction: .disabled,
-            completion: nil
-        )
-    }
-
     private func rebuildLookupTables() {
         rowsByIdentity = [:]
 
@@ -1737,6 +2033,7 @@ where SectionID: Hashable & Sendable {
                         identity: row.identity,
                         refreshID: row.refreshID,
                         refreshPolicy: row.refreshPolicy,
+                        refreshAction: row.refreshAction,
                         role: .row
                     )
                 },
@@ -1755,6 +2052,7 @@ where SectionID: Hashable & Sendable {
         var refreshedCount = 0
         var transitionCount = 0
         var needsLayoutInvalidation = false
+        var reloadIndexPaths: [IndexPath] = []
         for indexPath in tableView.indexPathsForVisibleRows ?? [] {
             guard
                 let row = row(at: indexPath),
@@ -1768,30 +2066,37 @@ where SectionID: Hashable & Sendable {
                 let cell = tableView.cellForRow(at: indexPath)
             else { continue }
 
-            let context = context(for: indexPath, identity: row.identity)
-            if animatingContent,
-               oldRowSnapshot.refreshID != rowSnapshot.refreshID,
-               case .opacity(let duration) = row.contentTransition.storage,
-               duration > 0 {
-                coordinator.enter()
-                UIView.transition(
-                    with: cell.contentView,
-                    duration: duration,
-                    options: [.transitionCrossDissolve, .beginFromCurrentState, .allowAnimatedContent]
-                ) {
+            switch rowSnapshot.refreshAction {
+            case .reload:
+                reloadIndexPaths.append(indexPath)
+            case .reconfigure(let layout):
+                let context = context(for: indexPath, identity: row.identity)
+                if animatingContent,
+                   oldRowSnapshot.refreshID != rowSnapshot.refreshID,
+                   case .opacity(let duration) = row.contentTransition.storage,
+                   duration > 0 {
+                    coordinator.enter()
+                    UIView.transition(
+                        with: cell.contentView,
+                        duration: duration,
+                        options: [.transitionCrossDissolve, .beginFromCurrentState, .allowAnimatedContent]
+                    ) {
+                        row.configureVisibleCell(cell, context)
+                    } completion: { _ in
+                        coordinator.leave()
+                    }
+                    transitionCount += 1
+                } else {
                     row.configureVisibleCell(cell, context)
-                } completion: { _ in
-                    coordinator.leave()
                 }
-                transitionCount += 1
-            } else {
-                row.configureVisibleCell(cell, context)
-            }
-            if oldRowSnapshot.refreshID != rowSnapshot.refreshID,
-               row.height?.isFixed != true {
-                needsLayoutInvalidation = true
+                needsLayoutInvalidation = needsLayoutInvalidation || layout == .invalidate
             }
             refreshedCount += 1
+        }
+        if !reloadIndexPaths.isEmpty {
+            UIView.performWithoutAnimation {
+                tableView.reloadRows(at: reloadIndexPaths, with: .none)
+            }
         }
         return TableVisibleRefreshResult(
             refreshedCount: refreshedCount,
@@ -1800,6 +2105,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
+    /// 按 transaction 决定是否动画触发 Table 自适应尺寸重测量。
     private func performLayoutUpdate(
         invalidating shouldInvalidate: Bool,
         animated: Bool,
@@ -2161,6 +2467,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 为 async `.serial` apply 获取调用级槽位，保证 builder 结果按调用顺序提交。
     private func acquireSerialApplySlot() async {
         if !isSerialApplyActive {
             isSerialApplyActive = true
@@ -2171,6 +2478,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 释放当前 serial 槽位，并恢复最早等待的 async apply。
     private func releaseSerialApplySlot() {
         guard !serialApplyWaiters.isEmpty else {
             isSerialApplyActive = false
@@ -2350,8 +2658,10 @@ where SectionID: Hashable & Sendable {
 }
 
 private final class TableUnsafeForwardingTarget: @unchecked Sendable {
+    /// 仅用于 Objective-C 消息转发的弱 delegate 快照。
     let value: AnyObject?
 
+    /// 在 MainActor 上捕获 selector 对应的转发目标。
     @MainActor
     init(_ value: AnyObject?) {
         MainActor.preconditionIsolated()
@@ -2361,13 +2671,16 @@ private final class TableUnsafeForwardingTarget: @unchecked Sendable {
 
 /// UIKit/Dispatch completion 可能从非主队列触发；这个私有盒子只负责把回调重新排到 MainActor 执行。
 private final class TableMainActorCallbackBox: @unchecked Sendable {
+    /// 已在 MainActor 创建、只能回到主线程执行的原始回调。
     private let callback: () -> Void
 
+    /// 捕获一个当前 MainActor 隔离的完成回调。
     @MainActor
     init(_ callback: @escaping () -> Void) {
         self.callback = callback
     }
 
+    /// 从任意完成队列异步切回主队列，再恢复 MainActor 隔离。
     nonisolated func schedule() {
         DispatchQueue.main.async { [self] in
             MainActor.assumeIsolated {

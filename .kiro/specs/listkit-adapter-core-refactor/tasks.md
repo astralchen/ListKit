@@ -31,7 +31,7 @@
 
 ## Phase P5: Verification and Cleanup
 
-- [x] Task 15: 更新 README/Swift Doc，说明 shared core、Table header/footer refresh 和 `.forceReload` 语义。
+- [x] Task 15: 更新 README/Swift Doc，说明 shared core、Table header/footer refresh 和 `.reloadKeptRows` 语义。
 - [x] Task 16: 运行重复 helper 搜索、`git diff --check`、UIKit/macOS SwiftPM 探针和 iOS build/test 验证。
 
 ## Verification

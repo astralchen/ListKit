@@ -82,7 +82,11 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
             guard !Task.isCancelled else { return }
 
             self.viewModel.recordCollectionApply(result)
-            collectionAdapter.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
+            _ = await collectionAdapter.reconfigureRows(
+                forRowID: LiveRoomRowID.diagnostics,
+                in: .diagnostics,
+                scope: .visible
+            )
             if self.viewModel.pendingScrollMessageID != nil {
                 self.viewModel.clearPendingScroll()
             }
@@ -134,11 +138,19 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
         collectionAdapter
             .onPrefetchItems { [weak self, weak collectionAdapter] contexts in
                 self?.viewModel.recordPrefetch(itemCount: contexts.count)
-                collectionAdapter?.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
+                collectionAdapter?.reconfigureRows(
+                    forRowID: LiveRoomRowID.diagnostics,
+                    in: .diagnostics,
+                    scope: .visible
+                )
             }
             .onCancelPrefetchingItems { [weak self, weak collectionAdapter] contexts in
                 self?.viewModel.recordPrefetch(itemCount: contexts.count, cancelled: true)
-                collectionAdapter?.reconfigureVisibleRows(forRowID: LiveRoomRowID.diagnostics, in: .diagnostics)
+                collectionAdapter?.reconfigureRows(
+                    forRowID: LiveRoomRowID.diagnostics,
+                    in: .diagnostics,
+                    scope: .visible
+                )
             }
     }
 

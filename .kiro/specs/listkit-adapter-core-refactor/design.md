@@ -28,7 +28,7 @@ struct ListSectionSnapshot {
 `ListApplyPlanner.makePlan(old:new:options:diagnosticsIssues:)` returns:
 
 - `shouldApplyDiffable`
-- `snapshotRefreshItems`
+- `snapshotReconfigureItems` / `snapshotLayoutInvalidationItems` / `snapshotReloadItems`
 - `shouldRunVisibleRefresh`
 - `initialSummary`
 - `completedSummary(visibleRefreshCount:visibleSupplementaryRefreshCount:)`
@@ -36,9 +36,9 @@ struct ListSectionSnapshot {
 
 Refresh rules:
 
-- `.automatic` / `.diffableOnly`: snapshot refresh rows whose policy is `.whenRefreshIDChanges` and whose kept `refreshID` changed.
+- `.automatic` / `.refreshIDChangesOnly`: snapshot refresh rows whose policy is `.whenRefreshIDChanges` and whose kept `refreshID` changed.
 - `.visibleOnly`: no snapshot refresh; visible refresh may run.
-- `.forceReload`: snapshot refresh kept row identities only; no visible refresh.
+- `.reloadKeptRows`: snapshot refresh kept row identities only; no visible refresh.
 - default visible row refresh runs for `.automaticVisible` and `.alwaysVisible`.
 - supplementary visible refresh runs for `.automaticVisible`, `.alwaysVisible`, and `.whenRefreshIDChanges` when the kept supplementary `refreshID` changed.
 
@@ -49,7 +49,7 @@ Diagnostics stop rules are centralized. `.warning` and `.assertion` return `shou
 Collection adapter keeps:
 
 - `UICollectionViewDiffableDataSource`
-- iOS 15 `reconfigureItems` vs iOS 14 `reloadItems`
+- iOS 15+ 的 `reconfigureItems`、`reloadItems` 与显式 layout invalidation
 - supplementary lookup by kind/section
 - layout signature/invalidation
 - compositional layout diagnostics
@@ -58,10 +58,15 @@ Table adapter keeps:
 
 - `UITableViewDiffableDataSource`
 - row/header/footer registration and delegate callbacks
-- row visible reconfigure/reload helpers
+- scoped row reconfigure/reload execution and Table layout remeasurement
 - header/footer visible refresh after apply completion
 
 Both adapters replace duplicated event dictionaries with `ListEventRouter<Context>`.
+
+Both adapters also share `ListMutationCoordinator` and the pending mutation request model. The
+coordinator permits only one UIKit mutation at a time, preserves `.serial` order, coalesces the
+latest pending apply, merges compatible pending Row IDs, and upgrades action conflicts using
+`reload > reconfigure+invalidate > reconfigure`.
 
 ## Testing
 

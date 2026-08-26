@@ -4,7 +4,9 @@ import UIKit
 
 /// Compositional layout 的主滚动方向。
 public enum ListLayoutScrollDirection: Hashable, Sendable {
+    /// Section 沿垂直方向排列。
     case vertical
+    /// Section 沿水平方向排列。
     case horizontal
 
     var uiKitValue: UICollectionView.ScrollDirection {
@@ -17,10 +19,15 @@ public enum ListLayoutScrollDirection: Hashable, Sendable {
 
 /// Compositional layout 计算全局内容区域时采用的系统 inset 来源。
 public enum ListContentInsetsReference: Hashable, Sendable {
+    /// 由 UIKit 根据当前容器自动选择 inset 参考。
     case automatic
+    /// 不使用系统内容 inset 参考。
     case none
+    /// 以 collection view safe area 为参考。
     case safeArea
+    /// 以 collection view layout margins 为参考。
     case layoutMargins
+    /// 以 readable content guide 为参考。
     case readableContent
 
     var uiKitValue: UIContentInsetsReference {
@@ -36,10 +43,19 @@ public enum ListContentInsetsReference: Hashable, Sendable {
 
 /// Compositional layout 全局配置。
 public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
+    /// compositional layout 的主滚动方向。
     public var scrollDirection: ListLayoutScrollDirection
+    /// 相邻 Section 之间的间距。
     public var interSectionSpacing: CGFloat
+    /// 全局内容区域采用的系统 inset 参考。
     public var contentInsetsReference: ListContentInsetsReference
 
+    /// 创建 compositional layout 全局配置。
+    ///
+    /// - Parameters:
+    ///   - scrollDirection: 主滚动方向。
+    ///   - interSectionSpacing: 相邻 Section 间距。
+    ///   - contentInsetsReference: 全局内容 inset 参考。
     public init(
         scrollDirection: ListLayoutScrollDirection = .vertical,
         interSectionSpacing: CGFloat = 0,
@@ -110,9 +126,13 @@ public enum ListLayoutDimension: Hashable, Sendable {
 
 /// Layout DSL 使用的方向性 inset。
 public struct ListLayoutInsets: Hashable, Sendable {
+    /// 顶部 inset。
     public var top: CGFloat
+    /// 逻辑 leading 方向 inset。
     public var leading: CGFloat
+    /// 底部 inset。
     public var bottom: CGFloat
+    /// 逻辑 trailing 方向 inset。
     public var trailing: CGFloat
 
     /// 创建方向性 inset。
@@ -146,7 +166,9 @@ public struct ListLayoutInsets: Hashable, Sendable {
 
 /// Layout DSL 使用的二维偏移。
 public struct ListLayoutPoint: Hashable, Sendable {
+    /// 水平方向偏移。
     public var x: CGFloat
+    /// 垂直方向偏移。
     public var y: CGFloat
 
     /// 创建二维偏移。
@@ -181,8 +203,11 @@ public struct ListBackgroundDecoration: Hashable {
     /// 默认 section 背景 decoration kind。
     public static let defaultKind = "UICollectionView.ElementKindSectionBackgroundDecoration"
 
+    /// 注册和创建 decoration view 使用的 element kind。
     public let kind: String
+    /// 背景相对 Section 内容边界的方向性 inset。
     public var contentInsets: ListLayoutInsets
+    /// decoration item 的布局层级，默认位于 Section 内容之后。
     public var zIndex: Int
     let registrationKey: ObjectIdentifier?
     private let registerProvider: (@MainActor (UICollectionViewLayout) -> Void)?
@@ -242,6 +267,7 @@ public struct ListBackgroundDecoration: Hashable {
         return item
     }
 
+    /// 按 decoration kind、insets 和 zIndex 判断两个背景描述是否等价。
     public static func == (lhs: ListBackgroundDecoration, rhs: ListBackgroundDecoration) -> Bool {
         lhs.kind == rhs.kind
             && lhs.contentInsets == rhs.contentInsets
@@ -249,6 +275,7 @@ public struct ListBackgroundDecoration: Hashable {
             && lhs.registrationKey == rhs.registrationKey
     }
 
+    /// 将参与相等性判断的背景布局字段写入 hasher。
     public func hash(into hasher: inout Hasher) {
         hasher.combine(kind)
         hasher.combine(contentInsets)
@@ -257,6 +284,7 @@ public struct ListBackgroundDecoration: Hashable {
     }
 }
 
+/// 类型擦除前保存标准、custom 或 legacy Section layout 选择的内部桥接值。
 public struct ListSectionLayoutConfiguration<SectionID>: Hashable where SectionID: Hashable & Sendable {
     var layoutID: AnyListID?
     var sectionLayout: ListSectionLayout?
@@ -405,10 +433,19 @@ public enum ListUIKitListAppearance: Hashable, Sendable {
 /// UIKit 原生 list section 配置。使用该布局时，Row 的 swipe actions 会真正接入
 /// `UICollectionLayoutListConfiguration`，同时保留 ListKit 的 diffable identity。
 public struct ListUIKitListLayout: Hashable, Sendable {
+    /// UIKit list section 的视觉样式。
     public var appearance: ListUIKitListAppearance
+    /// 是否显示系统分隔线。
     public var showsSeparators: Bool
+    /// header 顶部额外间距；`nil` 使用 UIKit 默认值。
     public var headerTopPadding: CGFloat?
 
+    /// 创建 UIKit 原生 list section 配置。
+    ///
+    /// - Parameters:
+    ///   - appearance: 系统 list 外观。
+    ///   - showsSeparators: 是否显示系统分隔线。
+    ///   - headerTopPadding: header 顶部额外间距。
     public init(
         appearance: ListUIKitListAppearance = .plain,
         showsSeparators: Bool = true,
@@ -585,10 +622,12 @@ public struct ListCustomSectionLayout<SectionID> where SectionID: Hashable & Sen
 }
 
 extension ListCustomSectionLayout: Hashable {
+    /// 自定义布局 provider 闭包不参与比较；实例按内部稳定令牌判断相等。
     public static func == (lhs: ListCustomSectionLayout<SectionID>, rhs: ListCustomSectionLayout<SectionID>) -> Bool {
         lhs.id == rhs.id
     }
 
+    /// 将标识当前自定义布局实例的稳定令牌写入 hasher。
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }

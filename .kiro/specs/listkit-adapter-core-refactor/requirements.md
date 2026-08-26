@@ -17,7 +17,7 @@
 - WHEN adapter applies sections THE SYSTEM SHALL map adapter-specific sections into shared `ListSectionSnapshot` values.
 - WHEN an apply plan is created THE SYSTEM SHALL compute insert/delete/keep summary from row identities in one shared implementation.
 - WHEN `refreshID` changes on kept rows THE SYSTEM SHALL count `refreshIDChangedCount` in one shared implementation.
-- WHEN `ListApplyRefreshStrategy.forceReload` is used THE SYSTEM SHALL refresh only row identities present in both old and new snapshots.
+- WHEN `ListApplyRefreshStrategy.reloadKeptRows` is used THE SYSTEM SHALL refresh only row identities present in both old and new snapshots.
 - WHEN `ListApplyRefreshStrategy.visibleOnly` is used THE SYSTEM SHALL not request diffable snapshot row refresh.
 
 ### Requirement 2: Shared Diagnostics Stop Policy

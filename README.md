@@ -37,7 +37,7 @@ adapter.apply {
 - [Selection](#selection)
 - [Layout 与 Supplementary](#layout-与-supplementary)
 - [事件](#事件)
-- [实时列表查询与可见刷新](#实时列表查询与可见刷新)
+- [实时列表查询与定向刷新](#实时列表查询与定向刷新)
 - [层级列表](#层级列表)
 - [Apply、动画与滚动](#apply动画与滚动)
 - [Diagnostics](#diagnostics)
@@ -47,7 +47,7 @@ adapter.apply {
 
 ## 环境要求
 
-- iOS 14+
+- iOS 15+
 - Swift 6.0+
 - Swift Package Manager
 
@@ -389,7 +389,19 @@ Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
 .variant(user.isVIP ? "vip" : "normal")
 ```
 
-### Refresh Policy
+### 刷新决策
+
+ListKit 将刷新拆成五层，避免把系统版本、触发时机和 Cell 生命周期混在一起：
+
+| 层级 | 负责内容 | 选择方式 |
+| --- | --- | --- |
+| 触发 | 何时因一次 `apply` 刷新 kept identity | `refreshPolicy` |
+| Action | 保留 Cell 重配，还是进入完整 reload/configuration 路径 | `refreshAction` |
+| Layout | 重配后是否由 ListKit 主动重新测量 | `.reconfigure(layout:)` |
+| Scope | 主动刷新全部匹配项，还是只刷新当前可见匹配项 | `scope: .allMatching / .visible` |
+| 结构 | Cell 类型、`presentationID`、`variant` 或列表结构变化 | 重新 `apply`，由 diffable 执行 delete + insert |
+
+#### Refresh Policy
 
 | Policy | 行为 |
 | --- | --- |
@@ -398,8 +410,28 @@ Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
 | `.never` | identity 不变时不主动刷新。 |
 | `.alwaysVisible` | 每次 apply 都重配当前可见 cell。 |
 
-iOS 15+ 的常规刷新使用 `reconfigureItems`；iOS 14 自动回退到 `reloadItems`。
-`.forceReload` 在所有系统版本都使用真正的 `reloadItems`，适合需要替换 Cell 类型或实例的场景。
+Policy 只决定触发时机。Row 默认 action 是 `.reconfigure(layout: .none)`：使用
+`reconfigureItems` 保留现有 Cell，不进入 `prepareForReuse`，也不额外请求布局失效。
+内容可能改变自适应尺寸时显式选择布局重测；确实需要完整 reload/configuration 路径时选择 reload：
+
+```swift
+Row(model: message, cell: MessageCell.self) { cell, message, _ in
+    cell.configure(message)
+}
+.refreshID(message.version)
+.refreshPolicy(.whenRefreshIDChanges)
+.refreshAction(.reconfigure(layout: .invalidate))
+
+ProviderRow(id: legacyID, presentationID: legacyPresentationID) { collectionView, indexPath, _ in
+    legacyProvider.cell(in: collectionView, at: indexPath)
+}
+.refreshAction(.reload)
+```
+
+`reload` 请求 `reloadItems` 和完整 provider/configuration 路径，但 UIKit 不保证最终 Cell
+对象地址一定变化。Cell 类型或展示变体变化不是 reload；必须改变 presentation identity 并
+重新 `apply`。`ProviderRow` 改变 Cell 类型时也必须同步改变 `presentationID`。
+
 请保证同一 section 内的 Row ID 唯一，debug diagnostics 会报告重复身份。
 
 Apply 级别还可以覆盖整批列表的刷新行为：
@@ -407,14 +439,14 @@ Apply 级别还可以覆盖整批列表的刷新行为：
 | Strategy | 行为 |
 | --- | --- |
 | `.automatic` | 根据每个 Row 的 policy 自动选择 diffable 或可见刷新。 |
-| `.visibleOnly` | 不向 snapshot 写入 refresh 标记，只重配符合条件的可见节点。 |
-| `.diffableOnly` | 只执行 `refreshID` 驱动的 diffable refresh。 |
-| `.forceReload` | reload 所有新旧 snapshot 中都存在的 Row。 |
+| `.visibleOnly` | 将自动刷新 scope 限制为可见项；仍尊重每个 Row 的 action。 |
+| `.refreshIDChangesOnly` | 只处理 kept identity 中 `refreshID` 变化的 Row，并尊重其 action。 |
+| `.reloadKeptRows` | 忽略 Row action，reload 所有新旧 snapshot 中都存在的 Row。 |
 
 ```swift
 let options = ListApplyOptions(
     transaction: .automatic,
-    refreshStrategy: .diffableOnly
+    refreshStrategy: .refreshIDChangesOnly
 )
 
 adapter.apply(options: options) {
@@ -428,23 +460,29 @@ adapter.apply(options: options) {
 
 | API | 行为 |
 | --- | --- |
-| `reconfigureRows(forRowID:in:)` | iOS 15+ 保留 Cell 并重新配置、自适应量高；iOS 14 回退为 reload。 |
-| `reloadRows(forRowID:in:)` | 通过 diffable `reloadItems` 重新创建匹配的 Row。 |
+| `reconfigureRows(forRowID:in:scope:layout:)` | 保留 Cell 并重新配置；仅在 `layout: .invalidate` 时主动重测量。 |
+| `reloadRows(forRowID:in:scope:)` | 通过 diffable `reloadItems` 进入完整 reload/configuration 路径。 |
 | `reloadSections(_:)` | 通过 diffable `reloadSections` 刷新整个 section，包括 Row 和 header/footer/supplementary。 |
 | `reloadAll()` | 基于当前已提交状态强刷全部内容、section 附属视图、索引标题和布局。 |
-
-在 iOS 14 上，UIKit 对非动画 diffable apply 可能内部使用 `reloadData`；因此定向 API
-仍保证目标内容被刷新，但不承诺只重建目标 Cell。iOS 15+ 才能稳定区分
-`reconfigureItems`、`reloadItems` 和 reload-data reset。
 
 Row API 接受 row ID，不要求调用方构造 ListKit 内部的复合 identity；批量刷新使用
 `forRowIDs:`。省略 section 时，同一 row ID 在所有 section 中的匹配项都会刷新：
 
 ```swift
 adapter.reconfigureRows(forRowID: userID, in: .users)
-adapter.reloadRows(forRowIDs: changedMessageIDs, in: .messages)
+adapter.reconfigureRows(
+    forRowID: expandingMessageID,
+    in: .messages,
+    scope: .visible,
+    layout: .invalidate
+)
+adapter.reloadRows(forRowIDs: changedMessageIDs, in: .messages, scope: .allMatching)
 adapter.reloadSections([.profile, .settings])
 ```
+
+同步返回值表示请求已提交或零匹配已完成；需要最终 matched/visible/reloaded 数量和
+`.completed`、`.superseded`、`.cancelledBeforeCommit` 状态时，使用 completion 或 async 重载。
+空输入和最终零匹配的 completion 也会在下一次 MainActor turn 恰好调用一次。
 
 语言、LTR/RTL、Dynamic Type 或全局主题切换适合 `reloadAll`。先更新真正承载列表的
 UIKit 环境，再触发刷新；默认使用 0.2 秒 cross-dissolve，并自动遵循 Reduce Motion：
@@ -825,7 +863,7 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
 
 `ListContext.identity` / `itemID` 是稳定身份；`indexPath` 只表示事件发生时的位置。跨刷新逻辑应优先保存 identity，而不是 index path。
 
-## 实时列表查询与可见刷新
+## 实时列表查询与定向刷新
 
 Adapter 保存的是当前已经提交的描述树，因此调用方不需要额外维护一套 sections 来查询位置：
 
@@ -843,22 +881,26 @@ if let indexPath = indexPaths.first,
 轻量状态变化，例如倒计时、音量动画或在线状态，只重配当前可见 Cell：
 
 ```swift
-adapter.reconfigureVisibleRows(
+adapter.reconfigureRows(
     forRowID: seatID,
-    in: .seats
+    in: .seats,
+    scope: .visible
 )
 ```
 
-内容变化会影响自适应高度或布局时，通过 diffable snapshot reload 可见节点：
+内容变化会影响自适应高度或布局时，保留 Cell 重配并显式请求重新测量：
 
 ```swift
-adapter.reloadVisibleRows(
+adapter.reconfigureRows(
     forRowID: messageID,
-    in: .messages
+    in: .messages,
+    scope: .visible,
+    layout: .invalidate
 )
 ```
 
-两者区别是：`reconfigureVisibleRows` 直接调用当前 Row 的配置闭包，不重新量高；`reloadVisibleRows` 会让 UIKit 重新创建/布局对应的可见节点。
+需要完整 reload/provider 路径时使用 `reloadRows(..., scope: .visible)`；这不承诺 Cell
+对象地址一定改变。非目标 Cell 不会被标记为 reconfigure/reload。
 
 Supplementary 也支持按 kind 或关联 Row ID 做可见重配：
 
@@ -1073,7 +1115,7 @@ Collection 的原生 drag/drop 仍可直接使用 `dragDelegate` 与 `dropDelega
 - `DisclosureGroup` / `OutlineGroup`：生成 collection section snapshot 层级。
 - `selected(...)` / `selectionMode(...)`：声明单选、多选和受控选择状态。
 - `itemIdentity(at:)`、`indexPath(for:)`、`indexPaths(forRowID:in:)`：稳定身份与位置双向查询。
-- `reconfigureVisibleRows(...)`：只更新当前可见节点。
+- `reconfigureRows(..., scope: .visible)`：只更新当前可见匹配节点。
 - `ProviderRow` / `ProviderSupplementary`：逐步迁移复杂旧 data source 的逃生口。
 - `ListDiagnosticsOptions` / `lastApplySummary`：定位重复 ID、无效 layout 和 apply 行为。
 

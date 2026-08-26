@@ -75,11 +75,11 @@ sectionID + rowID + ObjectIdentifier(Cell.self) + variant
 2. 运行 table diagnostics，检查重复 section、row、header、footer identity。
 3. 重建 lookup table，并自动注册 cell/header/footer。
 4. 生成 `NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>`。
-5. 按 `ListApplyRefreshStrategy` 和 row refresh policy 计算 snapshot reload items。
+5. 按 `ListApplyRefreshStrategy`、row refresh policy 和 refresh action 计算 snapshot reconfigure/reload items。
 6. 调用 `UITableViewDiffableDataSource.apply(...)`。
 7. completion 中按 visible refresh policy 重配仍可见 row，并更新 `lastApplySummary`。
 
-UITableView 没有 collection 的 `reconfigureItems` 路径，首版用 snapshot `reloadItems` 表达需要完整刷新/重新量高的节点；轻量 UI 更新走 `reconfigureVisibleRows(...)`，直接对当前 visible cell 执行 configure。
+最低 iOS 15 后 Table 与 Collection 都使用 diffable snapshot `reconfigureItems` 表达保留 Cell 的重配语义。完整配置路径使用 `reloadItems`；重新测量由 `.reconfigure(layout: .invalidate)` 显式声明。
 
 ## UITableView Adapter Surface
 
@@ -96,8 +96,8 @@ Adapter 接管：
 - `itemCount(in:)` 作为命名兼容 helper
 - `indexPaths(forRowID:in:)`
 - `scrollToLastRow(in:at:animated:)`
-- `reconfigureVisibleRows(forRowID:in:)`
-- `reloadVisibleRows(forRowID:in:)`
+- `reconfigureRows(forRowID:in:scope:layout:)`
+- `reloadRows(forRowID:in:scope:)`
 - `onEvent(...)`
 
 转发对象：
