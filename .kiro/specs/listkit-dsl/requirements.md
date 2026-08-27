@@ -33,7 +33,7 @@
 1. WHEN `rowID` 相同但 `Cell.self` 变化 THE SYSTEM SHALL 将其视为不同展示节点并执行 delete + insert。
 2. WHEN `rowID` 和 `Cell.self` 相同且 `refreshID` 变化 THE SYSTEM SHALL reconfigure 或 reload 对应 item。
 3. WHEN 没有提供 `refreshID` THE SYSTEM SHALL 默认只刷新可见同 identity cell，避免不可见项无意义重配。
-4. WHEN 页面性能敏感 THE SYSTEM SHALL 支持 `.refreshPolicy(.whenRefreshIDChanges)`、`.refreshID(...)`、`.refreshPolicy(.never)`。
+4. WHEN 页面性能敏感 THE SYSTEM SHALL 支持 `.refresh(when: .refreshIDChanges)`、`.refreshID(...)`、`.refresh(when: .never)`。
 5. WHEN 同一个 `Cell.self` 需要表达不同展示节点 THE SYSTEM SHALL 支持 `.variant(...)`。
 
 ## Requirement 4: 事件系统

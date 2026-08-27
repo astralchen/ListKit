@@ -47,7 +47,7 @@ Table adapter 内部维护：
 sectionID + rowID + ObjectIdentifier(Cell.self) + variant
 ```
 
-`refreshID` 不参与 identity。它只参与 `RowRefreshPolicy` 判断，语义保持和 collection row 一致。
+`refreshID` 不参与 identity。它只参与 `ListRowRefreshRule` 判断，语义保持和 collection row 一致。
 
 `TableListContext` 持有：
 
@@ -66,7 +66,7 @@ sectionID + rowID + ObjectIdentifier(Cell.self) + variant
 - builder apply
 - section array apply
 - completion apply
-- `refresh refreshStrategy`
+- `options-only apply`
 - `options: ListApplyOptions`
 
 流程：
@@ -75,9 +75,9 @@ sectionID + rowID + ObjectIdentifier(Cell.self) + variant
 2. 运行 table diagnostics，检查重复 section、row、header、footer identity。
 3. 重建 lookup table，并自动注册 cell/header/footer。
 4. 生成 `NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>`。
-5. 按 `ListApplyRefreshStrategy`、row refresh policy 和 refresh action 计算 snapshot reconfigure/reload items。
+5. 按 Row/Supplementary refresh rule 计算 snapshot、visible 和 Section reload 动作。
 6. 调用 `UITableViewDiffableDataSource.apply(...)`。
-7. completion 中按 visible refresh policy 重配仍可见 row，并更新 `lastApplySummary`。
+7. completion 中按 visible refresh rule 重配仍可见 row，并更新 `lastApplySummary`。
 
 最低 iOS 15 后 Table 与 Collection 都使用 diffable snapshot `reconfigureItems` 表达保留 Cell 的重配语义。完整配置路径使用 `reloadItems`；重新测量由 `.reconfigure(layout: .invalidate)` 显式声明。
 
@@ -134,7 +134,7 @@ TableSection(.main) {
 - explicit id、key path id、closure id、`Identifiable` model、`TableForEach` identity inheritance
 - `variant(_:)`
 - `refreshID(_:)`
-- `refreshPolicy(_:)`
+- `refresh(_:)` / `refresh(when:scope:action:)`
 - `height(_:)` / `estimatedHeight(_:)`
 - `selected(_:)`
 - `onSelect` / `onDeselect` / `onSelectionChange`
@@ -146,7 +146,7 @@ TableSection(.main) {
 - `canMove(_:)` / `onMove(...)`
 - `leadingSwipeActions(_:)` / `trailingSwipeActions(_:)`
 
-`TableHeader` 和 `TableFooter` 使用 `UITableViewHeaderFooterView`，支持 `refreshID`、`refreshPolicy`、`height`、`onDisplay` 和 `onEndDisplay`。
+`TableHeader` 和 `TableFooter` 使用 `UITableViewHeaderFooterView`，支持 `refreshID`、`refresh(_:)`、`height`、`onDisplay` 和 `onEndDisplay`。
 
 ## Reusable Namespace
 
@@ -184,7 +184,7 @@ Table diagnostics 复用 `ListDiagnosticsIssueKind` 中现有重复类型。head
 
 - diffable apply 生成 section/row snapshot
 - duplicate section/row/header/footer diagnostics
-- refreshID + refresh policy reload 统计
+- refreshID + refresh rule 动作统计
 - visible reconfigure 和 visible reload
 - selection/display/prefetch handler
 - fixed/automatic/estimated row/header/footer height

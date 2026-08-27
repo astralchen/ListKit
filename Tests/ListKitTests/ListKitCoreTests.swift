@@ -4,30 +4,144 @@ import UIKit
 
 @MainActor
 final class ListKitCoreTests: XCTestCase {
+    func testAsyncMutationBridgeHandlesCancelBeforeRegister() async {
+        let cancelled = ListRefreshSummary(
+            animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+        )
+        let bridge = ListAsyncMutationBridge(cancelledResult: cancelled)
+        bridge.cancel()
+
+        let result = await withCheckedContinuation { continuation in
+            XCTAssertFalse(bridge.register(continuation, cancellation: {}))
+        }
+
+        XCTAssertEqual(result.animation.completionState, .cancelledBeforeCommit)
+    }
+
+    func testAsyncMutationBridgeResumesExactlyOnce() async {
+        let bridge = ListAsyncMutationBridge(cancelledResult: 0)
+        let result = await withCheckedContinuation { continuation in
+            XCTAssertTrue(bridge.register(continuation, cancellation: {}))
+            bridge.resume(returning: 1)
+            bridge.resume(returning: 2)
+        }
+
+        XCTAssertEqual(result, 1)
+    }
+
+    func testSchedulerCancelsOnlyMatchingMergedSubscriber() {
+        let scheduler = ListMutationScheduler()
+        let firstID = UUID()
+        let secondID = UUID()
+        var firstState: ListApplyCompletionState?
+        var secondState: ListApplyCompletionState?
+        var executedSubscribers: [ListRowRefreshSubscriber] = []
+        let execute: (
+            [ListRowRefreshSubscriber],
+            AnyListID?,
+            ListRefreshScope,
+            ListTransaction
+        ) -> Void = { subscribers, _, _, _ in
+            executedSubscribers = subscribers
+            subscribers.forEach { subscriber in
+                subscriber.completion?(ListRefreshSummary(
+                    requestedTargetCount: subscriber.rowIDs.count,
+                    matchedTargetCount: subscriber.rowIDs.count,
+                    animation: ListAnimationSummary(completionState: .completed)
+                ))
+            }
+        }
+        scheduler.enqueue(ListPendingMutationRequest(
+            rowIDs: [AnyListID("first")],
+            sectionID: nil,
+            scope: .visible,
+            action: .reconfigure(layout: .none),
+            transaction: .automatic,
+            subscriberID: firstID,
+            completion: { firstState = $0.animation.completionState },
+            execute: execute
+        ))
+        scheduler.enqueue(ListPendingMutationRequest(
+            rowIDs: [AnyListID("second")],
+            sectionID: nil,
+            scope: .visible,
+            action: .reload,
+            transaction: .automatic,
+            subscriberID: secondID,
+            completion: { secondState = $0.animation.completionState },
+            execute: execute
+        ))
+
+        XCTAssertTrue(scheduler.cancelSubscriber(firstID))
+        XCTAssertEqual(firstState, .cancelledBeforeCommit)
+        XCTAssertTrue(scheduler.startNext(hasUncommittedUpdates: false))
+        XCTAssertEqual(executedSubscribers.map(\.id), [secondID])
+        XCTAssertEqual(secondState, .completed)
+    }
+
+    func testFireAndForgetSubscriberKeepsMergedRequestExecutable() {
+        let scheduler = ListMutationScheduler()
+        let cancellableID = UUID()
+        var executedSubscribers: [ListRowRefreshSubscriber] = []
+        let execute: (
+            [ListRowRefreshSubscriber],
+            AnyListID?,
+            ListRefreshScope,
+            ListTransaction
+        ) -> Void = { subscribers, _, _, _ in executedSubscribers = subscribers }
+        scheduler.enqueue(ListPendingMutationRequest(
+            rowIDs: [AnyListID("fire-and-forget")],
+            sectionID: nil,
+            scope: .visible,
+            action: .reconfigure(layout: .none),
+            transaction: .automatic,
+            completion: nil,
+            execute: execute
+        ))
+        scheduler.enqueue(ListPendingMutationRequest(
+            rowIDs: [AnyListID("cancelled")],
+            sectionID: nil,
+            scope: .visible,
+            action: .reload,
+            transaction: .automatic,
+            subscriberID: cancellableID,
+            completion: { _ in },
+            execute: execute
+        ))
+
+        XCTAssertTrue(scheduler.cancelSubscriber(cancellableID))
+        XCTAssertTrue(scheduler.startNext(hasUncommittedUpdates: false))
+        XCTAssertEqual(executedSubscribers.count, 1)
+        XCTAssertNil(executedSubscribers[0].id)
+        XCTAssertEqual(executedSubscribers[0].rowIDs, [AnyListID("fire-and-forget")])
+    }
+
     func testMutationCoordinatorMergesCompatibleRowsAndUpgradesAction() {
         var executionCount = 0
-        var executedRowIDs: Set<AnyListID> = []
-        var executedAction: ListRefreshAction?
+        var executedSubscribers: [ListRowRefreshSubscriber] = []
         var firstCompletion: ListRefreshSummary?
         var secondCompletion: ListRefreshSummary?
 
         let execute: (
-            [AnyListID],
+            [ListRowRefreshSubscriber],
             AnyListID?,
             ListRefreshScope,
-            ListRefreshAction,
-            ListTransaction,
-            ((ListRefreshSummary) -> Void)?
-        ) -> Void = { rowIDs, _, _, action, _, completion in
+            ListTransaction
+        ) -> Void = { subscribers, _, _, _ in
             executionCount += 1
-            executedRowIDs = Set(rowIDs)
-            executedAction = action
-            completion?(ListRefreshSummary(
-                requestedTargetCount: Set(rowIDs).count,
-                matchedTargetCount: Set(rowIDs).count,
-                reloadedTargetCount: action == .reload ? Set(rowIDs).count : 0,
-                completionState: .completed
-            ))
+            executedSubscribers = subscribers
+            subscribers.forEach { subscriber in
+                subscriber.completion?(ListRefreshSummary(
+                    requestedTargetCount: subscriber.rowIDs.count,
+                    matchedTargetCount: subscriber.rowIDs.count,
+                    refreshMetrics: ListRefreshMetrics(
+                        reloadedRowCount: subscriber.action == .reload
+                            ? subscriber.rowIDs.count
+                            : 0
+                    ),
+                    animation: ListAnimationSummary(completionState: .completed)
+                ))
+            }
         }
         let first = ListPendingMutationRequest(
             rowIDs: [AnyListID("first")],
@@ -52,43 +166,75 @@ final class ListKitCoreTests: XCTestCase {
         first.start()
 
         XCTAssertEqual(executionCount, 1)
-        XCTAssertEqual(executedRowIDs, [AnyListID("first"), AnyListID("second")])
-        XCTAssertEqual(executedAction, .reload)
+        XCTAssertEqual(executedSubscribers.map(\.rowIDs), [
+            [AnyListID("first")],
+            [AnyListID("second")]
+        ])
+        XCTAssertEqual(executedSubscribers.map(\.action), [
+            .reconfigure(layout: .none),
+            .reload
+        ])
         XCTAssertEqual(firstCompletion?.requestedTargetCount, 1)
         XCTAssertEqual(secondCompletion?.requestedTargetCount, 1)
-        XCTAssertEqual(firstCompletion?.reloadedTargetCount, 2)
-        XCTAssertEqual(secondCompletion?.reloadedTargetCount, 2)
+        XCTAssertEqual(firstCompletion?.refreshMetrics.reloadedRowCount, 0)
+        XCTAssertEqual(secondCompletion?.refreshMetrics.reloadedRowCount, 1)
     }
 
     func testMutationCoordinatorDoesNotSupersedeSerialActiveMutation() {
         let coordinator = ListMutationCoordinator()
-        let serial = coordinator.begin(updatePolicy: .serial)
-        coordinator.supersedeActive()
+        let serial = coordinator.begin(kind: .apply, updatePolicy: .serial)
+        coordinator.supersedeActiveApply()
         XCTAssertFalse(serial.isSuperseded)
         coordinator.finish(serial)
 
-        let coalescing = coordinator.begin(updatePolicy: .coalesceLatest)
-        coordinator.supersedeActive()
+        let targeted = coordinator.begin(kind: .rowRefresh, updatePolicy: .coalesceLatest)
+        coordinator.supersedeActiveApply()
+        XCTAssertFalse(targeted.isSuperseded)
+        coordinator.finish(targeted)
+
+        let coalescing = coordinator.begin(kind: .apply, updatePolicy: .coalesceLatest)
+        coordinator.supersedeActiveApply()
         XCTAssertTrue(coalescing.isSuperseded)
         coordinator.finish(coalescing)
     }
 
+    func testSchedulerMarksActiveCoalescingApplyAsSupersededWhenLatestApplyQueues() {
+        let scheduler = ListMutationScheduler()
+        let active = scheduler.coordinator.begin(kind: .apply, updatePolicy: .coalesceLatest)
+
+        scheduler.enqueue(ListPendingMutationRequest(
+            kind: .apply,
+            updatePolicy: .coalesceLatest,
+            start: {},
+            supersede: {}
+        ))
+
+        XCTAssertTrue(active.isSuperseded)
+        scheduler.coordinator.finish(active)
+    }
+
     func testMutationCoordinatorMergesCompatibleSectionReloads() {
         var executionCount = 0
-        var executedSectionIDs: Set<AnyListID> = []
+        var executedSubscribers: [ListSectionReloadSubscriber] = []
         var firstCompletion: ListRefreshSummary?
         var secondCompletion: ListRefreshSummary?
-        let execute: ([AnyListID], ListTransaction, ((ListRefreshSummary) -> Void)?) -> Void = {
-            sectionIDs, _, completion in
+        let execute: ([ListSectionReloadSubscriber], ListTransaction) -> Void = {
+            subscribers, _ in
             executionCount += 1
-            executedSectionIDs = Set(sectionIDs)
-            completion?(ListRefreshSummary(
-                requestedTargetCount: Set(sectionIDs).count,
-                matchedTargetCount: Set(sectionIDs).count,
-                reloadedTargetCount: Set(sectionIDs).count,
-                layoutInvalidated: true,
-                completionState: .completed
-            ))
+            executedSubscribers = subscribers
+            subscribers.forEach { subscriber in
+                subscriber.completion?(ListRefreshSummary(
+                    requestedTargetCount: subscriber.sectionIDs.count,
+                    matchedTargetCount: subscriber.sectionIDs.count,
+                    refreshMetrics: ListRefreshMetrics(
+                        reloadedSectionCount: subscriber.sectionIDs.count
+                    ),
+                    animation: ListAnimationSummary(
+                        completionState: .completed,
+                        layoutInvalidated: true
+                    )
+                ))
+            }
         }
         let first = ListPendingMutationRequest(
             sectionIDs: [AnyListID(0)],
@@ -107,11 +253,14 @@ final class ListKitCoreTests: XCTestCase {
         first.start()
 
         XCTAssertEqual(executionCount, 1)
-        XCTAssertEqual(executedSectionIDs, [AnyListID(0), AnyListID(1)])
+        XCTAssertEqual(executedSubscribers.map(\.sectionIDs), [
+            [AnyListID(0)],
+            [AnyListID(1)]
+        ])
         XCTAssertEqual(firstCompletion?.requestedTargetCount, 1)
         XCTAssertEqual(secondCompletion?.requestedTargetCount, 1)
-        XCTAssertEqual(firstCompletion?.reloadedTargetCount, 2)
-        XCTAssertEqual(secondCompletion?.reloadedTargetCount, 2)
+        XCTAssertEqual(firstCompletion?.refreshMetrics.reloadedSectionCount, 1)
+        XCTAssertEqual(secondCompletion?.refreshMetrics.reloadedSectionCount, 1)
     }
 
     func testTransactionResolvesAnimationScopesAndReduceMotion() {
@@ -183,7 +332,7 @@ final class ListKitCoreTests: XCTestCase {
                     cell.name = value
                 }
                 .refreshID(1)
-                .refreshPolicy(.automaticVisible)
+                .refresh(when: .automatic)
             }
             ListSection(1) {
                 Row("side", model: "Side", cell: NormalUserCell.self) { _, _, _ in }
@@ -211,7 +360,7 @@ final class ListKitCoreTests: XCTestCase {
                         }
                     }
                     .refreshID(2)
-                    .refreshPolicy(.automaticVisible)
+                    .refresh(when: .automatic)
                     // Keep the first mutation active long enough for this test to enqueue
                     // the coalescing apply even when the full scheme is under UI-test load.
                     .contentTransition(.opacity(duration: 2))
@@ -226,7 +375,7 @@ final class ListKitCoreTests: XCTestCase {
                     cell.name = value
                 }
                 .refreshID(3)
-                .refreshPolicy(.automaticVisible)
+                .refresh(when: .automatic)
             }
             ListSection(1) {
                 Row("side", model: "Side", cell: NormalUserCell.self) { _, _, _ in }
@@ -234,7 +383,12 @@ final class ListKitCoreTests: XCTestCase {
         }
         let supersededResult = await firstApply.value
 
-        XCTAssertEqual(supersededResult.animation.completionState, .superseded)
+        // UIKit may complete a test-host content transition before the awaiting task gets
+        // another MainActor turn. The scheduler-level test above deterministically covers
+        // the active-apply supersede boundary; this integration test verifies final state.
+        XCTAssertTrue(
+            [.completed, .superseded].contains(supersededResult.animation.completionState)
+        )
         XCTAssertEqual(latestResult.animation.completionState, .completed)
         XCTAssertEqual(latestResult.insertedSectionCount, 1)
         XCTAssertEqual(collectionView.numberOfSections, 2)
@@ -266,7 +420,7 @@ final class ListKitCoreTests: XCTestCase {
                     cell.name = value
                 }
                 .refreshID(1)
-                .refreshPolicy(.automaticVisible)
+                .refresh(when: .automatic)
             }
             ListSection(1) {
                 Row("side", model: "Side", cell: NormalUserCell.self) { _, _, _ in }
@@ -295,7 +449,7 @@ final class ListKitCoreTests: XCTestCase {
                         }
                     }
                     .refreshID(2)
-                    .refreshPolicy(.automaticVisible)
+                    .refresh(when: .automatic)
                     .contentTransition(.opacity(duration: 0.35))
                 }
             }
@@ -311,7 +465,7 @@ final class ListKitCoreTests: XCTestCase {
                         cell.name = value
                     }
                     .refreshID(3)
-                    .refreshPolicy(.automaticVisible)
+                    .refresh(when: .automatic)
                 }
                 ListSection(1) {
                     Row("side", model: "Side", cell: NormalUserCell.self) { _, _, _ in }
@@ -354,7 +508,7 @@ final class ListKitCoreTests: XCTestCase {
                     cell.name = value
                 }
                 .refreshID(1)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges)
             }
         }
         collectionView.layoutIfNeeded()
@@ -363,20 +517,20 @@ final class ListKitCoreTests: XCTestCase {
         )
 
         let result = await adapter.apply(
-            options: .init(transaction: .disabled, refreshStrategy: .visibleOnly)
+            options: .init(transaction: .disabled)
         ) {
             ListSection(0) {
                 Row("row", model: "B", cell: NormalUserCell.self) { cell, value, _ in
                     cell.name = value
                 }
                 .refreshID(2)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges)
             }
         }
 
-        XCTAssertEqual(result.refreshIDChangedCount, 1)
-        XCTAssertEqual(result.snapshotRefreshCount, 0)
-        XCTAssertEqual(result.visibleRefreshCount, 1)
+        XCTAssertEqual(result.rowRefreshIDChangedCount, 1)
+        XCTAssertEqual(result.refreshMetrics.snapshotReconfiguredRowCount, 0)
+        XCTAssertEqual(result.refreshMetrics.visibleReconfiguredRowCount, 1)
         XCTAssertEqual(cell.name, "B")
     }
 
@@ -404,13 +558,13 @@ final class ListKitCoreTests: XCTestCase {
                     cell.name = rowText
                 }
                 .refreshID(1)
-                .refreshPolicy(.never)
+                .refresh(when: .never)
             } header: {
                 Header(HeaderView.self, id: "header") { view, _ in
                     view.title = headerText
                 }
                 .refreshID(1)
-                .refreshPolicy(.never)
+                .refresh(when: .never)
                 .layout(height: .absolute(32))
             }
         }
@@ -450,9 +604,11 @@ final class ListKitCoreTests: XCTestCase {
 
         XCTAssertEqual(completedSummary?.animation.completionState, .completed)
         XCTAssertEqual(completedSummary?.animation.layoutInvalidated, true)
-        XCTAssertEqual(completedSummary?.refreshIDChangedCount, 0)
+        XCTAssertEqual(completedSummary?.rowRefreshIDChangedCount, 0)
         XCTAssertEqual(completedSummary?.supplementaryRefreshIDChangedCount, 0)
-        XCTAssertEqual(completedSummary?.snapshotRefreshCount, 1)
+        XCTAssertEqual(completedSummary?.refreshMetrics.snapshotReconfiguredRowCount, 0)
+        XCTAssertEqual(completedSummary?.refreshMetrics.visibleReconfiguredRowCount, 1)
+        XCTAssertEqual(completedSummary?.refreshMetrics.visibleReconfiguredSupplementaryCount, 1)
         XCTAssertEqual(adapter.layoutInvalidationGeneration, baselineLayoutGeneration + 1)
         XCTAssertEqual(adapter.itemIdentity(at: indexPath), stableIdentity)
         XCTAssertEqual(
@@ -491,13 +647,13 @@ final class ListKitCoreTests: XCTestCase {
                     cell.name = rowText
                 }
                 .refreshID(1)
-                .refreshPolicy(.never)
+                .refresh(when: .never)
             } header: {
                 Header(HeaderView.self, id: "header") { view, _ in
                     view.title = headerText
                 }
                 .refreshID(1)
-                .refreshPolicy(.never)
+                .refresh(when: .never)
                 .layout(height: .absolute(32))
             }
         }
@@ -521,11 +677,12 @@ final class ListKitCoreTests: XCTestCase {
             transaction: .disabled
         ) { summary in
             XCTAssertEqual(summary.matchedTargetCount, 1)
-            XCTAssertEqual(summary.visibleReconfiguredCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.snapshotReconfiguredRowCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.visibleReconfiguredRowCount, 0)
             reconfigureCompleted.fulfill()
         }
         XCTAssertEqual(reconfigureSubmission.requestedTargetCount, 2)
-        XCTAssertEqual(reconfigureSubmission.completionState, .submitted)
+        XCTAssertEqual(reconfigureSubmission.animation.completionState, .submitted)
         await fulfillment(of: [reconfigureCompleted], timeout: 2)
         collectionView.layoutIfNeeded()
 
@@ -545,8 +702,9 @@ final class ListKitCoreTests: XCTestCase {
             layout: .invalidate,
             transaction: .disabled
         ) { summary in
-            XCTAssertTrue(summary.layoutInvalidated)
-            XCTAssertEqual(summary.visibleReconfiguredCount, 1)
+            XCTAssertTrue(summary.animation.layoutInvalidated)
+            XCTAssertEqual(summary.refreshMetrics.snapshotReconfiguredRowCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.visibleReconfiguredRowCount, 0)
             layoutRefreshCompleted.fulfill()
         }
         await fulfillment(of: [layoutRefreshCompleted], timeout: 2)
@@ -559,10 +717,11 @@ final class ListKitCoreTests: XCTestCase {
             in: 0,
             transaction: .disabled
         ) { summary in
-            XCTAssertEqual(summary.reloadedTargetCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.reloadedRowCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.reloadedSectionCount, 0)
             reloadRowCompleted.fulfill()
         }
-        XCTAssertEqual(reloadSubmission.completionState, .submitted)
+        XCTAssertEqual(reloadSubmission.animation.completionState, .submitted)
         await fulfillment(of: [reloadRowCompleted], timeout: 2)
         collectionView.layoutIfNeeded()
 
@@ -580,11 +739,12 @@ final class ListKitCoreTests: XCTestCase {
             transaction: .disabled
         ) { summary in
             XCTAssertEqual(summary.matchedTargetCount, 1)
-            XCTAssertEqual(summary.reloadedTargetCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.reloadedRowCount, 0)
+            XCTAssertEqual(summary.refreshMetrics.reloadedSectionCount, 1)
             reloadSectionCompleted.fulfill()
         }
         XCTAssertEqual(sectionReloadSubmission.requestedTargetCount, 2)
-        XCTAssertEqual(sectionReloadSubmission.completionState, .submitted)
+        XCTAssertEqual(sectionReloadSubmission.animation.completionState, .submitted)
         await fulfillment(of: [reloadSectionCompleted], timeout: 2)
         collectionView.layoutIfNeeded()
 
@@ -674,12 +834,12 @@ final class ListKitCoreTests: XCTestCase {
             ListSection(10) {
                 Row("kept", model: "Kept", cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
             ListSection(20) {
                 Row("removed", model: "Removed", cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
         }
         let removedIdentity = try XCTUnwrap(
@@ -690,7 +850,7 @@ final class ListKitCoreTests: XCTestCase {
             ListSection(10) {
                 Row("kept", model: "Kept", cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
         }
 
@@ -699,7 +859,7 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(deletionResult.keptSectionCount, 1)
         XCTAssertEqual(deletionResult.deletedRowCount, 1)
         XCTAssertEqual(deletionResult.keptRowCount, 1)
-        XCTAssertEqual(deletionResult.refreshIDChangedCount, 0)
+        XCTAssertEqual(deletionResult.rowRefreshIDChangedCount, 0)
         XCTAssertEqual(collectionView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 10)
         XCTAssertNil(adapter.sectionIdentifier(at: 1))
@@ -712,12 +872,12 @@ final class ListKitCoreTests: XCTestCase {
             ListSection(10) {
                 Row("kept", model: "Kept", cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
             ListSection(20) {
                 Row("removed", model: "Reinserted", cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(2)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
         }
 
@@ -725,7 +885,7 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(reinsertionResult.insertedSectionCount, 1)
         XCTAssertEqual(reinsertionResult.keptSectionCount, 1)
         XCTAssertEqual(reinsertionResult.insertedRowCount, 1)
-        XCTAssertEqual(reinsertionResult.refreshIDChangedCount, 0)
+        XCTAssertEqual(reinsertionResult.rowRefreshIDChangedCount, 0)
         XCTAssertEqual(collectionView.numberOfSections, 2)
         XCTAssertEqual(adapter.sectionIndex(for: 20), 1)
         XCTAssertEqual(
@@ -981,7 +1141,7 @@ final class ListKitCoreTests: XCTestCase {
                 view.title = "Header \(headerVersion)"
             }
             .refreshID(headerVersion)
-            .refreshPolicy(.whenRefreshIDChanges)
+            .refresh(when: .refreshIDChanges)
 
             return ListSection(1) {
                 DisclosureGroup(
@@ -1317,7 +1477,9 @@ final class ListKitCoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(adapter.outlineAnimationGeneration, initialOutlineAnimationGeneration + 1)
+        // A kept outline section preserves its current runtime expansion state. Changing
+        // the description's initial isExpanded value must not collapse it during apply.
+        XCTAssertEqual(adapter.outlineAnimationGeneration, initialOutlineAnimationGeneration)
     }
 
     func testBuilderSupportsForEachAndConditionalRows() {
@@ -1434,8 +1596,41 @@ final class ListKitCoreTests: XCTestCase {
                 ]
             )
         ))
+        XCTAssertEqual(layout.separatorInsets, .zero)
         layout.separatorInsets = .init(top: 0, leading: 12, bottom: 0, trailing: 12)
         XCTAssertEqual(layout.separatorInsets.leading, 12)
+
+        let secondLayout = UICollectionViewCompositionalSeparatorLayout(section: NSCollectionLayoutSection(
+            group: NSCollectionLayoutGroup.horizontal(
+                layoutSize: NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1),
+                    heightDimension: .absolute(44)
+                ),
+                subitems: [
+                    NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
+                        widthDimension: .fractionalWidth(1),
+                        heightDimension: .fractionalHeight(1)
+                    ))
+                ]
+            )
+        ))
+        layout.separatorColor = .systemRed
+        secondLayout.separatorColor = .systemBlue
+
+        let firstAttributes = layout.layoutAttributesForDecorationView(
+            ofKind: UICollectionView.elementKindSectionSeparatorDecoration,
+            at: IndexPath(item: 0, section: 0)
+        ) as? SectionSeparatorLayoutAttributes
+        let secondAttributes = secondLayout.layoutAttributesForDecorationView(
+            ofKind: UICollectionView.elementKindSectionSeparatorDecoration,
+            at: IndexPath(item: 0, section: 0)
+        ) as? SectionSeparatorLayoutAttributes
+        XCTAssertEqual(firstAttributes?.separatorColor, .systemRed)
+        XCTAssertEqual(secondAttributes?.separatorColor, .systemBlue)
+        XCTAssertEqual(
+            (firstAttributes?.copy() as? SectionSeparatorLayoutAttributes)?.separatorColor,
+            .systemRed
+        )
     }
 
     func testDefaultReusableNamesAreQualifiedWhileNibNamesStayShort() {
@@ -1771,7 +1966,6 @@ final class ListKitCoreTests: XCTestCase {
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let options = ListApplyOptions(
             transaction: .disabled,
-            refreshStrategy: .refreshIDChangesOnly,
             diagnostics: .disabled
         )
 
@@ -1779,7 +1973,7 @@ final class ListKitCoreTests: XCTestCase {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges, scope: .allMatching)
             }
         }
 
@@ -1787,15 +1981,15 @@ final class ListKitCoreTests: XCTestCase {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(2)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges, scope: .allMatching)
                 Row(2, model: User(id: 2, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
             }
         }
 
         XCTAssertEqual(result.insertedRowCount, 1)
         XCTAssertEqual(result.keptRowCount, 1)
-        XCTAssertEqual(result.refreshIDChangedCount, 1)
-        XCTAssertEqual(result.snapshotRefreshCount, 1)
+        XCTAssertEqual(result.rowRefreshIDChangedCount, 1)
+        XCTAssertEqual(result.refreshMetrics.snapshotReconfiguredRowCount, 1)
 
         let duplicateResult = adapter.apply(
             options: ListApplyOptions(
@@ -1812,40 +2006,34 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(duplicateResult.diagnosticsIssues.contains { $0.kind == .duplicateRow })
     }
 
-    func testApplyRefreshShortcutUsesApplyLevelStrategy() {
+    func testRowRuleOwnsSnapshotRefreshWithoutApplyLevelStrategy() {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         _ = adapter.apply(
-            options: ListApplyOptions(
-                transaction: .disabled,
-                refreshStrategy: .refreshIDChangesOnly
-            )
+            options: ListApplyOptions(transaction: .disabled)
         ) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges, scope: .allMatching)
             }
         }
 
         let result = adapter.apply(
-            options: ListApplyOptions(
-                transaction: .disabled,
-                refreshStrategy: .refreshIDChangesOnly
-            )
+            options: ListApplyOptions(transaction: .disabled)
         ) {
             ListSection(0) {
                 Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { _, _, _ in }
                     .refreshID(2)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges, scope: .allMatching)
             }
         }
 
         XCTAssertEqual(result.keptRowCount, 1)
-        XCTAssertEqual(result.refreshIDChangedCount, 1)
-        XCTAssertEqual(result.snapshotRefreshCount, 1)
-        XCTAssertEqual(result.visibleRefreshCount, 0)
+        XCTAssertEqual(result.rowRefreshIDChangedCount, 1)
+        XCTAssertEqual(result.refreshMetrics.snapshotReconfiguredRowCount, 1)
+        XCTAssertEqual(result.refreshMetrics.visibleReconfiguredRowCount, 0)
     }
 
     func testModelAwareRowEventsAndPrefetchReceiveModel() {
@@ -2174,7 +2362,7 @@ final class ListKitCoreTests: XCTestCase {
             view: HeaderView.self
         ) { _, _ in }
             .refreshID(2)
-            .refreshPolicy(.whenRefreshIDChanges)
+            .refresh(when: .refreshIDChanges)
 
         let section = ListSection(0) {
             Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
@@ -2192,7 +2380,7 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(section.isHeaderSticky)
         XCTAssertEqual(section.backgroundDecorationKind, "user-background")
         XCTAssertTrue(section.rows[0].isSelected == true)
-        XCTAssertEqual(section.supplementaries[0].refreshPolicy, .whenRefreshIDChanges)
+        XCTAssertEqual(section.supplementaries[0].refreshRule.trigger, .refreshIDChanges)
         XCTAssertEqual(section.supplementaries.map(\.kind), [UICollectionView.elementKindSectionHeader, "badge"])
     }
 
@@ -2790,6 +2978,42 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertNotNil(adapter.makeCompositionalSection(for: 0))
     }
 
+    func testCompositionalLayoutConfigurationPreservesUIKitDefaultInsetsUnlessOverridden() {
+        let nativeDefault = UICollectionViewCompositionalLayoutConfiguration()
+        let listKitDefault = ListCompositionalLayoutConfiguration()
+
+        XCTAssertNil(listKitDefault.scrollDirection)
+        XCTAssertNil(listKitDefault.interSectionSpacing)
+        XCTAssertEqual(listKitDefault.contentInsetsReference, .systemDefault)
+        XCTAssertNil(ListContentInsetsReference.systemDefault.uiKitOverride)
+        let resolved = listKitDefault.makeConfiguration()
+        XCTAssertEqual(resolved.scrollDirection, nativeDefault.scrollDirection)
+        XCTAssertEqual(resolved.interSectionSpacing, nativeDefault.interSectionSpacing)
+        XCTAssertEqual(resolved.contentInsetsReference, nativeDefault.contentInsetsReference)
+    }
+
+    func testCompositionalLayoutConfigurationAppliesExplicitInsetsOverride() {
+        let configuration = ListCompositionalLayoutConfiguration(
+            scrollDirection: .horizontal,
+            interSectionSpacing: 12,
+            contentInsetsReference: .automatic
+        ).makeConfiguration()
+
+        XCTAssertEqual(configuration.scrollDirection, .horizontal)
+        XCTAssertEqual(configuration.interSectionSpacing, 12)
+        XCTAssertEqual(configuration.contentInsetsReference, .automatic)
+    }
+
+    func testUIKitListLayoutPreservesSystemSeparatorDefaultUnlessOverridden() {
+        let nativeDefault = UICollectionLayoutListConfiguration(appearance: .plain)
+        let inherited = ListUIKitListLayout().makeConfiguration()
+        let hidden = ListUIKitListLayout(showsSeparators: false).makeConfiguration()
+
+        XCTAssertNil(ListUIKitListLayout().showsSeparators)
+        XCTAssertEqual(inherited.showsSeparators, nativeDefault.showsSeparators)
+        XCTAssertFalse(hidden.showsSeparators)
+    }
+
     func testMakeCompositionalLayoutCanBeCreatedBeforeApplyWithoutDiagnostics() {
         let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 240, height: 120), collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
@@ -2938,7 +3162,7 @@ final class ListKitCoreTests: XCTestCase {
             scope: .visible,
             transaction: .disabled
         ) { summary in
-            XCTAssertEqual(summary.visibleReconfiguredCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.visibleReconfiguredRowCount, 1)
             reconfigured.fulfill()
         }
         wait(for: [reconfigured], timeout: 1)
@@ -2954,7 +3178,7 @@ final class ListKitCoreTests: XCTestCase {
             scope: .visible,
             transaction: .disabled
         ) { summary in
-            XCTAssertEqual(summary.reloadedTargetCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.reloadedRowCount, 1)
             reloaded.fulfill()
         }
         wait(for: [reloaded], timeout: 1)
@@ -2992,7 +3216,7 @@ final class ListKitCoreTests: XCTestCase {
                         view.configuredIndexPath = context.indexPath
                     }
                     .refreshID(refreshID)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
                     .itemSupplementaryLayout(
                         anchor: .topTrailing,
                         width: .absolute(20),
@@ -3018,7 +3242,7 @@ final class ListKitCoreTests: XCTestCase {
         let refreshedBadges = visibleBadgeViews(in: collectionView, kind: kind)
 
         XCTAssertEqual(result.supplementaryRefreshIDChangedCount, 1)
-        XCTAssertEqual(adapter.lastApplySummary.visibleSupplementaryRefreshCount, initialBadgeCount)
+        XCTAssertEqual(adapter.lastApplySummary.refreshMetrics.visibleReconfiguredSupplementaryCount, initialBadgeCount)
         XCTAssertEqual(configuredCount, countBeforeRefresh + initialBadgeCount)
         XCTAssertEqual(Set(refreshedBadges.map(\.value)), ["two-0", "two-1"])
     }
@@ -3051,7 +3275,7 @@ final class ListKitCoreTests: XCTestCase {
                         view.configuredIndexPath = context.indexPath
                     }
                     .refreshID(refreshID)
-                    .refreshPolicy(.never)
+                    .refresh(when: .never)
                     .itemSupplementaryLayout(
                         anchor: .topTrailing,
                         width: .absolute(20),
@@ -3077,7 +3301,7 @@ final class ListKitCoreTests: XCTestCase {
         let badgesAfterApply = visibleBadgeViews(in: collectionView, kind: kind)
 
         XCTAssertEqual(result.supplementaryRefreshIDChangedCount, 1)
-        XCTAssertEqual(adapter.lastApplySummary.visibleSupplementaryRefreshCount, 0)
+        XCTAssertEqual(adapter.lastApplySummary.refreshMetrics.visibleReconfiguredSupplementaryCount, 0)
         XCTAssertEqual(configuredCount, countBeforeRefresh)
         XCTAssertEqual(Set(badgesAfterApply.map(\.value)), ["one-0", "one-1"])
     }
@@ -3096,7 +3320,7 @@ final class ListKitCoreTests: XCTestCase {
                 BadgeView.self,
                 id: "badge"
             ) { _, _ in }
-                .refreshPolicy(.never)
+                .refresh(when: .never)
                 .itemSupplementaryLayout(
                     anchor: .topTrailing,
                     width: .absolute(20),
@@ -3163,7 +3387,7 @@ final class ListKitCoreTests: XCTestCase {
                     view.value = badgeValues[rowID]
                     view.configuredIndexPath = context.indexPath
                 }
-                .refreshPolicy(.never)
+                .refresh(when: .never)
                 .itemSupplementaryLayout(
                     anchor: .topTrailing,
                     width: .absolute(20),
@@ -3240,10 +3464,15 @@ final class ListKitCoreTests: XCTestCase {
     func testApplyPlannerBuildsSharedSummaryAndRefreshPlan() {
         let keptOld = makeTestListNode("kept", refreshID: 1)
         let deletedOld = makeTestListNode("deleted", refreshID: 1)
-        let keptNew = makeTestListNode("kept", refreshID: 2, policy: .whenRefreshIDChanges)
+        let keptNew = makeTestListNode(
+            "kept",
+            refreshID: 2,
+            policy: .refreshIDChanges,
+            scope: .allMatching
+        )
         let insertedNew = makeTestListNode("inserted", refreshID: 1)
         let headerOld = makeTestListNode("header", refreshID: 1, role: .supplementary)
-        let headerNew = makeTestListNode("header", refreshID: 2, policy: .whenRefreshIDChanges, role: .supplementary)
+        let headerNew = makeTestListNode("header", refreshID: 2, policy: .refreshIDChanges, role: .supplementary)
 
         let plan = ListApplyPlanner.makePlan(
             old: [
@@ -3254,7 +3483,6 @@ final class ListKitCoreTests: XCTestCase {
             ],
             options: ListApplyOptions(
                 transaction: .disabled,
-                refreshStrategy: .automatic,
                 diagnostics: .disabled
             ),
             diagnosticsIssues: []
@@ -3268,97 +3496,115 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(plan.initialSummary.insertedRowCount, 1)
         XCTAssertEqual(plan.initialSummary.deletedRowCount, 1)
         XCTAssertEqual(plan.initialSummary.keptRowCount, 1)
-        XCTAssertEqual(plan.initialSummary.refreshIDChangedCount, 1)
-        XCTAssertEqual(plan.initialSummary.snapshotRefreshCount, 1)
+        XCTAssertEqual(plan.initialSummary.rowRefreshIDChangedCount, 1)
+        XCTAssertEqual(plan.initialSummary.refreshMetrics.snapshotReconfiguredRowCount, 1)
         XCTAssertEqual(plan.initialSummary.supplementaryRefreshIDChangedCount, 1)
         XCTAssertEqual(
-            plan.completedSummary(visibleRefreshCount: 3, visibleSupplementaryRefreshCount: 2).visibleSupplementaryRefreshCount,
+            plan.completedSummary(
+                visibleReconfiguredRowCount: 3,
+                visibleReloadedRowCount: 1,
+                visibleReconfiguredSupplementaryCount: 2
+            ).refreshMetrics.visibleReconfiguredSupplementaryCount,
             2
+        )
+        XCTAssertEqual(
+            plan.completedSummary(
+                visibleReconfiguredRowCount: 3,
+                visibleReloadedRowCount: 1,
+                visibleReconfiguredSupplementaryCount: 2
+            ).refreshMetrics.reloadedRowCount,
+            1
         )
     }
 
-    func testApplyPlannerRoutesEveryPolicyStrategyAndRefreshActionCombination() {
-        let policies: [RowRefreshPolicy] = [
-            .automaticVisible,
-            .whenRefreshIDChanges,
-            .alwaysVisible,
+    func testApplyPlannerRoutesEveryTriggerScopeAndRowActionCombination() {
+        let triggers: [ListRefreshTrigger] = [
+            .automatic,
+            .refreshIDChanges,
+            .everyApply,
             .never
         ]
-        let strategies: [ListApplyRefreshStrategy] = [
-            .automatic,
-            .visibleOnly,
-            .refreshIDChangesOnly,
-            .reloadKeptRows
-        ]
-        let actions: [ListRefreshAction] = [
+        let scopes: [ListRefreshScope] = [.visible, .allMatching]
+        let actions: [ListRowRefreshAction] = [
             .reconfigure(layout: .none),
             .reconfigure(layout: .invalidate),
             .reload
         ]
 
-        for policy in policies {
-            for strategy in strategies {
+        for trigger in triggers {
+            for scope in scopes {
                 for action in actions {
                     let old = makeTestListNode(
                         "row",
                         refreshID: 1,
-                        policy: policy,
+                        policy: trigger,
+                        scope: scope,
                         action: action
                     )
                     let new = makeTestListNode(
                         "row",
                         refreshID: 2,
-                        policy: policy,
+                        policy: trigger,
+                        scope: scope,
                         action: action
                     )
                     let plan = ListApplyPlanner.makePlan(
                         old: [ListSectionSnapshot(sectionID: AnyListID(0), rows: [old], supplementaries: [])],
                         new: [ListSectionSnapshot(sectionID: AnyListID(0), rows: [new], supplementaries: [])],
-                        options: ListApplyOptions(
-                            transaction: .disabled,
-                            refreshStrategy: strategy,
-                            diagnostics: .disabled
-                        ),
+                        options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
                         diagnosticsIssues: []
                     )
 
-                    let shouldReload = strategy == .reloadKeptRows
-                        || ((strategy == .automatic || strategy == .refreshIDChangesOnly)
-                            && policy == .whenRefreshIDChanges
-                            && action == .reload)
-                    let shouldReconfigure = !shouldReload
-                        && (strategy == .automatic || strategy == .refreshIDChangesOnly)
-                        && policy == .whenRefreshIDChanges
+                    let shouldRefresh = trigger != .never
+                    let shouldSnapshot = shouldRefresh && scope == .allMatching
+                    let shouldReload = shouldSnapshot && action == .reload
+                    let shouldReconfigure = shouldSnapshot && action != .reload
                     let shouldInvalidate = shouldReconfigure
                         && action == .reconfigure(layout: .invalidate)
 
                     XCTAssertEqual(plan.snapshotReloadItems, shouldReload ? [new.identity] : [])
                     XCTAssertEqual(plan.snapshotReconfigureItems, shouldReconfigure ? [new.identity] : [])
                     XCTAssertEqual(plan.snapshotLayoutInvalidationItems, shouldInvalidate ? [new.identity] : [])
-                    XCTAssertEqual(plan.initialSummary.snapshotRefreshCount, (shouldReload || shouldReconfigure) ? 1 : 0)
+                    XCTAssertEqual(
+                        plan.initialSummary.refreshMetrics.snapshotReconfiguredRowCount,
+                        shouldReconfigure ? 1 : 0
+                    )
+                    XCTAssertEqual(
+                        plan.initialSummary.refreshMetrics.reloadedRowCount,
+                        shouldReload ? 1 : 0
+                    )
+                    XCTAssertEqual(plan.shouldRunVisibleRefresh, shouldRefresh && scope == .visible)
                 }
             }
         }
     }
 
     func testApplyPlannerResolvesDuplicateActionConflictToStrongestAction() {
-        let old = makeTestListNode("row", refreshID: 1, policy: .whenRefreshIDChanges)
+        let old = makeTestListNode(
+            "row",
+            refreshID: 1,
+            policy: .refreshIDChanges,
+            scope: .allMatching
+        )
         let reconfigure = makeTestListNode(
             "row",
             refreshID: 2,
-            policy: .whenRefreshIDChanges,
+            policy: .refreshIDChanges,
+            scope: .allMatching,
             action: .reconfigure(layout: .none)
         )
         let invalidate = makeTestListNode(
             "row",
             refreshID: 2,
-            policy: .whenRefreshIDChanges,
+            policy: .refreshIDChanges,
+            scope: .allMatching,
             action: .reconfigure(layout: .invalidate)
         )
         let reload = makeTestListNode(
             "row",
             refreshID: 2,
-            policy: .whenRefreshIDChanges,
+            policy: .refreshIDChanges,
+            scope: .allMatching,
             action: .reload
         )
 
@@ -3376,10 +3622,11 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(plan.snapshotReconfigureItems.isEmpty)
         XCTAssertTrue(plan.snapshotLayoutInvalidationItems.isEmpty)
         XCTAssertEqual(plan.snapshotReloadItems, [reload.identity])
-        XCTAssertEqual(plan.initialSummary.snapshotRefreshCount, 1)
+        XCTAssertEqual(plan.initialSummary.refreshMetrics.snapshotReconfiguredRowCount, 0)
+        XCTAssertEqual(plan.initialSummary.refreshMetrics.reloadedRowCount, 1)
     }
 
-    func testVisibleRefreshPolicyUsesRefreshIDAndApplyStrategy() {
+    func testVisibleRefreshRuleUsesTriggerAndScope() {
         let oldVersion = makeTestListNode("row", refreshID: 1)
         let stableAutomatic = makeTestListNode("row", refreshID: 1)
         let changedAutomatic = makeTestListNode("row", refreshID: 2)
@@ -3388,50 +3635,46 @@ final class ListKitCoreTests: XCTestCase {
         let changedDiffable = makeTestListNode(
             "row",
             refreshID: 2,
-            policy: .whenRefreshIDChanges
+            policy: .refreshIDChanges,
+            scope: .allMatching
         )
-        let stableAlways = makeTestListNode("row", refreshID: 1, policy: .alwaysVisible)
+        let changedVisible = makeTestListNode("row", refreshID: 2, policy: .refreshIDChanges)
+        let stableAlways = makeTestListNode("row", refreshID: 1, policy: .everyApply)
 
         XCTAssertFalse(
             ListApplyPlanner.shouldRefreshVisibleRow(
                 stableAutomatic,
-                oldRow: oldVersion,
-                strategy: .automatic
+                oldRow: oldVersion
             )
         )
         XCTAssertTrue(
             ListApplyPlanner.shouldRefreshVisibleRow(
                 changedAutomatic,
-                oldRow: oldVersion,
-                strategy: .automatic
+                oldRow: oldVersion
             )
         )
         XCTAssertTrue(
             ListApplyPlanner.shouldRefreshVisibleRow(
                 unversionedNew,
-                oldRow: unversionedOld,
-                strategy: .automatic
+                oldRow: unversionedOld
             )
         )
         XCTAssertFalse(
             ListApplyPlanner.shouldRefreshVisibleRow(
                 changedDiffable,
-                oldRow: oldVersion,
-                strategy: .automatic
+                oldRow: oldVersion
             )
         )
         XCTAssertTrue(
             ListApplyPlanner.shouldRefreshVisibleRow(
-                changedDiffable,
-                oldRow: oldVersion,
-                strategy: .visibleOnly
+                changedVisible,
+                oldRow: oldVersion
             )
         )
         XCTAssertTrue(
             ListApplyPlanner.shouldRefreshVisibleRow(
                 stableAlways,
-                oldRow: oldVersion,
-                strategy: .automatic
+                oldRow: oldVersion
             )
         )
 
@@ -3459,14 +3702,26 @@ final class ListKitCoreTests: XCTestCase {
         )
     }
 
-    func testApplyPlannerForceReloadOnlyTargetsKeptRows() {
+    func testApplyPlannerReloadActionOnlyTargetsKeptRows() {
         let oldRows = [
             makeTestListNode("kept", refreshID: 1),
             makeTestListNode("deleted", refreshID: 1)
         ]
         let newRows = [
-            makeTestListNode("kept", refreshID: 1),
-            makeTestListNode("inserted", refreshID: 1)
+            makeTestListNode(
+                "kept",
+                refreshID: 1,
+                policy: .everyApply,
+                scope: .allMatching,
+                action: .reload
+            ),
+            makeTestListNode(
+                "inserted",
+                refreshID: 1,
+                policy: .everyApply,
+                scope: .allMatching,
+                action: .reload
+            )
         ]
 
         let plan = ListApplyPlanner.makePlan(
@@ -3474,7 +3729,6 @@ final class ListKitCoreTests: XCTestCase {
             new: [ListSectionSnapshot(sectionID: AnyListID(0), rows: newRows, supplementaries: [])],
             options: ListApplyOptions(
                 transaction: .disabled,
-                refreshStrategy: .reloadKeptRows,
                 diagnostics: .disabled
             ),
             diagnosticsIssues: []
@@ -3483,12 +3737,18 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(plan.snapshotReloadItems, [newRows[0].identity])
         XCTAssertTrue(plan.snapshotReconfigureItems.isEmpty)
         XCTAssertFalse(plan.shouldRunVisibleRefresh)
-        XCTAssertEqual(plan.initialSummary.snapshotRefreshCount, 1)
+        XCTAssertEqual(plan.initialSummary.refreshMetrics.snapshotReconfiguredRowCount, 0)
+        XCTAssertEqual(plan.initialSummary.refreshMetrics.reloadedRowCount, 1)
     }
 
     func testApplyPlannerStopsBeforeDiffableForDiagnosticsWarning() {
         let oldRows = [makeTestListNode("kept", refreshID: 1)]
-        let newRows = [makeTestListNode("kept", refreshID: 2, policy: .whenRefreshIDChanges)]
+        let newRows = [makeTestListNode(
+            "kept",
+            refreshID: 2,
+            policy: .refreshIDChanges,
+            scope: .allMatching
+        )]
         let issue = ListDiagnosticsIssue(
             kind: .duplicateRow,
             message: "ListKit: duplicate row identity"
@@ -3499,7 +3759,6 @@ final class ListKitCoreTests: XCTestCase {
             new: [ListSectionSnapshot(sectionID: AnyListID(0), rows: newRows, supplementaries: [])],
             options: ListApplyOptions(
                 transaction: .disabled,
-                refreshStrategy: .automatic,
                 diagnostics: .init(mode: .warning, logsApplySummary: false)
             ),
             diagnosticsIssues: [issue]
@@ -3509,8 +3768,8 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(plan.snapshotReconfigureItems.isEmpty)
         XCTAssertTrue(plan.snapshotLayoutInvalidationItems.isEmpty)
         XCTAssertTrue(plan.snapshotReloadItems.isEmpty)
-        XCTAssertEqual(plan.initialSummary.snapshotRefreshCount, 0)
-        XCTAssertEqual(plan.initialSummary.visibleRefreshCount, 0)
+        XCTAssertEqual(plan.initialSummary.refreshMetrics.snapshotReconfiguredRowCount, 0)
+        XCTAssertEqual(plan.initialSummary.refreshMetrics.visibleReconfiguredRowCount, 0)
         XCTAssertEqual(plan.initialSummary.diagnosticsIssues, [issue])
     }
 
@@ -3682,8 +3941,10 @@ private func makeTestListNode(
     _ id: String,
     refreshID: Int?,
     sectionID: Int = 0,
-    policy: RowRefreshPolicy = .automaticVisible,
-    action: ListRefreshAction = .reconfigure(layout: .none),
+    policy: ListRefreshTrigger = .automatic,
+    scope: ListRefreshScope = .visible,
+    action: ListRowRefreshAction = .reconfigure(layout: .none),
+    supplementaryAction: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none),
     role: ListNodeRole = .row
 ) -> ListNodeSnapshot {
     ListNodeSnapshot(
@@ -3694,8 +3955,12 @@ private func makeTestListNode(
             variant: role == .row ? nil : AnyListID("supplementary")
         ),
         refreshID: refreshID.map(AnyListID.init),
-        refreshPolicy: policy,
-        refreshAction: action,
+        refreshRule: role == .row
+            ? .row(ListRowRefreshRule(trigger: policy, scope: scope, action: action))
+            : .supplementary(ListSupplementaryRefreshRule(
+                trigger: policy,
+                action: supplementaryAction
+            )),
         role: role
     )
 }

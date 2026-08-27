@@ -142,8 +142,8 @@ struct ApplyDiagnostics: Hashable, Sendable {
     var deletedRowCount: Int = 0
     var movedRowCount: Int = 0
     var keptRowCount: Int = 0
-    var refreshIDChangedCount: Int = 0
-    var visibleRefreshCount: Int = 0
+    var rowRefreshIDChangedCount: Int = 0
+    var visibleReconfiguredRowCount: Int = 0
     var contentTransitionCount: Int = 0
     var anchorCompensation: CGFloat = 0
     var lastCompletionState: String = "submitted"
@@ -163,8 +163,8 @@ struct ApplyDiagnostics: Hashable, Sendable {
         hasher.combine(deletedRowCount)
         hasher.combine(movedRowCount)
         hasher.combine(keptRowCount)
-        hasher.combine(refreshIDChangedCount)
-        hasher.combine(visibleRefreshCount)
+        hasher.combine(rowRefreshIDChangedCount)
+        hasher.combine(visibleReconfiguredRowCount)
         hasher.combine(contentTransitionCount)
         hasher.combine(anchorCompensation)
         hasher.combine(lastCompletionState)
@@ -179,7 +179,7 @@ struct ApplyDiagnostics: Hashable, Sendable {
     }
 
     var refreshText: String {
-        "\(lastCompletionState)  refreshID \(refreshIDChangedCount)  visible \(visibleRefreshCount)  transition \(contentTransitionCount)  anchor \(Int(anchorCompensation.rounded()))"
+        "\(lastCompletionState)  refreshID \(rowRefreshIDChangedCount)  visible \(visibleReconfiguredRowCount)  transition \(contentTransitionCount)  anchor \(Int(anchorCompensation.rounded()))"
     }
 }
 

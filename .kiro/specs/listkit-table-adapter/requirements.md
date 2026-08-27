@@ -27,7 +27,7 @@
 #### Acceptance Criteria
 
 - WHEN 构建 table row identity THE SYSTEM SHALL 复用 `AnyListID` 和 `AnyListIdentity`。
-- WHEN 判断内容刷新 THE SYSTEM SHALL 复用 `refreshID`、`RowRefreshPolicy` 和 `ListApplyRefreshStrategy` 语义。
+- WHEN 判断内容刷新 THE SYSTEM SHALL 复用 `refreshID`、`ListRowRefreshRule` 和 `ListSupplementaryRefreshRule` 语义。
 - WHEN 发现重复 section/row/header/footer identity THE SYSTEM SHALL 复用 ListKit diagnostics 风格，在 diffable apply 前给出清晰问题。
 - WHEN apply 完成 THE SYSTEM SHALL 输出与 `ListApplySummary` 等价的 insert/delete/keep/snapshotRefresh/visibleRefresh 统计。
 - WHEN row/header/footer 发送自定义事件 THE SYSTEM SHALL 复用 `ListEvent` 类型约束。
@@ -63,10 +63,10 @@
 #### Acceptance Criteria
 
 - WHEN `TableRow` identity 变化 THE SYSTEM SHALL 交给 UITableView diffable data source 执行插入/删除。
-- WHEN identity 不变且 `refreshID` 变化 THE SYSTEM SHALL 按 refresh policy 执行 reload/reconfigure 等价行为。
+- WHEN identity 不变且 `refreshID` 变化 THE SYSTEM SHALL 按节点 refresh rule 执行 reload/reconfigure 等价行为。
 - WHEN 只需要轻量更新可见 Cell THE SYSTEM SHALL 提供 `reconfigureRows(..., scope: .visible, layout: .none)`。
 - WHEN 保留 Cell 但需要重新量高 THE SYSTEM SHALL 提供 `reconfigureRows(..., layout: .invalidate)`；WHEN 需要完整配置路径 THE SYSTEM SHALL 提供 `reloadRows(...)`。
-- WHEN 使用 `.automaticVisible` THE SYSTEM SHALL 在 apply completion 后重配仍可见的旧 row。
+- WHEN 使用 `.automatic + .visible` THE SYSTEM SHALL 在 apply completion 后直接重配仍可见的 kept row。
 
 ### Requirement 6: Header 和 Footer
 
@@ -78,7 +78,7 @@
 - WHEN section 需要 footer THE SYSTEM SHALL 支持 `TableFooter` builder。
 - WHEN header/footer 使用 `UITableViewHeaderFooterView` THE SYSTEM SHALL 支持自动注册和类型安全 dequeue。
 - WHEN header/footer 需要高度 THE SYSTEM SHALL 支持 fixed、automatic 和 estimated height 描述。
-- WHEN header/footer 内容变化 THE SYSTEM SHALL 支持 `refreshID` 和 refresh policy。
+- WHEN header/footer 内容变化 THE SYSTEM SHALL 支持 `refreshID` 和 `ListSupplementaryRefreshRule`。
 
 ### Requirement 7: Selection、Display 和 Prefetch
 

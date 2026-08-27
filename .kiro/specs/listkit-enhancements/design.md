@@ -32,8 +32,8 @@ DEBUG 下默认 `.warning`。当存在诊断问题时，adapter 会输出 warnin
 ```swift
 adapter.apply(
     options: ListApplyOptions(
-        animatingDifferences: false,
-        refreshStrategy: .refreshIDChangesOnly,
+        transaction: .disabled,
+        applicationMode: .reloadData,
         diagnostics: .init(mode: .warning)
     )
 ) {
@@ -43,7 +43,7 @@ adapter.apply(
 }
 ```
 
-`apply(animatingDifferences:)` 保留，并内部转到 `ListApplyOptions`。
+节点刷新由 Row/Supplementary 自己的 `.refresh(...)` 声明，不提供 apply 级覆盖。
 
 ### `ListApplySummary`
 
@@ -54,7 +54,7 @@ let result = adapter.apply(options: .init(animatingDifferences: false)) {
     ListSection(.users) { ... }
 }
 
-print(result.summary.refreshIDChangedCount)
+print(result.summary.rowRefreshIDChangedCount)
 ```
 
 ## Identity Diagnostics
@@ -75,19 +75,15 @@ print(result.summary.refreshIDChangedCount)
 
 ## Apply Refresh Strategy
 
-Row 级策略继续有效：
+Row 级规则由 trigger、scope 和 action 组成：
 
-- `.automaticVisible`
-- `.whenRefreshIDChanges`
+- `.automatic + .visible`
+- `.refreshIDChanges + .allMatching`
 - `.never`
-- `.alwaysVisible`
+- `.everyApply + .visible`
 
-Apply 级策略用于一次性覆盖：
-
-- `.automatic`: 使用 Row 级策略。
-- `.visibleOnly`: snapshot 不 reconfigure/reload，只刷新可见 cell。
-- `.refreshIDChangesOnly`: 只做 snapshot reconfigure/reload。
-- `.reloadKeptRows`: 当前 snapshot items 全部 reconfigure/reload。
+Apply 级刷新覆盖已经删除。普通 apply 遵循节点规则；全量环境刷新使用 `reloadAll()`，
+新描述树的 reload-data 提交使用 `applicationMode: .reloadData`。
 
 ## Model-Aware Events
 
@@ -196,7 +192,7 @@ Adapter 在 cell dequeue 时同步 UIKit 选中态，并在 select/deselect dele
 
 ## Supplementary Enhancements
 
-`Supplementary` 支持 refresh policy：
+`Supplementary` 支持独立 refresh rule：
 
 ```swift
 let header = Supplementary(
@@ -207,7 +203,7 @@ let header = Supplementary(
     view.titleLabel.text = "用户"
 }
 .refreshID(headerVersion)
-.refreshPolicy(.whenRefreshIDChanges)
+.refresh(when: .refreshIDChanges)
 
 ListSection(.users) { ... }
     .supplementary(header)

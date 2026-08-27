@@ -82,7 +82,7 @@ public enum ListDiagnostics {
                     ListNodeSnapshot(
                         identity: row.identity,
                         refreshID: row.refreshID,
-                        refreshPolicy: row.refreshPolicy,
+                        refreshRule: .row(row.refreshRule),
                         role: .row
                     )
                 },
@@ -90,7 +90,7 @@ public enum ListDiagnostics {
                     ListNodeSnapshot(
                         identity: supplementary.identity,
                         refreshID: supplementary.refreshID,
-                        refreshPolicy: supplementary.refreshPolicy,
+                        refreshRule: .supplementary(supplementary.refreshRule),
                         role: .supplementary
                     )
                 }

@@ -25,17 +25,17 @@ Section 级 `.itemSupplementaryLayout(kind:...)` 保持不变。两者命名对�
 
 `CollectionListAdapter.apply` 在 rebuild 前保存旧 supplementary lookup。snapshot apply completion 后，adapter 遍历 layout 当前可见 supplementary attributes，按 kind + section 找到新旧 supplementary：
 
-- `.automaticVisible` 和 `.alwaysVisible`：只要 identity 在旧 lookup 中存在，就重配可见 view。
-- `.whenRefreshIDChanges`：旧 identity 存在且 refreshID 变化时重配可见 view。
+- `.automatic + .visible` 和 `.everyApply + .visible`：只要 identity 在旧 lookup 中存在，就重配可见 view。
+- `.refreshIDChanges`：旧 identity 存在且 refreshID 变化时重配可见 view。
 - `.never`：跳过。
 
-手动刷新 API 不依赖 refresh policy，直接重配匹配 kind、section 和可选 rowID 的当前可见 supplementary view。
+手动刷新 API 不依赖 apply trigger，直接重配匹配 kind、section 和可选 rowID 的当前可见 supplementary view。
 
 ## Summary
 
 `ListApplySummary` 保留 row 统计字段，并新增 supplementary 专用字段：
 
 - `supplementaryRefreshIDChangedCount`
-- `visibleSupplementaryRefreshCount`
+- `refreshMetrics.visibleReconfiguredSupplementaryCount`
 
-现有 `refreshIDChangedCount`、`snapshotRefreshCount` 和 `visibleRefreshCount` 继续表示 row 行为，避免破坏已有测试和调用方理解。
+现有 `rowRefreshIDChangedCount`、`refreshMetrics.snapshotReconfiguredRowCount` 和 `refreshMetrics.visibleReconfiguredRowCount` 继续表示 row 行为，避免破坏已有测试和调用方理解。

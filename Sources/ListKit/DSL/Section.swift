@@ -32,15 +32,15 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
     /// section 的稳定 id。
     public let id: SectionID
     /// 类型擦除后的 row 描述。
-    public var rows: [AnyListRow]
+    public internal(set) var rows: [AnyListRow]
     /// 层级 section snapshot 的根节点；普通 section 中每个节点都是叶子。
-    public var outlineRoots: [AnyListOutlineNode]
+    public internal(set) var outlineRoots: [AnyListOutlineNode]
     /// 是否包含父子层级。
     public var hasOutlineHierarchy: Bool {
         outlineRoots.contains { !$0.children.isEmpty }
     }
     /// 类型擦除后的 supplementary 描述。
-    public var supplementaries: [AnySupplementary]
+    public internal(set) var supplementaries: [AnySupplementary]
     /// 旧 custom layout provider 用的布局标识。
     public var layoutID: AnyListID?
     /// ListKit 内建 section layout。
@@ -517,7 +517,7 @@ public struct ListSection<SectionID> where SectionID: Hashable & Sendable {
             identity: base.identity,
             kind: base.kind,
             refreshID: base.refreshID,
-            refreshPolicy: base.refreshPolicy,
+            refreshRule: base.refreshRule,
             register: base.register,
             viewProvider: { collectionView, indexPath, context in
                 let view = base.viewProvider(collectionView, indexPath, context)

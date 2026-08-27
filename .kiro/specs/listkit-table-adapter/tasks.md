@@ -17,7 +17,7 @@
 
 - [x] Task 8: 实现 `TableListAdapter<SectionID>` 初始化并接管 `UITableViewDataSource`、`UITableViewDelegate`、`UITableViewDataSourcePrefetching`。
 - [x] Task 9: 实现 apply overloads、diffable snapshot、lookup table rebuild、自动注册和 apply summary。
-- [x] Task 10: 实现 `refreshID`、`RowRefreshPolicy`、`ListApplyRefreshStrategy`、可见轻刷和可见 reload。
+- [x] Task 10: 实现 `refreshID`、Row/Supplementary refresh rule、可见轻刷和可见 reload。
 - [x] Task 11: 实现 `sectionIdentifier`、`rowCount/itemCount`、`indexPaths`、`scrollToLastRow` 查询和滚动 helper。
 
 ## Phase P3: UITableView Delegate Surface

@@ -7,7 +7,7 @@
 - [x] Task 3: 实现 DSL builder：`ListSectionBuilder`、`ListRowBuilder`、`ForEach`、条件分支支持。
 - [x] Task 4: 实现 Row/Supplementary 描述模型和内部类型擦除。
 - [x] Task 5: 实现 identity 规则：默认使用 `rowID + Cell.self`，支持 `.variant(...)`。
-- [x] Task 6: 实现 refresh 策略：`.automaticVisible`、`.whenRefreshIDChanges`、`.never`、`.alwaysVisible`。
+- [x] Task 6: 实现 refresh 策略：`.automatic + .visible`、`.refreshIDChanges`、`.never`、`.everyApply + .visible`。
 - [x] Task 7: 实现 `CollectionListAdapter`，包括 diffable data source、apply、snapshot、visible reconfigure。
 - [x] Task 8: 实现内置事件桥接：select、display、prefetch、context menu、swipe actions。
 - [x] Task 9: 实现 Header/Footer 声明、注册、配置、tap 事件。

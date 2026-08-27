@@ -27,6 +27,11 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
         updateTableHeaderLayout()
     }
 
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        updateTableHeaderLayout()
+    }
+
     override func configureNavigation() {
         applyNavigationText(
             title: "Admin Table",
@@ -72,6 +77,7 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
         let header = UIView()
         header.backgroundColor = .clear
         header.accessibilityIdentifier = "admin-table-header"
+        header.insetsLayoutMarginsFromSafeArea = false
 
         let summary = makeTableSummary()
         summary.translatesAutoresizingMaskIntoConstraints = false
@@ -79,8 +85,8 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
         header.addSubview(summary)
 
         NSLayoutConstraint.activate([
-            summary.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 20),
-            summary.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20),
+            summary.leadingAnchor.constraint(equalTo: header.layoutMarginsGuide.leadingAnchor),
+            summary.trailingAnchor.constraint(equalTo: header.layoutMarginsGuide.trailingAnchor),
             summary.topAnchor.constraint(equalTo: header.topAnchor, constant: 12),
             summary.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -12)
         ])
@@ -91,6 +97,15 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
     private func updateTableHeaderLayout() {
         guard let header = tableView.tableHeaderView,
               tableView.bounds.width > 0 else { return }
+
+        let safeAreaInsets = tableView.safeAreaInsets
+        let isRightToLeft = tableView.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        header.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 0,
+            leading: 20 + (isRightToLeft ? safeAreaInsets.right : safeAreaInsets.left),
+            bottom: 0,
+            trailing: 20 + (isRightToLeft ? safeAreaInsets.left : safeAreaInsets.right)
+        )
 
         let targetSize = CGSize(
             width: tableView.bounds.width,
@@ -110,6 +125,7 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
     private func makeTableSummary() -> UIView {
         let container = UIView()
         container.backgroundColor = .secondarySystemGroupedBackground
+        container.accessibilityIdentifier = "admin-table-summary"
         container.layer.cornerRadius = 16
         container.layer.borderWidth = 1
         container.layer.borderColor = UIColor.separator.cgColor

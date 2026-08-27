@@ -77,10 +77,10 @@ sectionID + rowID + ObjectIdentifier(Cell.self) + variant
 
 刷新策略：
 
-- `.automaticVisible`：默认策略。identity 不变时只重配可见 cell。
-- `.whenRefreshIDChanges`：`refreshID` 变化时触发刷新，再由 Row 的 `refreshAction` 分流到 `reconfigureItems` 或 `reloadItems`。
+- `.automatic + .visible`：默认策略。identity 不变时只重配可见 cell。
+- `.refreshIDChanges`：`refreshID` 变化时触发刷新，再由 Row 的 `refresh action` 分流到 `reconfigureItems` 或 `reloadItems`。
 - `.never`：identity 不变时不主动刷新。
-- `.alwaysVisible`：每次 apply 后重配可见 cell。
+- `.everyApply + .visible`：每次 apply 后重配可见 cell。
 
 ## Event Model
 

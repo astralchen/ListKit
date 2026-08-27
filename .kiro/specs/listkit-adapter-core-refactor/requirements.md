@@ -16,9 +16,9 @@
 
 - WHEN adapter applies sections THE SYSTEM SHALL map adapter-specific sections into shared `ListSectionSnapshot` values.
 - WHEN an apply plan is created THE SYSTEM SHALL compute insert/delete/keep summary from row identities in one shared implementation.
-- WHEN `refreshID` changes on kept rows THE SYSTEM SHALL count `refreshIDChangedCount` in one shared implementation.
-- WHEN `ListApplyRefreshStrategy.reloadKeptRows` is used THE SYSTEM SHALL refresh only row identities present in both old and new snapshots.
-- WHEN `ListApplyRefreshStrategy.visibleOnly` is used THE SYSTEM SHALL not request diffable snapshot row refresh.
+- WHEN `refreshID` changes on kept rows THE SYSTEM SHALL count `rowRefreshIDChangedCount` in one shared implementation.
+- WHEN Row rule 使用 `.allMatching` THE SYSTEM SHALL 只刷新新旧 snapshot 都保留的 Row identity。
+- WHEN Row rule 使用 `.visible` THE SYSTEM SHALL 不请求 diffable snapshot item refresh，而是在 snapshot 完成后直接刷新可见 Cell。
 
 ### Requirement 2: Shared Diagnostics Stop Policy
 
@@ -38,8 +38,8 @@
 #### Acceptance Criteria
 
 - WHEN supplementary identity is kept and `refreshID` changes THE SYSTEM SHALL count `supplementaryRefreshIDChangedCount`.
-- WHEN Collection supplementary uses `.whenRefreshIDChanges` THE SYSTEM SHALL refresh visible supplementary only when `refreshID` changed.
-- WHEN Table header/footer uses `.whenRefreshIDChanges` THE SYSTEM SHALL include header/footer in supplementary summary and visible refresh policy.
+- WHEN Collection supplementary uses `.refreshIDChanges` THE SYSTEM SHALL refresh visible supplementary only when `refreshID` changed.
+- WHEN Table header/footer uses `.refreshIDChanges` THE SYSTEM SHALL include header/footer in supplementary summary and visible refresh policy.
 - WHEN supplementary uses `.never` THE SYSTEM SHALL not run default visible refresh.
 
 ### Requirement 4: Shared Event Routing

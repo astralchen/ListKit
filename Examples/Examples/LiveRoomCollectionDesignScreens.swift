@@ -57,7 +57,7 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
     override func buildContent() {
         collectionView.setCollectionViewLayout(
             collectionAdapter.makeCompositionalLayout(
-                configuration: .init(interSectionSpacing: 4, contentInsetsReference: .none)
+                configuration: .init(interSectionSpacing: 4)
             ),
             animated: false
         )
@@ -102,12 +102,21 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
                 self.viewModel.sendMessage()
                 transaction = self.transactionScrollingToPendingMessage(transaction)
             case .sendSelectedGift:
-                self.viewModel.sendGift()
+                guard self.viewModel.sendGift() else { return }
                 transaction = self.transactionScrollingToPendingMessage(transaction)
             case .sendGift(let giftID):
-                self.viewModel.selectGift(giftID)
-                self.viewModel.sendGift()
+                guard context.section(as: LiveRoomSection.self) == .gifts,
+                      context.item(as: String.self) == giftID else { return }
+                guard self.viewModel.sendGift(giftID) else { return }
                 transaction = self.transactionScrollingToPendingMessage(transaction)
+            case .selectMicSeat(let seatID):
+                guard context.section(as: LiveRoomSection.self) == .micSeats,
+                      context.item(as: String.self) == seatID,
+                      self.viewModel.selectMicSeat(seatID) else { return }
+            case .selectGift(let giftID):
+                guard context.section(as: LiveRoomSection.self) == .gifts,
+                      context.item(as: String.self) == giftID,
+                      self.viewModel.selectGift(giftID) else { return }
             case .studioModeChanged(let index):
                 self.viewModel.selectStudioMode(index)
             case .roomActivityFilterChanged(let filter):
@@ -182,7 +191,6 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
         collectionView.alwaysBounceVertical = true
         collectionView.keyboardDismissMode = .onDrag
         collectionView.accessibilityIdentifier = identifier
-        collectionView.contentInsetAdjustmentBehavior = .always
         return collectionView
     }
 

@@ -6,6 +6,8 @@
 - [x] Task 4: 为 `ListSection` 增加 `.layout(_:)`、`.boundarySupplementaryLayout(...)`、`.itemSupplementaryLayout(...)`。
 - [x] Task 5: 实现 `ListSection.makeCompositionalLayoutSection()` 和 supplementary 默认规则。
 - [x] Task 6: 实现 `CollectionListAdapter.makeCompositionalLayout(fallback:)` compositional layout helper 和 `makeCompositionalSection(for:)`。
+- [x] Task 6.1: 默认保留 UIKit `contentInsetsReference` 与 collection view inset adjustment 系统行为，仅在调用方显式设置时覆盖。
+- [x] Task 6.2: 将 scroll direction、Section spacing 和 UIKit list separator visibility 纳入系统默认/显式覆盖语义，并修复 separator 实例状态隔离。
 - [x] Task 7: 扩展 diagnostics：invalid columns、supplementary placement conflict。
 - [x] Task 8: 更新 README，加入 Layout DSL 和 item-level supplementary 示例。
 - [x] Task 9: 运行 ListKit tests、ListKit build、Rebirth workspace build。

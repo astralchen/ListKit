@@ -13,6 +13,7 @@ Layout DSL 继续遵循 ListKit 的描述树思路：section 保存轻量、可 
 - `ListSupplementaryLayout`: 描述 supplementary kind、placement、width、height、zIndex。
 - `ListSupplementaryPlacement`: `.boundary(...)` 或 `.itemSupplementary(...)`。
 - `ListSupplementaryAnchor`: top、bottom、leading、trailing 及四角位置。
+- `ListContentInsetsReference`: 使用 `.systemDefault` 表示不写入 UIKit；其他 case 才是显式 override。
 
 ## Data Flow
 
@@ -21,6 +22,18 @@ Layout DSL 继续遵循 ListKit 的描述树思路：section 保存轻量、可 
 3. 页面可选调用 `.boundarySupplementaryLayout` 或 `.itemSupplementaryLayout` 覆盖 supplementary placement。
 4. `CollectionListAdapter.makeCompositionalLayout(fallback:)` 在 layout provider 中读取当前 sections；自定义闭包 layout 优先，旧 `layoutID` 才走 fallback。
 5. `ListSection.makeCompositionalLayoutSection()` 生成 `NSCollectionLayoutSection`，并附加 boundary/item supplementary。
+
+## System Insets Ownership
+
+- `ListCompositionalLayoutConfiguration.scrollDirection` 和 `interSectionSpacing` 默认保存 `nil`，
+  `contentInsetsReference` 默认保存 `.systemDefault`；构建 UIKit configuration 时跳过对应赋值，避免框架
+  硬编码或改写系统默认。
+- `.automatic` 是显式 UIKit override，不是 `.systemDefault` 的别名。
+- `contentInsetAdjustmentBehavior` 属于调用方创建的 `UICollectionView`。adapter 生成 layout 时不修改它。
+- 页面若显式接管任一侧，必须共同审查 layout 内容区域与 scroll view adjusted inset，避免横屏宽度基准错位。
+- `ListUIKitListLayout.showsSeparators == nil` 时保留 appearance 的 UIKit 默认值。
+- 自绘 separator 不提供无法可靠解析的 automatic-inset 哨兵；显式 inset 相对 item frame 计算，颜色通过
+  自定义 layout attributes 传给 decoration view，禁止使用进程级静态状态。
 
 ## Supplementary Defaults
 

@@ -2,18 +2,6 @@ import UIKit
 
 // MARK: - Row Model
 
-/// Row 刷新策略。
-public enum RowRefreshPolicy: Equatable, Sendable {
-    /// 默认策略。identity 不变时只重配可见 cell；提供 `refreshID` 后仅在标识变化时重配。
-    case automaticVisible
-    /// `refreshID` 变化时触发 diffable reconfigure/reload。
-    case whenRefreshIDChanges
-    /// identity 不变时不主动刷新。
-    case never
-    /// 忽略 `refreshID`，每次 apply 后都重配可见 cell。
-    case alwaysVisible
-}
-
 /// 相同 identity 的可见 Row 在内容刷新时使用的过渡。
 public struct ListContentTransition: Equatable, Sendable {
     enum Storage: Equatable, Sendable {
@@ -81,10 +69,8 @@ public struct AnyListRow {
     public let identity: AnyListIdentity
     /// 调用方提供的内容版本；用于 apply 时判断 kept Row 是否需要刷新。
     public let refreshID: AnyListID?
-    /// identity 保持不变时决定自动刷新的触发条件。
-    public let refreshPolicy: RowRefreshPolicy
-    /// 自动或主动刷新触发后使用的 Cell 生命周期与布局行为。
-    public let refreshAction: ListRefreshAction
+    /// identity 保持不变时使用的完整刷新规则。
+    public let refreshRule: ListRowRefreshRule
     /// controlled selection 的目标状态；`nil` 表示由 UIKit/用户交互维护。
     public let isSelected: Bool?
     /// 是否禁止当前 Row 进入选择状态。
@@ -252,8 +238,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     private let configure: @MainActor (Cell, Model, ListContext) -> Void
     private var rowVariant: AnyListID?
     private var rowRefreshID: AnyListID?
-    private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
-    private var rowRefreshAction: ListRefreshAction = .reconfigure(layout: .none)
+    private var rowRefreshRule: ListRowRefreshRule = .automatic
     private var rowIsSelected: Bool?
     private var rowIsSelectionDisabled = false
     private var rowIsFocusable: Bool?
@@ -361,28 +346,20 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
-    /// 覆盖当前 Row 的刷新策略。
-    ///
-    /// - Parameter policy: 当前 Row 的刷新策略。
-    /// - Returns: 应用刷新策略后的 Row。
-    public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
+    /// 设置当前 Row 的完整刷新规则。
+    public func refresh(_ rule: ListRowRefreshRule) -> Self {
         var copy = self
-        copy.rowRefreshPolicy = policy
+        copy.rowRefreshRule = rule
         return copy
     }
 
-    /// 设置内容刷新时使用的 Cell 生命周期和布局行为。
-    ///
-    /// `refreshPolicy(_:)` 决定何时刷新；本方法只决定触发后执行 reconfigure、
-    /// reconfigure 并重测量布局，还是 reload。默认值为
-    /// `.reconfigure(layout: .none)`。
-    ///
-    /// - Parameter action: 当前 Row 的刷新动作。
-    /// - Returns: 应用刷新动作后的 Row。
-    public func refreshAction(_ action: ListRefreshAction) -> Self {
-        var copy = self
-        copy.rowRefreshAction = action
-        return copy
+    /// 分别设置刷新触发、目标范围和执行动作。
+    public func refresh(
+        when trigger: ListRefreshTrigger,
+        scope: ListRefreshScope = .visible,
+        action: ListRowRefreshAction = .reconfigure(layout: .none)
+    ) -> Self {
+        refresh(ListRowRefreshRule(trigger: trigger, scope: scope, action: action))
     }
 
     /// 设置相同 identity 的可见内容刷新过渡。
@@ -732,8 +709,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return AnyListRow(
             identity: identity,
             refreshID: rowRefreshID,
-            refreshPolicy: rowRefreshPolicy,
-            refreshAction: rowRefreshAction,
+            refreshRule: rowRefreshRule,
             isSelected: rowIsSelected,
             isSelectionDisabled: rowIsSelectionDisabled,
             isFocusable: rowIsFocusable,
@@ -918,6 +894,13 @@ public struct RowGroup: ListRowRepresentable {
         self.rows = rows
     }
 
+    /// 用 Row builder 创建可复用的组合 Row。
+    @MainActor public init(
+        @ListRowBuilder content: () -> [any ListRowRepresentable]
+    ) {
+        self.rows = content()
+    }
+
     @MainActor public func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
         where SectionID: Hashable & Sendable
     {
@@ -1036,8 +1019,7 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     private let visibleCellConfigurator: @MainActor (UICollectionViewCell, ListContext) -> Void
     private var rowVariant: AnyListID?
     private var rowRefreshID: AnyListID?
-    private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
-    private var rowRefreshAction: ListRefreshAction = .reconfigure(layout: .none)
+    private var rowRefreshRule: ListRowRefreshRule = .automatic
     private var rowContentTransition: ListContentTransition = .identity
     private var rowSelectHandler: (@MainActor (ListContext) -> Void)?
     private var rowDisplayHandler: (@MainActor (UICollectionViewCell, ListContext) -> Void)?
@@ -1111,13 +1093,13 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
         return copy
     }
 
-    /// 覆盖 ProviderRow 的刷新策略。
+    /// 覆盖 ProviderRow 的刷新规则。
     ///
-    /// - Parameter policy: 当前 ProviderRow 的刷新策略。
-    /// - Returns: 应用刷新策略后的 ProviderRow。
-    public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
+    /// - Parameter rule: 当前 ProviderRow 的刷新规则。
+    /// - Returns: 应用刷新规则后的 ProviderRow。
+    public func refresh(_ rule: ListRowRefreshRule) -> Self {
         var copy = self
-        copy.rowRefreshPolicy = policy
+        copy.rowRefreshRule = rule
         return copy
     }
 
@@ -1126,12 +1108,17 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     /// Provider 返回的 Cell 类型发生变化时，必须同时改变 `presentationID`，使
     /// diffable snapshot 执行 delete + insert；reload 不能代替展示 identity 变化。
     ///
-    /// - Parameter action: 当前 ProviderRow 的刷新动作。
+    /// - Parameters:
+    ///   - trigger: 触发内容刷新的条件。
+    ///   - scope: 刷新全部匹配 identity，或仅刷新可见目标。
+    ///   - action: 当前 ProviderRow 的刷新动作。
     /// - Returns: 应用刷新动作后的 ProviderRow。
-    public func refreshAction(_ action: ListRefreshAction) -> Self {
-        var copy = self
-        copy.rowRefreshAction = action
-        return copy
+    public func refresh(
+        when trigger: ListRefreshTrigger,
+        scope: ListRefreshScope = .visible,
+        action: ListRowRefreshAction = .reconfigure(layout: .none)
+    ) -> Self {
+        refresh(ListRowRefreshRule(trigger: trigger, scope: scope, action: action))
     }
 
     /// 设置 ProviderRow 的可见内容刷新过渡。
@@ -1185,8 +1172,7 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
             AnyListRow(
                 identity: identity,
                 refreshID: rowRefreshID,
-                refreshPolicy: rowRefreshPolicy,
-                refreshAction: rowRefreshAction,
+                refreshRule: rowRefreshRule,
                 isSelected: nil,
                 isSelectionDisabled: false,
                 isFocusable: nil,

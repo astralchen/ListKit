@@ -293,16 +293,16 @@ struct ListResolvedTransaction {
 
 // MARK: - Apply Options
 
-/// apply 级刷新策略。
-public enum ListApplyRefreshStrategy: Equatable, Sendable {
-    /// 按 Row policy 自动选择 diffable 或可见刷新。
+/// identity 保持不变时，内容刷新的触发条件。
+public enum ListRefreshTrigger: Equatable, Sendable {
+    /// 未设置 `refreshID` 时每次 apply 刷新；设置后仅在值变化时刷新。
     case automatic
-    /// 将自动刷新限制到符合 Row policy 的可见节点，并继续尊重 Row action。
-    case visibleOnly
-    /// 只执行 `refreshID` 变化驱动的刷新，不额外处理其他可见节点。
-    case refreshIDChangesOnly
-    /// 忽略 Row policy，对所有新旧 snapshot 中都存在的 Row 执行 reload。
-    case reloadKeptRows
+    /// 仅在新旧 `refreshID` 不相等时刷新。
+    case refreshIDChanges
+    /// identity 保持不变时，每次 apply 都刷新。
+    case everyApply
+    /// apply 不主动刷新；adapter 定向刷新仍可使用。
+    case never
 }
 
 /// 主动 Row 刷新的目标范围。
@@ -322,11 +322,54 @@ public enum ListRefreshLayoutPolicy: Equatable, Sendable {
 }
 
 /// Row 内容刷新时使用的 UIKit 生命周期。
-public enum ListRefreshAction: Equatable, Sendable {
+public enum ListRowRefreshAction: Equatable, Sendable {
     /// 使用 diffable reconfigure 保留现有 Cell，不进入 `prepareForReuse`，并按需请求布局失效。
     case reconfigure(layout: ListRefreshLayoutPolicy)
     /// 请求完整 reload/configuration 路径；UIKit 不保证最终 Cell 对象地址发生变化。
     case reload
+}
+
+/// Row 的刷新触发、目标范围和执行动作。
+public struct ListRowRefreshRule: Equatable, Sendable {
+    public var trigger: ListRefreshTrigger
+    public var scope: ListRefreshScope
+    public var action: ListRowRefreshAction
+
+    public init(
+        trigger: ListRefreshTrigger = .automatic,
+        scope: ListRefreshScope = .visible,
+        action: ListRowRefreshAction = .reconfigure(layout: .none)
+    ) {
+        self.trigger = trigger
+        self.scope = scope
+        self.action = action
+    }
+
+    public static let automatic = ListRowRefreshRule()
+}
+
+/// Supplementary 内容刷新时使用的 UIKit 生命周期。
+public enum ListSupplementaryRefreshAction: Equatable, Sendable {
+    /// 直接重配当前存在的 supplementary view。
+    case reconfigureVisible(layout: ListRefreshLayoutPolicy)
+    /// 重载所属 Section，会连带重载其中的 Row。
+    case reloadSection
+}
+
+/// Supplementary 的刷新触发和可兑现执行动作。
+public struct ListSupplementaryRefreshRule: Equatable, Sendable {
+    public var trigger: ListRefreshTrigger
+    public var action: ListSupplementaryRefreshAction
+
+    public init(
+        trigger: ListRefreshTrigger = .automatic,
+        action: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none)
+    ) {
+        self.trigger = trigger
+        self.action = action
+    }
+
+    public static let automatic = ListSupplementaryRefreshRule()
 }
 
 /// diffable snapshot 的提交方式。
@@ -341,8 +384,6 @@ public enum ListSnapshotApplicationMode: Equatable, Sendable {
 public struct ListApplyOptions: Sendable {
     /// 控制动画、调度策略、滚动行为和 Reduce Motion 处理。
     public var transaction: ListTransaction
-    /// 决定 kept Row 在 apply 期间何时进入自动刷新，以及是否强制 reload。
-    public var refreshStrategy: ListApplyRefreshStrategy
     /// 决定 snapshot 使用差异提交还是 reload-data 提交。
     public var applicationMode: ListSnapshotApplicationMode
     /// 控制重复 identity 等结构问题的检查与报告方式。
@@ -352,17 +393,14 @@ public struct ListApplyOptions: Sendable {
     ///
     /// - Parameters:
     ///   - transaction: 动画、队列、滚动和 Reduce Motion 配置。
-    ///   - refreshStrategy: kept Row 的自动刷新策略。
     ///   - applicationMode: diffable snapshot 的提交方式。
     ///   - diagnostics: 提交前结构检查配置。
     public init(
         transaction: ListTransaction = .automatic,
-        refreshStrategy: ListApplyRefreshStrategy = .automatic,
         applicationMode: ListSnapshotApplicationMode = .differences,
         diagnostics: ListDiagnosticsOptions = .debugDefault
     ) {
         self.transaction = transaction
-        self.refreshStrategy = refreshStrategy
         self.applicationMode = applicationMode
         self.diagnostics = diagnostics
     }
@@ -382,40 +420,29 @@ public enum ListApplyCompletionState: Equatable, Sendable {
     case cancelledBeforeCommit
 }
 
-/// 一次主动 Row 或 Section 刷新的提交与完成摘要。
-public struct ListRefreshSummary: Equatable, Sendable {
-    /// 输入去重后的 Row ID 或 Section ID 数量。
-    public let requestedTargetCount: Int
-    /// 最终执行时在已提交 snapshot 中匹配到的 presentation identity 或 Section 数量。
-    public let matchedTargetCount: Int
-    /// 实际通过 reconfigure 原地配置的可见 Cell 数量。
-    public let visibleReconfiguredCount: Int
-    /// 实际提交 reload 的 presentation identity 或 Section 数量。
-    public let reloadedTargetCount: Int
-    /// ListKit 是否为本次刷新主动请求了布局失效或重新测量。
-    public let layoutInvalidated: Bool
-    /// 同步返回通常为 `.submitted`；completion/async 返回最终状态。
-    public let completionState: ListApplyCompletionState
+/// ListKit 在一次 mutation 中实际规划或执行的刷新动作。
+public struct ListRefreshMetrics: Equatable, Sendable {
+    public let snapshotReconfiguredRowCount: Int
+    public let visibleReconfiguredRowCount: Int
+    public let reloadedRowCount: Int
+    public let visibleReconfiguredSupplementaryCount: Int
+    public let reloadedSectionCount: Int
 
-    /// 创建一次定向 Row 或 Section 刷新的观测摘要。
-    ///
-    /// 调用方通常读取 adapter 返回的实例；此初始化方法主要用于日志、测试以及对
-    /// ListKit 结果进行值语义转发。
     public init(
-        requestedTargetCount: Int = 0,
-        matchedTargetCount: Int = 0,
-        visibleReconfiguredCount: Int = 0,
-        reloadedTargetCount: Int = 0,
-        layoutInvalidated: Bool = false,
-        completionState: ListApplyCompletionState = .submitted
+        snapshotReconfiguredRowCount: Int = 0,
+        visibleReconfiguredRowCount: Int = 0,
+        reloadedRowCount: Int = 0,
+        visibleReconfiguredSupplementaryCount: Int = 0,
+        reloadedSectionCount: Int = 0
     ) {
-        self.requestedTargetCount = requestedTargetCount
-        self.matchedTargetCount = matchedTargetCount
-        self.visibleReconfiguredCount = visibleReconfiguredCount
-        self.reloadedTargetCount = reloadedTargetCount
-        self.layoutInvalidated = layoutInvalidated
-        self.completionState = completionState
+        self.snapshotReconfiguredRowCount = snapshotReconfiguredRowCount
+        self.visibleReconfiguredRowCount = visibleReconfiguredRowCount
+        self.reloadedRowCount = reloadedRowCount
+        self.visibleReconfiguredSupplementaryCount = visibleReconfiguredSupplementaryCount
+        self.reloadedSectionCount = reloadedSectionCount
     }
+
+    public static let zero = ListRefreshMetrics()
 }
 
 /// ListKit 在本次 apply 中调度和观测到的动画、布局与滚动摘要。
@@ -495,19 +522,13 @@ public struct ListApplySummary: Equatable, Sendable {
     /// 新旧 snapshot 中都存在的 Row 数量。
     public let keptRowCount: Int
     /// 新旧 snapshot 中都存在、且 `refreshID` 发生变化的 Row 数量。
-    public let refreshIDChangedCount: Int
-    /// 按当前 refresh strategy 被标记为 diffable reload/reconfigure 的 Row 数量。
-    public let snapshotRefreshCount: Int
-    /// 最终阶段实际重新配置的可见 Row 数量；同步 `apply` 初始 summary 通常为 0。
-    public let visibleRefreshCount: Int
+    public let rowRefreshIDChangedCount: Int
     /// 新旧 snapshot 中都存在、且 `refreshID` 发生变化的 supplementary 数量。
     ///
     /// Collection supplementary view，以及 Table header/footer，都会按 supplementary 统计。
     public let supplementaryRefreshIDChangedCount: Int
-    /// 最终阶段实际重新配置的可见 supplementary 数量；同步 `apply` 初始 summary 通常为 0。
-    ///
-    /// Collection supplementary view，以及 Table header/footer，都会按 supplementary 统计。
-    public let visibleSupplementaryRefreshCount: Int
+    /// 本次 apply 规划或实际执行的刷新动作。
+    public let refreshMetrics: ListRefreshMetrics
     /// 本次 apply 在 diffable 提交前发现的 diagnostics 问题。
     public let diagnosticsIssues: [ListDiagnosticsIssue]
     /// 本次 apply 的提交/完成与动画观测摘要。
@@ -523,11 +544,9 @@ public struct ListApplySummary: Equatable, Sendable {
         deletedRowCount: Int = 0,
         movedRowCount: Int = 0,
         keptRowCount: Int = 0,
-        refreshIDChangedCount: Int = 0,
-        snapshotRefreshCount: Int = 0,
-        visibleRefreshCount: Int = 0,
+        rowRefreshIDChangedCount: Int = 0,
         supplementaryRefreshIDChangedCount: Int = 0,
-        visibleSupplementaryRefreshCount: Int = 0,
+        refreshMetrics: ListRefreshMetrics = .zero,
         diagnosticsIssues: [ListDiagnosticsIssue] = [],
         animation: ListAnimationSummary = ListAnimationSummary()
     ) {
@@ -539,11 +558,9 @@ public struct ListApplySummary: Equatable, Sendable {
         self.deletedRowCount = deletedRowCount
         self.movedRowCount = movedRowCount
         self.keptRowCount = keptRowCount
-        self.refreshIDChangedCount = refreshIDChangedCount
-        self.snapshotRefreshCount = snapshotRefreshCount
-        self.visibleRefreshCount = visibleRefreshCount
+        self.rowRefreshIDChangedCount = rowRefreshIDChangedCount
         self.supplementaryRefreshIDChangedCount = supplementaryRefreshIDChangedCount
-        self.visibleSupplementaryRefreshCount = visibleSupplementaryRefreshCount
+        self.refreshMetrics = refreshMetrics
         self.diagnosticsIssues = diagnosticsIssues
         self.animation = animation
     }
@@ -560,13 +577,31 @@ extension ListApplySummary {
             deletedRowCount: deletedRowCount,
             movedRowCount: movedRowCount,
             keptRowCount: keptRowCount,
-            refreshIDChangedCount: refreshIDChangedCount,
-            snapshotRefreshCount: snapshotRefreshCount,
-            visibleRefreshCount: visibleRefreshCount,
+            rowRefreshIDChangedCount: rowRefreshIDChangedCount,
             supplementaryRefreshIDChangedCount: supplementaryRefreshIDChangedCount,
-            visibleSupplementaryRefreshCount: visibleSupplementaryRefreshCount,
+            refreshMetrics: refreshMetrics,
             diagnosticsIssues: diagnosticsIssues,
             animation: animation
         )
+    }
+}
+
+/// 一次主动 Row 或 Section 刷新的提交与完成摘要。
+public struct ListRefreshSummary: Equatable, Sendable {
+    public let requestedTargetCount: Int
+    public let matchedTargetCount: Int
+    public let refreshMetrics: ListRefreshMetrics
+    public let animation: ListAnimationSummary
+
+    public init(
+        requestedTargetCount: Int = 0,
+        matchedTargetCount: Int = 0,
+        refreshMetrics: ListRefreshMetrics = .zero,
+        animation: ListAnimationSummary = ListAnimationSummary()
+    ) {
+        self.requestedTargetCount = requestedTargetCount
+        self.matchedTargetCount = matchedTargetCount
+        self.refreshMetrics = refreshMetrics
+        self.animation = animation
     }
 }

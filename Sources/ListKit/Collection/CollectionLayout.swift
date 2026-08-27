@@ -19,6 +19,11 @@ public enum ListLayoutScrollDirection: Hashable, Sendable {
 
 /// Compositional layout 计算全局内容区域时采用的系统 inset 来源。
 public enum ListContentInsetsReference: Hashable, Sendable {
+    /// 保留 UIKit 创建 `UICollectionViewCompositionalLayoutConfiguration` 时的系统默认值。
+    ///
+    /// ListKit 不会写入 `contentInsetsReference`。这与显式设置 `.automatic` 不同：
+    /// `.automatic` 会主动把 UIKit 属性改为 `UIContentInsetsReference.automatic`。
+    case systemDefault
     /// 由 UIKit 根据当前容器自动选择 inset 参考。
     case automatic
     /// 不使用系统内容 inset 参考。
@@ -30,8 +35,9 @@ public enum ListContentInsetsReference: Hashable, Sendable {
     /// 以 readable content guide 为参考。
     case readableContent
 
-    var uiKitValue: UIContentInsetsReference {
+    var uiKitOverride: UIContentInsetsReference? {
         switch self {
+        case .systemDefault: return nil
         case .automatic: return .automatic
         case .none: return .none
         case .safeArea: return .safeArea
@@ -43,23 +49,24 @@ public enum ListContentInsetsReference: Hashable, Sendable {
 
 /// Compositional layout 全局配置。
 public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
-    /// compositional layout 的主滚动方向。
-    public var scrollDirection: ListLayoutScrollDirection
-    /// 相邻 Section 之间的间距。
-    public var interSectionSpacing: CGFloat
-    /// 全局内容区域采用的系统 inset 参考。
+    /// compositional layout 的主滚动方向；`nil` 保留 UIKit 默认值。
+    public var scrollDirection: ListLayoutScrollDirection?
+    /// 相邻 Section 之间的间距；`nil` 保留 UIKit 默认值。
+    public var interSectionSpacing: CGFloat?
+    /// 全局内容区域采用的系统 inset 参考；默认保留 UIKit 的系统设置。
     public var contentInsetsReference: ListContentInsetsReference
 
     /// 创建 compositional layout 全局配置。
     ///
     /// - Parameters:
-    ///   - scrollDirection: 主滚动方向。
-    ///   - interSectionSpacing: 相邻 Section 间距。
-    ///   - contentInsetsReference: 全局内容 inset 参考。
+    ///   - scrollDirection: 主滚动方向；`nil` 时不写入 UIKit。
+    ///   - interSectionSpacing: 相邻 Section 间距；`nil` 时不写入 UIKit。
+    ///   - contentInsetsReference: 全局内容 inset 参考。默认 `.systemDefault`，ListKit
+    ///     不主动改写 UIKit；只有传入其他值时才显式覆盖。
     public init(
-        scrollDirection: ListLayoutScrollDirection = .vertical,
-        interSectionSpacing: CGFloat = 0,
-        contentInsetsReference: ListContentInsetsReference = .safeArea
+        scrollDirection: ListLayoutScrollDirection? = nil,
+        interSectionSpacing: CGFloat? = nil,
+        contentInsetsReference: ListContentInsetsReference = .systemDefault
     ) {
         self.scrollDirection = scrollDirection
         self.interSectionSpacing = interSectionSpacing
@@ -68,9 +75,15 @@ public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
 
     @MainActor func makeConfiguration() -> UICollectionViewCompositionalLayoutConfiguration {
         let configuration = UICollectionViewCompositionalLayoutConfiguration()
-        configuration.scrollDirection = scrollDirection.uiKitValue
-        configuration.interSectionSpacing = interSectionSpacing
-        configuration.contentInsetsReference = contentInsetsReference.uiKitValue
+        if let scrollDirection {
+            configuration.scrollDirection = scrollDirection.uiKitValue
+        }
+        if let interSectionSpacing {
+            configuration.interSectionSpacing = interSectionSpacing
+        }
+        if let contentInsetsReference = contentInsetsReference.uiKitOverride {
+            configuration.contentInsetsReference = contentInsetsReference
+        }
         return configuration
     }
 }
@@ -373,6 +386,7 @@ public func GridLayout(
 ///   - itemHeight: 横向 group 高度。
 ///   - spacing: item 间距。
 ///   - contentInsets: section 内容 inset。
+///   - scrollingBehavior: Section 的横向滚动行为。
 /// - Returns: 横向 section layout 描述。
 public func HorizontalLayout(
     itemWidth: ListLayoutDimension = .estimated(44),
@@ -435,8 +449,8 @@ public enum ListUIKitListAppearance: Hashable, Sendable {
 public struct ListUIKitListLayout: Hashable, Sendable {
     /// UIKit list section 的视觉样式。
     public var appearance: ListUIKitListAppearance
-    /// 是否显示系统分隔线。
-    public var showsSeparators: Bool
+    /// 是否显示系统分隔线；`nil` 保留 UIKit 根据 appearance 提供的默认值。
+    public var showsSeparators: Bool?
     /// header 顶部额外间距；`nil` 使用 UIKit 默认值。
     public var headerTopPadding: CGFloat?
 
@@ -444,11 +458,11 @@ public struct ListUIKitListLayout: Hashable, Sendable {
     ///
     /// - Parameters:
     ///   - appearance: 系统 list 外观。
-    ///   - showsSeparators: 是否显示系统分隔线。
+    ///   - showsSeparators: 是否显示系统分隔线；`nil` 时不写入 UIKit。
     ///   - headerTopPadding: header 顶部额外间距。
     public init(
         appearance: ListUIKitListAppearance = .plain,
-        showsSeparators: Bool = true,
+        showsSeparators: Bool? = nil,
         headerTopPadding: CGFloat? = nil
     ) {
         self.appearance = appearance
@@ -458,7 +472,9 @@ public struct ListUIKitListLayout: Hashable, Sendable {
 
     @MainActor func makeConfiguration() -> UICollectionLayoutListConfiguration {
         var configuration = UICollectionLayoutListConfiguration(appearance: appearance.uiKitValue)
-        configuration.showsSeparators = showsSeparators
+        if let showsSeparators {
+            configuration.showsSeparators = showsSeparators
+        }
         if #available(iOS 15.0, tvOS 15.0, *), let headerTopPadding {
             configuration.headerTopPadding = headerTopPadding
         }
@@ -469,7 +485,7 @@ public struct ListUIKitListLayout: Hashable, Sendable {
 /// 创建 UIKit 原生 list section layout。
 public func UIKitListLayout(
     appearance: ListUIKitListAppearance = .plain,
-    showsSeparators: Bool = true,
+    showsSeparators: Bool? = nil,
     headerTopPadding: CGFloat? = nil
 ) -> ListSectionLayout {
     .uiKitListConfiguration(
@@ -559,6 +575,7 @@ public struct ListSectionHorizontalLayout: Hashable, Sendable {
     ///   - itemHeight: 横向 group 高度。
     ///   - spacing: item 间距。
     ///   - contentInsets: section 内容 inset。
+    ///   - scrollingBehavior: Section 的横向滚动行为。
     public init(
         itemWidth: ListLayoutDimension = .estimated(44),
         itemHeight: ListLayoutDimension = .estimated(44),
@@ -702,6 +719,7 @@ public enum ListSectionLayout: Hashable, Sendable {
     ///   - itemHeight: 横向 group 高度。
     ///   - spacing: item 间距。
     ///   - contentInsets: section 内容 inset。
+    ///   - scrollingBehavior: Section 的横向滚动行为。
     /// - Returns: 横向 layout 描述。
     public static func horizontal(
         itemWidth: ListLayoutDimension = .estimated(44),

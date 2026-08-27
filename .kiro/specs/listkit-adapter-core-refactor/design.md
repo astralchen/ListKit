@@ -10,7 +10,7 @@ Core types are internal to ListKit:
 struct ListNodeSnapshot {
     let identity: AnyListIdentity
     let refreshID: AnyListID?
-    let refreshPolicy: RowRefreshPolicy
+    let refreshRule: ListNodeRefreshRule
     let role: ListNodeRole
 }
 
@@ -31,16 +31,15 @@ struct ListSectionSnapshot {
 - `snapshotReconfigureItems` / `snapshotLayoutInvalidationItems` / `snapshotReloadItems`
 - `shouldRunVisibleRefresh`
 - `initialSummary`
-- `completedSummary(visibleRefreshCount:visibleSupplementaryRefreshCount:)`
+- `completedSummary(visibleReconfiguredRowCount:visibleReloadedRowCount:visibleReconfiguredSupplementaryCount:)`
 - old/new row and supplementary node lookups for adapter completion work
 
 Refresh rules:
 
-- `.automatic` / `.refreshIDChangesOnly`: snapshot refresh rows whose policy is `.whenRefreshIDChanges` and whose kept `refreshID` changed.
-- `.visibleOnly`: no snapshot refresh; visible refresh may run.
-- `.reloadKeptRows`: snapshot refresh kept row identities only; no visible refresh.
-- default visible row refresh runs for `.automaticVisible` and `.alwaysVisible`.
-- supplementary visible refresh runs for `.automaticVisible`, `.alwaysVisible`, and `.whenRefreshIDChanges` when the kept supplementary `refreshID` changed.
+- Row 的 trigger、scope 和 action 全部来自 `ListRowRefreshRule`；`.allMatching` 进入 snapshot planner，`.visible` 进入 visible pass。
+- Supplementary 使用独立 `ListSupplementaryRefreshRule`；`.reloadSection` 先覆盖所属 Section 内的 Row 和 supplementary 动作。
+- 同一 Row presentation identity 的冲突按 reload、invalidate reconfigure、plain reconfigure 取最强动作。
+- apply 级刷新覆盖已经删除；普通 apply 只遵循节点声明。
 
 Diagnostics stop rules are centralized. `.warning` and `.assertion` return `shouldApplyDiffable == false`; `.assertion` also calls `assertionFailure`.
 

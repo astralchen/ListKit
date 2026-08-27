@@ -91,7 +91,7 @@
 
 ### Acceptance Criteria
 
-- WHEN supplementary 数据变化 THE SYSTEM SHALL 支持 `.refreshID(...)` 和 `.refreshPolicy(...)`。
+- WHEN supplementary 数据变化 THE SYSTEM SHALL 支持 `.refreshID(...)` 和 `.refresh(...)`。
 - WHEN section header 需要吸顶 THE SYSTEM SHALL 支持 `.stickyHeader()` 元数据。
 - WHEN section 需要 background decoration THE SYSTEM SHALL 支持 `.backgroundDecoration(...)` 元数据。
 - WHEN section 需要多个 custom kind THE SYSTEM SHALL 支持多次 `.supplementary(kind, ...)`。
@@ -106,16 +106,16 @@
 - WHEN 页面设置 `layoutDelegate` THE SYSTEM SHALL 转发常用 `UICollectionViewDelegateFlowLayout` 回调。
 - WHEN 未设置转发 delegate THE SYSTEM SHALL 使用 layout 自身默认值。
 
-## Requirement 10: Apply 级刷新策略
+## Requirement 10: 节点刷新规则与全量刷新
 
-**User Story:** 作为页面开发者，我希望除了 Row 级策略，也能在一次 apply 上选择全局刷新行为。
+**User Story:** 作为页面开发者，我希望节点声明稳定决定刷新行为，并有明确的全量环境刷新入口。
 
 ### Acceptance Criteria
 
-- WHEN 使用 `.automatic` THE SYSTEM SHALL 沿用 Row refresh policy。
-- WHEN 使用 `.visibleOnly` THE SYSTEM SHALL 跳过 diffable reconfigure/reload，只做可见重配。
-- WHEN 使用 `.refreshIDChangesOnly` THE SYSTEM SHALL 只做 diffable reconfigure/reload，跳过默认可见重配。
-- WHEN 使用 `.reloadKeptRows` THE SYSTEM SHALL 对当前 snapshot item 执行 reconfigure/reload。
+- WHEN Row 使用 `.visible` THE SYSTEM SHALL 跳过 diffable item refresh，只操作可见 Cell。
+- WHEN Row 使用 `.allMatching` THE SYSTEM SHALL 通过 snapshot reconfigure/reload kept identity。
+- WHEN 环境整体变化 THE SYSTEM SHALL 使用 `reloadAll()` 刷新当前已提交描述树。
+- WHEN 新描述树需要 reload-data 提交 THE SYSTEM SHALL 使用 `applicationMode: .reloadData`。
 
 ## Requirement 11: UITableView Adapter
 

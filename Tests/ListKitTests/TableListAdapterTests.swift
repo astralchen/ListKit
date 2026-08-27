@@ -135,7 +135,7 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(60))
                 .refreshID(1)
-                .refreshPolicy(.automaticVisible)
+                .refresh(when: .automatic)
             }
             TableSection(.empty) {
                 TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
@@ -164,7 +164,7 @@ final class TableListAdapterTests: XCTestCase {
                     }
                     .height(.fixed(60))
                     .refreshID(2)
-                    .refreshPolicy(.automaticVisible)
+                    .refresh(when: .automatic)
                     .contentTransition(.opacity(duration: 0.35))
                 }
             }
@@ -178,7 +178,7 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(60))
                 .refreshID(3)
-                .refreshPolicy(.automaticVisible)
+                .refresh(when: .automatic)
             }
             TableSection(.empty) {
                 TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
@@ -186,7 +186,11 @@ final class TableListAdapterTests: XCTestCase {
         }
         let supersededResult = await firstApply.value
 
-        XCTAssertEqual(supersededResult.animation.completionState, .superseded)
+        // UIKit may finish the test-host content transition before the awaiting task resumes.
+        // The scheduler core test deterministically covers active-apply superseding.
+        XCTAssertTrue(
+            [.completed, .superseded].contains(supersededResult.animation.completionState)
+        )
         XCTAssertEqual(latestResult.animation.completionState, .completed)
         XCTAssertEqual(latestResult.insertedSectionCount, 1)
         XCTAssertEqual(tableView.numberOfSections, 2)
@@ -217,7 +221,7 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(60))
                 .refreshID(1)
-                .refreshPolicy(.automaticVisible)
+                .refresh(when: .automatic)
             }
             TableSection(.empty) {
                 TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
@@ -247,7 +251,7 @@ final class TableListAdapterTests: XCTestCase {
                     }
                     .height(.fixed(60))
                     .refreshID(2)
-                    .refreshPolicy(.automaticVisible)
+                    .refresh(when: .automatic)
                     .contentTransition(.opacity(duration: 0.35))
                 }
             }
@@ -264,7 +268,7 @@ final class TableListAdapterTests: XCTestCase {
                     }
                     .height(.fixed(60))
                     .refreshID(3)
-                    .refreshPolicy(.automaticVisible)
+                    .refresh(when: .automatic)
                 }
                 TableSection(.empty) {
                     TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
@@ -306,7 +310,7 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(60))
                 .refreshID(1)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges)
             }
         }
         tableView.layoutIfNeeded()
@@ -315,7 +319,7 @@ final class TableListAdapterTests: XCTestCase {
         )
 
         let result = await adapter.apply(
-            options: .init(transaction: .disabled, refreshStrategy: .visibleOnly)
+            options: .init(transaction: .disabled)
         ) {
             TableSection(.messages) {
                 TableRow(1, model: "B", cell: MessageTableCell.self) { cell, value, _ in
@@ -323,13 +327,13 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(60))
                 .refreshID(2)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges)
             }
         }
 
-        XCTAssertEqual(result.refreshIDChangedCount, 1)
-        XCTAssertEqual(result.snapshotRefreshCount, 0)
-        XCTAssertEqual(result.visibleRefreshCount, 1)
+        XCTAssertEqual(result.rowRefreshIDChangedCount, 1)
+        XCTAssertEqual(result.refreshMetrics.snapshotReconfiguredRowCount, 0)
+        XCTAssertEqual(result.refreshMetrics.visibleReconfiguredRowCount, 1)
         XCTAssertEqual(cell.textValue, "B")
     }
 
@@ -346,12 +350,12 @@ final class TableListAdapterTests: XCTestCase {
             TableSection(.messages) {
                 TableRow(1, model: "Kept", cell: MessageTableCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
             TableSection(.empty) {
                 TableRow(2, model: "Removed", cell: MessageTableCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
         }
         let removedIdentity = try XCTUnwrap(
@@ -362,7 +366,7 @@ final class TableListAdapterTests: XCTestCase {
             TableSection(.messages) {
                 TableRow(1, model: "Kept", cell: MessageTableCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
         }
 
@@ -371,7 +375,7 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(deletionResult.keptSectionCount, 1)
         XCTAssertEqual(deletionResult.deletedRowCount, 1)
         XCTAssertEqual(deletionResult.keptRowCount, 1)
-        XCTAssertEqual(deletionResult.refreshIDChangedCount, 0)
+        XCTAssertEqual(deletionResult.rowRefreshIDChangedCount, 0)
         XCTAssertEqual(tableView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), .messages)
         XCTAssertNil(adapter.sectionIdentifier(at: 1))
@@ -384,12 +388,12 @@ final class TableListAdapterTests: XCTestCase {
             TableSection(.messages) {
                 TableRow(1, model: "Kept", cell: MessageTableCell.self) { _, _, _ in }
                     .refreshID(1)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
             TableSection(.empty) {
                 TableRow(2, model: "Reinserted", cell: MessageTableCell.self) { _, _, _ in }
                     .refreshID(2)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
             }
         }
 
@@ -397,7 +401,7 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual(reinsertionResult.insertedSectionCount, 1)
         XCTAssertEqual(reinsertionResult.keptSectionCount, 1)
         XCTAssertEqual(reinsertionResult.insertedRowCount, 1)
-        XCTAssertEqual(reinsertionResult.refreshIDChangedCount, 0)
+        XCTAssertEqual(reinsertionResult.rowRefreshIDChangedCount, 0)
         XCTAssertEqual(tableView.numberOfSections, 2)
         XCTAssertEqual(adapter.sectionIndex(for: .empty), 1)
         XCTAssertEqual(
@@ -653,14 +657,14 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(32))
                 .refreshID(version)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges)
             } footer: {
                 TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
                     view.title = "Footer \(version)"
                 }
                 .height(.fixed(28))
                 .refreshID(version)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges)
             }
         }
 
@@ -704,7 +708,6 @@ final class TableListAdapterTests: XCTestCase {
         let adapter = TableListAdapter<Section>(tableView: tableView)
         let options = ListApplyOptions(
             transaction: .disabled,
-            refreshStrategy: .refreshIDChangesOnly,
             diagnostics: .disabled
         )
 
@@ -715,7 +718,7 @@ final class TableListAdapterTests: XCTestCase {
                     cell: MessageTableCell.self
                 ) { _, _, _ in }
                 .refreshID(1)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges, scope: .allMatching)
             }
         }
 
@@ -726,7 +729,7 @@ final class TableListAdapterTests: XCTestCase {
                     cell: MessageTableCell.self
                 ) { _, _, _ in }
                 .refreshID(2)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges, scope: .allMatching)
                 TableRow(
                     model: Message(id: 2, text: "C", version: 1),
                     cell: MessageTableCell.self
@@ -736,8 +739,8 @@ final class TableListAdapterTests: XCTestCase {
 
         XCTAssertEqual(refreshResult.insertedRowCount, 1)
         XCTAssertEqual(refreshResult.keptRowCount, 1)
-        XCTAssertEqual(refreshResult.refreshIDChangedCount, 1)
-        XCTAssertEqual(refreshResult.snapshotRefreshCount, 1)
+        XCTAssertEqual(refreshResult.rowRefreshIDChangedCount, 1)
+        XCTAssertEqual(refreshResult.refreshMetrics.snapshotReconfiguredRowCount, 1)
 
         let duplicateResult = adapter.apply(
             options: ListApplyOptions(
@@ -1178,21 +1181,21 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(44))
                 .refreshID("stable-row")
-                .refreshPolicy(.never)
+                .refresh(when: .never)
             } header: {
                 TableHeader(MessageHeaderView.self, id: "header") { view, _ in
                     view.title = headerTitle
                 }
                 .height(.fixed(40))
                 .refreshID("stable-header")
-                .refreshPolicy(.never)
+                .refresh(when: .never)
             } footer: {
                 TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
                     view.title = footerTitle
                 }
                 .height(.fixed(40))
                 .refreshID("stable-footer")
-                .refreshPolicy(.never)
+                .refresh(when: .never)
             }
         }
         wait(for: [initialApplyCompleted], timeout: 1)
@@ -1227,11 +1230,11 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertEqual((tableView.footerView(forSection: 0) as? MessageHeaderView)?.title, "Footer 2")
         XCTAssertEqual(completedSummary?.animation.completionState, .completed)
         XCTAssertEqual(completedSummary?.animation.layoutInvalidated, true)
-        XCTAssertEqual(completedSummary?.refreshIDChangedCount, 0)
+        XCTAssertEqual(completedSummary?.rowRefreshIDChangedCount, 0)
         XCTAssertEqual(completedSummary?.supplementaryRefreshIDChangedCount, 0)
-        XCTAssertEqual(completedSummary?.snapshotRefreshCount, 1)
-        XCTAssertEqual(completedSummary?.visibleRefreshCount, 1)
-        XCTAssertEqual(completedSummary?.visibleSupplementaryRefreshCount, 2)
+        XCTAssertEqual(completedSummary?.refreshMetrics.snapshotReconfiguredRowCount, 0)
+        XCTAssertEqual(completedSummary?.refreshMetrics.visibleReconfiguredRowCount, 1)
+        XCTAssertEqual(completedSummary?.refreshMetrics.visibleReconfiguredSupplementaryCount, 2)
         XCTAssertEqual(adapter.lastApplySummary, completedSummary)
     }
 
@@ -1262,7 +1265,7 @@ final class TableListAdapterTests: XCTestCase {
                     }
                     .height(.fixed(44))
                     .refreshID("stable-\(rowID)")
-                    .refreshPolicy(.never)
+                    .refresh(when: .never)
                 }
             }
         }
@@ -1288,12 +1291,12 @@ final class TableListAdapterTests: XCTestCase {
             transaction: .disabled,
             completion: { summary in
                 XCTAssertEqual(summary.matchedTargetCount, 1)
-                XCTAssertEqual(summary.visibleReconfiguredCount, 1)
+                XCTAssertEqual(summary.refreshMetrics.snapshotReconfiguredRowCount, 1)
                 reconfigureCompleted.fulfill()
             }
         )
         XCTAssertEqual(reconfigureSubmission.requestedTargetCount, 1)
-        XCTAssertEqual(reconfigureSubmission.completionState, .submitted)
+        XCTAssertEqual(reconfigureSubmission.animation.completionState, .submitted)
         wait(for: [reconfigureCompleted], timeout: 1)
 
         let reconfiguredFirstCell = try XCTUnwrap(
@@ -1310,11 +1313,12 @@ final class TableListAdapterTests: XCTestCase {
             in: .messages,
             transaction: .disabled,
             completion: { summary in
-                XCTAssertEqual(summary.reloadedTargetCount, 1)
+                XCTAssertEqual(summary.refreshMetrics.reloadedRowCount, 1)
+                XCTAssertEqual(summary.refreshMetrics.reloadedSectionCount, 0)
                 reloadCompleted.fulfill()
             }
         )
-        XCTAssertEqual(reloadSubmission.completionState, .submitted)
+        XCTAssertEqual(reloadSubmission.animation.completionState, .submitted)
         wait(for: [reloadCompleted], timeout: 1)
 
         let reloadedSecondCell = try XCTUnwrap(
@@ -1328,12 +1332,12 @@ final class TableListAdapterTests: XCTestCase {
             in: .messages,
             transaction: .disabled,
             completion: { summary in
-                XCTAssertEqual(summary.completionState, .completed)
+                XCTAssertEqual(summary.animation.completionState, .completed)
                 emptyReloadCompleted.fulfill()
             }
         )
         XCTAssertEqual(emptyReloadSummary.requestedTargetCount, 0)
-        XCTAssertEqual(emptyReloadSummary.completionState, .completed)
+        XCTAssertEqual(emptyReloadSummary.animation.completionState, .submitted)
         wait(for: [emptyReloadCompleted], timeout: 1)
     }
 
@@ -1359,7 +1363,7 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(40))
                 .refreshID("stable-messages-header")
-                .refreshPolicy(.never)
+                .refresh(when: .never)
             }
             .indexTitle("M")
 
@@ -1372,7 +1376,7 @@ final class TableListAdapterTests: XCTestCase {
                 }
                 .height(.fixed(40))
                 .refreshID("stable-empty-header")
-                .refreshPolicy(.never)
+                .refresh(when: .never)
             }
             .indexTitle("E")
         }
@@ -1393,12 +1397,13 @@ final class TableListAdapterTests: XCTestCase {
             transaction: .disabled,
             completion: { summary in
                 XCTAssertEqual(summary.matchedTargetCount, 1)
-                XCTAssertEqual(summary.reloadedTargetCount, 1)
+                XCTAssertEqual(summary.refreshMetrics.reloadedRowCount, 0)
+                XCTAssertEqual(summary.refreshMetrics.reloadedSectionCount, 1)
                 reloadCompleted.fulfill()
             }
         )
         XCTAssertEqual(sectionReloadSubmission.requestedTargetCount, 1)
-        XCTAssertEqual(sectionReloadSubmission.completionState, .submitted)
+        XCTAssertEqual(sectionReloadSubmission.animation.completionState, .submitted)
         wait(for: [reloadCompleted], timeout: 1)
         tableView.layoutIfNeeded()
 
@@ -1437,12 +1442,12 @@ final class TableListAdapterTests: XCTestCase {
             transaction: .disabled
         ) { summary in
             XCTAssertEqual(summary.matchedTargetCount, 1)
-            XCTAssertEqual(summary.visibleReconfiguredCount, 1)
-            XCTAssertEqual(summary.completionState, .completed)
+            XCTAssertEqual(summary.refreshMetrics.visibleReconfiguredRowCount, 1)
+            XCTAssertEqual(summary.animation.completionState, .completed)
             reconfigured.fulfill()
         }
         XCTAssertEqual(reconfigureSubmission.requestedTargetCount, 1)
-        XCTAssertEqual(reconfigureSubmission.completionState, .submitted)
+        XCTAssertEqual(reconfigureSubmission.animation.completionState, .submitted)
         wait(for: [reconfigured], timeout: 1)
 
         let reloaded = expectation(description: "visible row reloaded")
@@ -1453,7 +1458,7 @@ final class TableListAdapterTests: XCTestCase {
             transaction: .disabled
         ) { summary in
             XCTAssertEqual(summary.matchedTargetCount, 1)
-            XCTAssertEqual(summary.reloadedTargetCount, 1)
+            XCTAssertEqual(summary.refreshMetrics.reloadedRowCount, 1)
             reloaded.fulfill()
         }
         wait(for: [reloaded], timeout: 1)
@@ -1492,14 +1497,14 @@ final class TableListAdapterTests: XCTestCase {
                     }
                     .height(.fixed(40))
                     .refreshID(version)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
                 } footer: {
                     TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
                         view.title = footerTitle
                     }
                     .height(.fixed(40))
                     .refreshID(version)
-                    .refreshPolicy(.whenRefreshIDChanges)
+                    .refresh(when: .refreshIDChanges)
                 }
             }
             wait(for: [applyCompleted], timeout: 1)
@@ -1518,7 +1523,7 @@ final class TableListAdapterTests: XCTestCase {
         tableView.layoutIfNeeded()
 
         XCTAssertEqual(result.supplementaryRefreshIDChangedCount, 2)
-        XCTAssertEqual(adapter.lastApplySummary.visibleSupplementaryRefreshCount, 2)
+        XCTAssertEqual(adapter.lastApplySummary.refreshMetrics.visibleReconfiguredSupplementaryCount, 2)
         XCTAssertEqual((tableView.headerView(forSection: 0) as? MessageHeaderView)?.title, "Header 2")
         XCTAssertEqual((tableView.footerView(forSection: 0) as? MessageHeaderView)?.title, "Footer 2")
     }

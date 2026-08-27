@@ -1,15 +1,34 @@
 import UIKit
 
 final class SectionSeparatorDecorationView: UICollectionReusableView {
-    static var separatorColor: UIColor = .separator
-
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = Self.separatorColor
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func apply(_ layoutAttributes: UICollectionViewLayoutAttributes) {
+        super.apply(layoutAttributes)
+        guard let attributes = layoutAttributes as? SectionSeparatorLayoutAttributes else { return }
+        backgroundColor = attributes.separatorColor
+    }
+}
+
+final class SectionSeparatorLayoutAttributes: UICollectionViewLayoutAttributes {
+    var separatorColor: UIColor = .separator
+
+    override func copy(with zone: NSZone? = nil) -> Any {
+        let copy = super.copy(with: zone) as! SectionSeparatorLayoutAttributes
+        copy.separatorColor = separatorColor
+        return copy
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? SectionSeparatorLayoutAttributes,
+              other.separatorColor == separatorColor else { return false }
+        return super.isEqual(object)
     }
 }
 
@@ -19,25 +38,17 @@ final class SectionSeparatorDecorationView: UICollectionReusableView {
 /// 优先使用 `adapter.makeCompositionalLayout()`；只有确实需要布局层自动画分隔线时
 /// 才使用这个 layout 子类。
 open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewCompositionalLayout {
-    /// 自动沿用系统默认 inset 的哨兵值。
-    public static let automaticInsets = NSDirectionalEdgeInsets(
-        top: UIView.noIntrinsicMetric,
-        leading: UIView.noIntrinsicMetric,
-        bottom: UIView.noIntrinsicMetric,
-        trailing: UIView.noIntrinsicMetric
-    )
-
-    /// 分隔线 inset。修改后会自动 invalidate layout。
+    /// 分隔线相对 item frame 的显式 inset，默认不额外缩进。
+    ///
+    /// item frame 已经包含 compositional layout、safe area 和 Section content inset
+    /// 的解析结果，因此这里不提供含义不明确的“自动 inset”哨兵值。
     open var separatorInsets: NSDirectionalEdgeInsets = .zero {
         didSet { invalidateLayout() }
     }
 
-    /// 分隔线颜色。修改后会自动刷新 decoration view。
+    /// 当前 layout 实例的分隔线颜色。修改后会自动刷新 decoration view。
     open var separatorColor: UIColor = .separator {
-        didSet {
-            SectionSeparatorDecorationView.separatorColor = separatorColor
-            invalidateLayout()
-        }
+        didSet { invalidateLayout() }
     }
 
     /// 分隔线高度，默认一像素。
@@ -125,9 +136,13 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
         guard elementKind == UICollectionView.elementKindSectionSeparatorDecoration else {
             return super.layoutAttributesForDecorationView(ofKind: elementKind, at: indexPath)
         }
-        let attributes = UICollectionViewLayoutAttributes(forDecorationViewOfKind: elementKind, with: indexPath)
+        let attributes = SectionSeparatorLayoutAttributes(
+            forDecorationViewOfKind: elementKind,
+            with: indexPath
+        )
         attributes.frame = CGRect(x: 0, y: 0, width: collectionView?.bounds.width ?? 0, height: separatorHeight)
         attributes.zIndex = 2
+        attributes.separatorColor = separatorColor
         return attributes
     }
 
@@ -138,7 +153,7 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
         let indexPath = layoutAttributes.representedElementCategory == .supplementaryView
             ? IndexPath(index: layoutAttributes.indexPath.section)
             : layoutAttributes.indexPath
-        let attributes = UICollectionViewLayoutAttributes(
+        let attributes = SectionSeparatorLayoutAttributes(
             forDecorationViewOfKind: UICollectionView.elementKindSectionSeparatorDecoration,
             with: indexPath
         )
@@ -149,6 +164,7 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
             height: separatorHeight
         ).inset(by: edgeInsets)
         attributes.zIndex = 2
+        attributes.separatorColor = separatorColor
         return attributes
     }
 }

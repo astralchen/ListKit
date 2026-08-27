@@ -15,8 +15,8 @@ public struct AnySupplementary {
     public let kind: String
     /// 调用方提供的内容版本，用于判断可见 supplementary 是否需要重配。
     public let refreshID: AnyListID?
-    /// identity 保持不变时决定自动重配的触发条件。
-    public let refreshPolicy: RowRefreshPolicy
+    /// identity 保持不变时使用的 supplementary 刷新规则。
+    public let refreshRule: ListSupplementaryRefreshRule
 
     let register: @MainActor (UICollectionView) -> Void
     let viewProvider: @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
@@ -69,7 +69,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 identity: supplementary.identity,
                 kind: supplementary.kind,
                 refreshID: AnyListID(refreshID),
-                refreshPolicy: supplementary.refreshPolicy,
+                refreshRule: supplementary.refreshRule,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
                 configureVisibleView: supplementary.configureVisibleView,
@@ -80,17 +80,14 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
         }
     }
 
-    /// 覆盖 supplementary 的刷新策略。
-    ///
-    /// - Parameter policy: 当前 supplementary 的刷新策略。
-    /// - Returns: 应用刷新策略后的 supplementary。
-    public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
+    /// 设置 supplementary 的完整刷新规则。
+    public func refresh(_ rule: ListSupplementaryRefreshRule) -> Self {
         mapSupplementary { supplementary in
             AnySupplementary(
                 identity: supplementary.identity,
                 kind: supplementary.kind,
                 refreshID: supplementary.refreshID,
-                refreshPolicy: policy,
+                refreshRule: rule,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
                 configureVisibleView: supplementary.configureVisibleView,
@@ -99,6 +96,14 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 endDisplayHandler: supplementary.endDisplayHandler
             )
         }
+    }
+
+    /// 分别设置 supplementary 刷新触发和执行动作。
+    public func refresh(
+        when trigger: ListRefreshTrigger,
+        action: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none)
+    ) -> Self {
+        refresh(ListSupplementaryRefreshRule(trigger: trigger, action: action))
     }
 
     /// 给 supplementary 安装 ListKit 管理的点击事件。
@@ -112,7 +117,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 identity: supplementary.identity,
                 kind: supplementary.kind,
                 refreshID: supplementary.refreshID,
-                refreshPolicy: supplementary.refreshPolicy,
+                refreshRule: supplementary.refreshRule,
                 register: supplementary.register,
                 viewProvider: { collectionView, indexPath, context in
                     let view = supplementary.viewProvider(collectionView, indexPath, context)
@@ -137,7 +142,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 identity: supplementary.identity,
                 kind: supplementary.kind,
                 refreshID: supplementary.refreshID,
-                refreshPolicy: supplementary.refreshPolicy,
+                refreshRule: supplementary.refreshRule,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
                 configureVisibleView: supplementary.configureVisibleView,
@@ -158,7 +163,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 identity: supplementary.identity,
                 kind: supplementary.kind,
                 refreshID: supplementary.refreshID,
-                refreshPolicy: supplementary.refreshPolicy,
+                refreshRule: supplementary.refreshRule,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
                 configureVisibleView: supplementary.configureVisibleView,
@@ -364,7 +369,7 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
     private let viewType: View.Type
     private let configure: @MainActor (View, ListContext) -> Void
     private var supplementaryRefreshID: AnyListID?
-    private var supplementaryRefreshPolicy: RowRefreshPolicy = .automaticVisible
+    private var supplementaryRefreshRule: ListSupplementaryRefreshRule = .automatic
     private var supplementaryTapHandler: (@MainActor (ListContext) -> Void)?
     private var supplementaryDisplayHandler: (@MainActor (View, ListContext) -> Void)?
     private var supplementaryEndDisplayHandler: (@MainActor (View, ListContext) -> Void)?
@@ -398,14 +403,18 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
         return copy
     }
 
-    /// 覆盖 supplementary 刷新策略。
-    ///
-    /// - Parameter policy: 当前 supplementary 的刷新策略。
-    /// - Returns: 应用刷新策略后的 supplementary。
-    public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
+    /// 设置 supplementary 的完整刷新规则。
+    public func refresh(_ rule: ListSupplementaryRefreshRule) -> Self {
         var copy = self
-        copy.supplementaryRefreshPolicy = policy
+        copy.supplementaryRefreshRule = rule
         return copy
+    }
+
+    public func refresh(
+        when trigger: ListRefreshTrigger,
+        action: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none)
+    ) -> Self {
+        refresh(ListSupplementaryRefreshRule(trigger: trigger, action: action))
     }
 
     /// 绑定点击事件。
@@ -470,7 +479,7 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
             identity: identity,
             kind: kind,
             refreshID: supplementaryRefreshID,
-            refreshPolicy: supplementaryRefreshPolicy,
+            refreshRule: supplementaryRefreshRule,
             register: { collectionView in
                 collectionView.lk.register(viewType, ofKind: kind)
             },
@@ -507,7 +516,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     private let registerProvider: @MainActor (UICollectionView) -> Void
     private let viewProvider: @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
     private var supplementaryRefreshID: AnyListID?
-    private var supplementaryRefreshPolicy: RowRefreshPolicy = .automaticVisible
+    private var supplementaryRefreshRule: ListSupplementaryRefreshRule = .automatic
     private var supplementaryTapHandler: (@MainActor (ListContext) -> Void)?
 
     /// 用 view 类型作为展示 identity 的 ProviderSupplementary。
@@ -568,14 +577,18 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
         return copy
     }
 
-    /// 覆盖刷新策略。
-    ///
-    /// - Parameter policy: 当前 supplementary 的刷新策略。
-    /// - Returns: 应用刷新策略后的 provider supplementary。
-    public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
+    /// 设置 provider supplementary 的完整刷新规则。
+    public func refresh(_ rule: ListSupplementaryRefreshRule) -> Self {
         var copy = self
-        copy.supplementaryRefreshPolicy = policy
+        copy.supplementaryRefreshRule = rule
         return copy
+    }
+
+    public func refresh(
+        when trigger: ListRefreshTrigger,
+        action: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none)
+    ) -> Self {
+        refresh(ListSupplementaryRefreshRule(trigger: trigger, action: action))
     }
 
     /// 绑定点击事件。
@@ -602,7 +615,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
             identity: identity,
             kind: kind,
             refreshID: supplementaryRefreshID,
-            refreshPolicy: supplementaryRefreshPolicy,
+            refreshRule: supplementaryRefreshRule,
             register: registerProvider,
             viewProvider: { collectionView, indexPath, context in
                 let view = viewProvider(collectionView, indexPath, context)

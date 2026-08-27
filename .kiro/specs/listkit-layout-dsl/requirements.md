@@ -20,6 +20,10 @@
 
 - WHEN adapter 已经 apply sections THE SYSTEM SHALL 提供 `makeCompositionalLayout(fallback:)`。
 - WHEN 页面调用 helper THE SYSTEM SHALL 返回可赋值给 `collectionView.collectionViewLayout` 的 layout。
+- WHEN 页面未显式设置 `scrollDirection`、`interSectionSpacing` 或 `contentInsetsReference` THE SYSTEM SHALL 保留 UIKit layout configuration 的对应系统默认值，且不得修改 collection view 的 `contentInsetAdjustmentBehavior`。
+- WHEN 页面显式设置上述属性 THE SYSTEM SHALL 仅覆盖 layout configuration 的对应属性，并由页面显式管理 scroll view 的 inset adjustment 策略。
+- WHEN `UIKitListLayout` 未显式设置 `showsSeparators` THE SYSTEM SHALL 保留指定 appearance 的 UIKit 默认值。
+- WHEN 使用自绘 compositional separator layout THE SYSTEM SHALL 让 inset 明确相对已解析的 item frame 计算，并保证颜色状态按 layout 实例隔离。
 - WHEN section 未声明 layout THE SYSTEM SHALL 使用 `.list()` 默认布局。
 - WHEN section 使用 `.custom(id:) { ... }` THE SYSTEM SHALL 使用闭包返回的 section，再补充 supplementary layout。
 

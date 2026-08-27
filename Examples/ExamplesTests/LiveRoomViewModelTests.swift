@@ -61,6 +61,53 @@ struct LiveRoomViewModelTests {
         #expect((adminTable.view as? UITableView)?.tableHeaderView != nil)
     }
 
+    @Test func collectionScreensPreserveUIKitInsetDefaults() {
+        let viewController = LiveConsoleDesignViewController()
+        guard let collectionView = viewController.view as? UICollectionView,
+              let layout = collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout else {
+            Issue.record("Live Console should install a compositional collection view")
+            return
+        }
+
+        #expect(collectionView.contentInsetAdjustmentBehavior == .automatic)
+        #expect(collectionView.automaticallyAdjustsScrollIndicatorInsets)
+        #expect(
+            layout.configuration.contentInsetsReference
+                == UICollectionViewCompositionalLayoutConfiguration().contentInsetsReference
+        )
+    }
+
+    @Test func adminTableHeaderUsesDynamicSafeAreaMargins() {
+        let viewController = AdminTableDemoViewController()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 900, height: 420))
+        window.rootViewController = viewController
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        viewController.additionalSafeAreaInsets = UIEdgeInsets(
+            top: 0,
+            left: 48,
+            bottom: 0,
+            right: 24
+        )
+        window.layoutIfNeeded()
+        viewController.viewDidLayoutSubviews()
+
+        guard let tableView = viewController.view as? UITableView,
+              let header = tableView.tableHeaderView,
+              let summary = header.subviews.first(where: {
+                  $0.accessibilityIdentifier == "admin-table-summary"
+              }) else {
+            Issue.record("Admin Table should install its safe-area-aware summary header")
+            return
+        }
+
+        #expect(header.directionalLayoutMargins.leading == 20 + tableView.safeAreaInsets.left)
+        #expect(header.directionalLayoutMargins.trailing == 20 + tableView.safeAreaInsets.right)
+        #expect(summary.frame.minX == header.directionalLayoutMargins.leading)
+        #expect(summary.frame.maxX == header.bounds.width - header.directionalLayoutMargins.trailing)
+    }
+
     @Test func adminEventCellKeepsItsBackgroundOutsideTheEditingContentView() {
         let cell = AdminEventTableCell()
 
@@ -111,12 +158,44 @@ struct LiveRoomViewModelTests {
         let viewModel = LiveRoomViewModel()
         let before = viewModel.liveConsoleSections.first { $0.id == .gifts }?.rows.map(\.refreshID)
 
-        viewModel.selectGift("rocket")
+        let changed = viewModel.selectGift("rose")
 
         let after = viewModel.liveConsoleSections.first { $0.id == .gifts }?.rows.map(\.refreshID)
+        #expect(changed)
         #expect(before != after)
-        #expect(viewModel.selectedGiftID == "rocket")
+        #expect(viewModel.selectedGiftID == "rose")
         #expect(viewModel.liveConsoleSections.first { $0.id == .messages }?.rows.count == 4)
+    }
+
+    @Test func micAndGiftSelectionAreIdempotent() {
+        let viewModel = LiveRoomViewModel()
+
+        #expect(viewModel.selectMicSeat("host") == false)
+        #expect(viewModel.selectMicSeat("missing") == false)
+        #expect(viewModel.selectMicSeat("guest-1"))
+        let micVersions = viewModel.liveConsoleSections
+            .first { $0.id == .micSeats }?.rows.map(\.refreshID)
+        #expect(viewModel.selectMicSeat("guest-1") == false)
+        #expect(viewModel.liveConsoleSections.first { $0.id == .micSeats }?.rows.map(\.refreshID) == micVersions)
+
+        #expect(viewModel.selectGift("rocket") == false)
+        #expect(viewModel.selectGift("missing") == false)
+        #expect(viewModel.selectGift("rose"))
+        let giftVersions = viewModel.liveConsoleSections
+            .first { $0.id == .gifts }?.rows.map(\.refreshID)
+        #expect(viewModel.selectGift("rose") == false)
+        #expect(viewModel.liveConsoleSections.first { $0.id == .gifts }?.rows.map(\.refreshID) == giftVersions)
+    }
+
+    @Test func sendGiftPayloadSelectsAndSendsInOneMutation() {
+        let viewModel = LiveRoomViewModel()
+        let messageCount = viewModel.messageCount
+
+        #expect(viewModel.sendGift("rose"))
+        #expect(viewModel.selectedGiftID == "rose")
+        #expect(viewModel.messageCount == messageCount + 1)
+        #expect(viewModel.pendingScrollMessageID == viewModel.latestMessageID)
+        #expect(viewModel.sendGift("missing") == false)
     }
 
     @Test func handlingModerationEventRemovesItFromTableOutput() {

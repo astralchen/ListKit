@@ -311,7 +311,7 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
     cell.configure(with: user)
 }
 .refreshID(user.profileVersion)
-.refreshPolicy(.whenRefreshIDChanges)
+.refresh(when: .refreshIDChanges)
 ```
 
 同一个 row ID 切换 cell 类型时，`Cell.self` 的变化会自然产生 delete + insert。需要用同一个 cell 类型表达多个展示分支时，可以用 `.variant(...)` 显式区分。
@@ -362,6 +362,25 @@ Row(
 
 不要使用数组下标、随机 UUID 或每次 render 都变化的值作为 Row ID，否则 diffable 无法判断移动和内容更新。
 
+需要把一组 Row 封装成可复用函数或属性时，直接使用公开的 `RowGroup`；Table DSL 使用独立的
+`TableRowGroup`，不需要再定义一层组件协议：
+
+```swift
+func accountRows(_ account: Account) -> RowGroup {
+    RowGroup {
+        Row("profile", model: account, cell: ProfileCell.self) { cell, account, _ in
+            cell.configure(account)
+        }
+        Row("settings", model: account, cell: SettingsCell.self) { cell, account, _ in
+            cell.configure(account)
+        }
+    }
+}
+```
+
+`ListSection.rows`、`outlineRoots`、`supplementaries` 以及 Table 对应存储可从外部模块只读检查；
+写入仍由 builder 和 ListKit 内部维护。
+
 ### 根据状态切换 Cell 类型
 
 `Cell.self` 是 identity 的一部分，所以同一个用户从普通状态切换为 VIP 时，不需要手动拼接 ID：
@@ -391,41 +410,46 @@ Row(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
 
 ### 刷新决策
 
-ListKit 将刷新拆成五层，避免把系统版本、触发时机和 Cell 生命周期混在一起：
+ListKit 将 Row 刷新拆成彼此正交的 trigger、scope、action 和 layout：
 
 | 层级 | 负责内容 | 选择方式 |
 | --- | --- | --- |
-| 触发 | 何时因一次 `apply` 刷新 kept identity | `refreshPolicy` |
-| Action | 保留 Cell 重配，还是进入完整 reload/configuration 路径 | `refreshAction` |
+| Trigger | 何时因一次 `apply` 刷新 kept identity | `ListRefreshTrigger` |
+| Action | 保留 Cell 重配，还是进入完整 reload/configuration 路径 | `ListRowRefreshAction` |
 | Layout | 重配后是否由 ListKit 主动重新测量 | `.reconfigure(layout:)` |
-| Scope | 主动刷新全部匹配项，还是只刷新当前可见匹配项 | `scope: .allMatching / .visible` |
+| Scope | 通过 snapshot 刷新全部匹配项，还是只直接刷新当前可见项 | `.allMatching / .visible` |
 | 结构 | Cell 类型、`presentationID`、`variant` 或列表结构变化 | 重新 `apply`，由 diffable 执行 delete + insert |
 
-#### Refresh Policy
+#### Refresh Trigger
 
-| Policy | 行为 |
+| Trigger | 行为 |
 | --- | --- |
-| `.automaticVisible` | 默认策略；无 `refreshID` 时每次 apply 重配可见 cell，有 `refreshID` 时仅在版本变化后重配。 |
-| `.whenRefreshIDChanges` | `refreshID` 变化时通过 diffable reconfigure/reload 刷新。 |
+| `.automatic` | 默认；未设置 `refreshID` 时每次 apply 刷新，设置后仅在值变化时刷新。 |
+| `.refreshIDChanges` | 仅当新旧 `refreshID` 不相等时刷新。`nil ↔ value` 也属于变化。 |
+| `.everyApply` | identity 保持不变时每次 apply 都刷新。 |
 | `.never` | identity 不变时不主动刷新。 |
-| `.alwaysVisible` | 每次 apply 都重配当前可见 cell。 |
 
-Policy 只决定触发时机。Row 默认 action 是 `.reconfigure(layout: .none)`：使用
-`reconfigureItems` 保留现有 Cell，不进入 `prepareForReuse`，也不额外请求布局失效。
-内容可能改变自适应尺寸时显式选择布局重测；确实需要完整 reload/configuration 路径时选择 reload：
+`refreshID` 始终独立于 presentation identity。默认 Row 规则为
+`.automatic + .visible + .reconfigure(layout: .none)`。`.visible` reconfigure 直接配置当前 Cell；
+visible reload 只筛选当前可见 identity，但由于 diffable data source 禁止直接调用列表 mutation API，
+仍通过 snapshot `reloadItems` 提交，动画来自 `contentAnimation`。`.allMatching` 使用 snapshot `reconfigureItems/reloadItems`，
+动画来自 `snapshotAnimation`。内容可能改变自适应尺寸时显式选择布局重测：
 
 ```swift
 Row(model: message, cell: MessageCell.self) { cell, message, _ in
     cell.configure(message)
 }
 .refreshID(message.version)
-.refreshPolicy(.whenRefreshIDChanges)
-.refreshAction(.reconfigure(layout: .invalidate))
+.refresh(
+    when: .refreshIDChanges,
+    scope: .allMatching,
+    action: .reconfigure(layout: .invalidate)
+)
 
 ProviderRow(id: legacyID, presentationID: legacyPresentationID) { collectionView, indexPath, _ in
     legacyProvider.cell(in: collectionView, at: indexPath)
 }
-.refreshAction(.reload)
+.refresh(when: .everyApply, scope: .allMatching, action: .reload)
 ```
 
 `reload` 请求 `reloadItems` 和完整 provider/configuration 路径，但 UIKit 不保证最终 Cell
@@ -434,34 +458,18 @@ ProviderRow(id: legacyID, presentationID: legacyPresentationID) { collectionView
 
 请保证同一 section 内的 Row ID 唯一，debug diagnostics 会报告重复身份。
 
-Apply 级别还可以覆盖整批列表的刷新行为：
-
-| Strategy | 行为 |
-| --- | --- |
-| `.automatic` | 根据每个 Row 的 policy 自动选择 diffable 或可见刷新。 |
-| `.visibleOnly` | 将自动刷新 scope 限制为可见项；仍尊重每个 Row 的 action。 |
-| `.refreshIDChangesOnly` | 只处理 kept identity 中 `refreshID` 变化的 Row，并尊重其 action。 |
-| `.reloadKeptRows` | 忽略 Row action，reload 所有新旧 snapshot 中都存在的 Row。 |
-
-```swift
-let options = ListApplyOptions(
-    transaction: .automatic,
-    refreshStrategy: .refreshIDChangesOnly
-)
-
-adapter.apply(options: options) {
-    makeSections()
-}
-```
+`apply` 不再提供会覆盖节点声明的全局 refresh strategy。普通 `apply` 遵循每个节点的规则；
+`.reloadData` 用新描述树执行全量 reload-data 提交；`reloadAll()` 刷新已经提交的描述树；
+`reconfigureRows`、`reloadRows` 和 `reloadSections` 用于主动定向刷新。
 
 ### 主动刷新层级
 
-身份、`refreshID` 和 policy 都没有变化，但外部环境发生变化时，可以直接按所需粒度刷新：
+身份、`refreshID` 和规则都没有变化，但外部环境发生变化时，可以直接按所需粒度刷新：
 
 | API | 行为 |
 | --- | --- |
 | `reconfigureRows(forRowID:in:scope:layout:)` | 保留 Cell 并重新配置；仅在 `layout: .invalidate` 时主动重测量。 |
-| `reloadRows(forRowID:in:scope:)` | 通过 diffable `reloadItems` 进入完整 reload/configuration 路径。 |
+| `reloadRows(forRowID:in:scope:)` | 两种 scope 都使用 snapshot `reloadItems`；`.visible` 只把当前可见匹配 identity 放入 snapshot，并使用 `contentAnimation`。 |
 | `reloadSections(_:)` | 通过 diffable `reloadSections` 刷新整个 section，包括 Row 和 header/footer/supplementary。 |
 | `reloadAll()` | 基于当前已提交状态强刷全部内容、section 附属视图、索引标题和布局。 |
 
@@ -692,7 +700,7 @@ Typed background decoration 会由 adapter 自动注册。使用 raw decoration 
 
 ### Supplementary 的刷新与事件
 
-Header/footer 也可以拥有独立的 `refreshID`、刷新策略和点击事件：
+Header/footer 也可以拥有独立的 `refreshID`、Supplementary 刷新规则和点击事件：
 
 ```swift
 let header = Supplementary(
@@ -703,7 +711,10 @@ let header = Supplementary(
     view.configure(title: title, onlineCount: onlineCount)
 }
 .refreshID(headerVersion)
-.refreshPolicy(.whenRefreshIDChanges)
+.refresh(
+    when: .refreshIDChanges,
+    action: .reconfigureVisible(layout: .invalidate)
+)
 .onTap { _ in
     showAllUsers()
 }
@@ -712,6 +723,14 @@ ListSection(.users) {
     makeUserRows()
 }
 .supplementary(header)
+```
+
+Supplementary 不是 diffable item，因此不公开 Row 的 `scope`。默认动作
+`.reconfigureVisible(layout: .none)` 直接配置现有 view；确实需要重新进入 provider 生命周期时，
+使用 `.reloadSection`。后者通过 snapshot `reloadSections` 执行，并会连带重载所属 Section 的 Row：
+
+```swift
+header.refresh(when: .refreshIDChanges, action: .reloadSection)
 ```
 
 自定义 kind 默认可以作为 boundary supplementary；下面把角标挂到每个 item 的右上角：
@@ -781,6 +800,49 @@ collectionView.collectionViewLayout = adapter.makeCompositionalLayout { section,
 ```
 
 新接入代码优先使用 `.list(...)`、`.grid(...)`、`.horizontal(...)` 或 `.custom(...)`；fallback 主要用于渐进迁移。
+
+### 安全区域与系统 Content Insets
+
+`makeCompositionalLayout()` 默认保留 UIKit 的 `scrollDirection`、`interSectionSpacing` 和
+`contentInsetsReference`，Collection View 也应保留 `contentInsetAdjustmentBehavior` 的系统默认值。
+layout 与 scroll view 两侧共同决定可用内容区域以及如何避让导航栏、Tab Bar 与安全区域；默认接入不需要
+写任何配置：
+
+```swift
+collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
+```
+
+只有调用方提供的属性才会写入 UIKit：
+
+```swift
+collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
+    configuration: .init(interSectionSpacing: 4)
+)
+```
+
+`scrollDirection` 和 `interSectionSpacing` 默认是 `nil`；`contentInsetsReference` 默认是
+`.systemDefault`。它们都表示 ListKit 不写入对应 UIKit 属性。`.systemDefault` 不等同于显式
+`.automatic`。只有页面确实要接管 inset 时，才同时检查 layout 与 scroll view 两侧的策略。例如全屏画布
+明确不使用系统 inset：
+
+```swift
+collectionView.contentInsetAdjustmentBehavior = .never
+collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
+    configuration: .init(contentInsetsReference: .none)
+)
+```
+
+不要把 `.none` 与 `.always` 组合在普通页面中：横屏有左右安全区域时，scroll view 会移动内容原点，
+layout 却仍按未扣除安全区域的宽度生成 Section，可能造成右侧越界和非预期横向滚动指示器。
+
+`UIKitListLayout(..., showsSeparators: nil)` 同样保留当前 appearance 的 UIKit 默认值；只有传入
+`true` 或 `false` 时才显式覆盖。`UICollectionViewCompositionalSeparatorLayout` 是 ListKit 自绘
+decoration 工具，没有可继承的系统 separator inset：其 `separatorInsets` 明确相对已经完成 safe-area
+解析的 item frame 计算，默认 `.zero`。每个 layout 实例独立持有颜色，不会影响其他列表。
+
+`UITableView.tableHeaderView` 不属于 Section/Cell 的系统 inset 布局。自定义 Header 应保持 Table View
+完整宽度，只把内部内容约束到随旋转更新的安全区域或动态 layout margins；不要用固定 20pt 直接约束到
+Header 物理边缘。
 
 ## 事件
 
@@ -962,12 +1024,11 @@ print(summary)
 
 `ListTransaction` 可以分别控制 snapshot、outline、layout、content 和 scroll 动画，并默认遵循 Reduce Motion。连续 async apply 可以选择合并到最新状态或按调用顺序串行执行。
 
-需要无动画整体替换或自定义刷新策略时，传入完整 options：
+需要无动画整体替换时，传入完整 options：
 
 ```swift
 let options = ListApplyOptions(
     transaction: .disabled,
-    refreshStrategy: .automatic,
     applicationMode: .reloadData
 )
 
@@ -1024,16 +1085,22 @@ let summary = await adapter.apply {
 print("inserted rows:", summary.insertedRowCount)
 print("deleted rows:", summary.deletedRowCount)
 print("moved rows:", summary.movedRowCount)
-print("refreshID changed rows:", summary.refreshIDChangedCount)
-print("visible refreshed rows:", summary.visibleRefreshCount)
+print("refreshID changed rows:", summary.rowRefreshIDChangedCount)
+print("snapshot reconfigured rows:", summary.refreshMetrics.snapshotReconfiguredRowCount)
+print("visible reconfigured rows:", summary.refreshMetrics.visibleReconfiguredRowCount)
+print("reloaded rows:", summary.refreshMetrics.reloadedRowCount)
+print("visible supplementaries:", summary.refreshMetrics.visibleReconfiguredSupplementaryCount)
+print("reloaded sections:", summary.refreshMetrics.reloadedSectionCount)
 print("completion:", summary.animation.completionState)
 ```
 
 如果较新的 `.coalesceLatest` apply 取代了尚未完成的旧 apply，旧结果会以 `.superseded` 结束；任务在提交前取消时会返回 `.cancelledBeforeCommit`。
-`refreshIDChangedCount` 表示新旧 snapshot 都存在且 refreshID 变化的 Row 数量；
-`snapshotRefreshCount` 表示按当前 refresh strategy 交给 diffable reload/reconfigure 的 Row 数量；
-`visibleRefreshCount` 表示最终阶段实际重新配置的可见 Row 数量。
-Collection supplementary view 与 Table header/footer 会统一计入 supplementary refresh 统计。
+`rowRefreshIDChangedCount` 与 `supplementaryRefreshIDChangedCount` 只描述版本变化；
+`refreshMetrics` 描述真实规划或执行的动作。Section reload 连带更新的 Row 不重复计入
+`reloadedRowCount`；`.cancelledBeforeCommit` 的动作指标全部为零。
+
+主动刷新返回 `ListRefreshSummary`。合并请求中的每个调用方只收到自己目标集合的
+`requestedTargetCount`、`matchedTargetCount` 和动作指标，不会复制整批合并结果。
 
 ## Diagnostics
 

@@ -128,10 +128,8 @@ public struct AnyTableRow {
     public let identity: AnyListIdentity
     /// 调用方提供的内容版本；用于 apply 时判断 kept Row 是否需要刷新。
     public let refreshID: AnyListID?
-    /// identity 保持不变时决定自动刷新的触发条件。
-    public let refreshPolicy: RowRefreshPolicy
-    /// 自动或主动刷新触发后使用的 Cell 生命周期与布局行为。
-    public let refreshAction: ListRefreshAction
+    /// identity 保持不变时使用的完整刷新规则。
+    public let refreshRule: ListRowRefreshRule
     /// controlled selection 的目标状态；`nil` 表示由 UIKit/用户交互维护。
     public let isSelected: Bool?
     /// 是否禁止当前 Row 进入选择状态。
@@ -248,8 +246,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     private let configure: @MainActor (Cell, Model, TableListContext) -> Void
     private var rowVariant: AnyListID?
     private var rowRefreshID: AnyListID?
-    private var rowRefreshPolicy: RowRefreshPolicy = .automaticVisible
-    private var rowRefreshAction: ListRefreshAction = .reconfigure(layout: .none)
+    private var rowRefreshRule: ListRowRefreshRule = .automatic
     private var rowContentTransition: ListContentTransition = .identity
     private var rowIsSelected: Bool?
     private var rowIsSelectionDisabled = false
@@ -358,27 +355,20 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return copy
     }
 
-    /// 设置 `refreshID` 变化时的刷新策略。
-    ///
-    /// - Parameter policy: row 的刷新策略。
-    public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
+    /// 设置 Row 的完整刷新规则。
+    public func refresh(_ rule: ListRowRefreshRule) -> Self {
         var copy = self
-        copy.rowRefreshPolicy = policy
+        copy.rowRefreshRule = rule
         return copy
     }
 
-    /// 设置内容刷新时使用的 Cell 生命周期和布局行为。
-    ///
-    /// `refreshPolicy(_:)` 决定何时刷新；本方法只决定触发后执行 reconfigure、
-    /// reconfigure 并重测量布局，还是 reload。默认值为
-    /// `.reconfigure(layout: .none)`。
-    ///
-    /// - Parameter action: 当前 Row 的刷新动作。
-    /// - Returns: 应用刷新动作后的 TableRow。
-    public func refreshAction(_ action: ListRefreshAction) -> Self {
-        var copy = self
-        copy.rowRefreshAction = action
-        return copy
+    /// 分别设置刷新触发、目标范围和执行动作。
+    public func refresh(
+        when trigger: ListRefreshTrigger,
+        scope: ListRefreshScope = .visible,
+        action: ListRowRefreshAction = .reconfigure(layout: .none)
+    ) -> Self {
+        refresh(ListRowRefreshRule(trigger: trigger, scope: scope, action: action))
     }
 
     /// 设置相同 identity 的可见内容刷新过渡。
@@ -798,8 +788,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return AnyTableRow(
             identity: identity,
             refreshID: rowRefreshID,
-            refreshPolicy: rowRefreshPolicy,
-            refreshAction: rowRefreshAction,
+            refreshRule: rowRefreshRule,
             isSelected: rowIsSelected,
             isSelectionDisabled: rowIsSelectionDisabled,
             isFocusable: rowIsFocusable,
@@ -919,6 +908,13 @@ public struct TableRowGroup: TableRowRepresentable {
         self.rows = rows
     }
 
+    /// 用 Table Row builder 创建可复用的组合 Row。
+    @MainActor public init(
+        @TableRowBuilder content: () -> [any TableRowRepresentable]
+    ) {
+        self.rows = content()
+    }
+
     @MainActor public func eraseToAnyTableRows<SectionID>(sectionID: SectionID) -> [AnyTableRow]
         where SectionID: Hashable & Sendable
     {
@@ -1031,8 +1027,8 @@ public struct AnyTableSectionSupplementary {
     public let identity: AnyListIdentity
     /// 调用方提供的内容版本，用于判断可见 header/footer 是否需要重配。
     public let refreshID: AnyListID?
-    /// identity 保持不变时决定自动重配的触发条件。
-    public let refreshPolicy: RowRefreshPolicy
+    /// identity 保持不变时使用的 supplementary 刷新规则。
+    public let refreshRule: ListSupplementaryRefreshRule
     /// header/footer 的高度策略。
     public let height: TableRowHeight?
 
@@ -1069,7 +1065,7 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,
                 refreshID: supplementary.refreshID,
-                refreshPolicy: supplementary.refreshPolicy,
+                refreshRule: supplementary.refreshRule,
                 height: height,
                 kind: supplementary.kind,
                 register: supplementary.register,
@@ -1089,7 +1085,7 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,
                 refreshID: AnyListID(refreshID),
-                refreshPolicy: supplementary.refreshPolicy,
+                refreshRule: supplementary.refreshRule,
                 height: supplementary.height,
                 kind: supplementary.kind,
                 register: supplementary.register,
@@ -1101,15 +1097,13 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
         }
     }
 
-    /// 设置 header/footer 的刷新策略。
-    ///
-    /// - Parameter policy: 刷新策略。
-    public func refreshPolicy(_ policy: RowRefreshPolicy) -> Self {
+    /// 设置 header/footer 的完整刷新规则。
+    public func refresh(_ rule: ListSupplementaryRefreshRule) -> Self {
         mapSupplementary { supplementary in
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,
                 refreshID: supplementary.refreshID,
-                refreshPolicy: policy,
+                refreshRule: rule,
                 height: supplementary.height,
                 kind: supplementary.kind,
                 register: supplementary.register,
@@ -1119,6 +1113,14 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
                 endDisplayHandler: supplementary.endDisplayHandler
             )
         }
+    }
+
+    /// 分别设置 supplementary 刷新触发和执行动作。
+    public func refresh(
+        when trigger: ListRefreshTrigger,
+        action: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none)
+    ) -> Self {
+        refresh(ListSupplementaryRefreshRule(trigger: trigger, action: action))
     }
 
     /// 监听 header/footer 即将展示。
@@ -1129,7 +1131,7 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,
                 refreshID: supplementary.refreshID,
-                refreshPolicy: supplementary.refreshPolicy,
+                refreshRule: supplementary.refreshRule,
                 height: supplementary.height,
                 kind: supplementary.kind,
                 register: supplementary.register,
@@ -1149,7 +1151,7 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,
                 refreshID: supplementary.refreshID,
-                refreshPolicy: supplementary.refreshPolicy,
+                refreshRule: supplementary.refreshRule,
                 height: supplementary.height,
                 kind: supplementary.kind,
                 register: supplementary.register,
@@ -1195,7 +1197,7 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
         return AnyTableSectionSupplementary(
             identity: identity,
             refreshID: nil,
-            refreshPolicy: .automaticVisible,
+            refreshRule: .automatic,
             height: nil,
             kind: .header,
             register: { tableView in
@@ -1240,7 +1242,7 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
         return AnyTableSectionSupplementary(
             identity: identity,
             refreshID: nil,
-            refreshPolicy: .automaticVisible,
+            refreshRule: .automatic,
             height: nil,
             kind: .footer,
             register: { tableView in
@@ -1306,11 +1308,11 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     /// Section 的稳定数据 ID。
     public let id: SectionID
     /// Section 当前包含的类型擦除 Row。
-    public var rows: [AnyTableRow]
+    public internal(set) var rows: [AnyTableRow]
     /// 可选的自定义 header 描述。
-    public var header: AnyTableSectionSupplementary?
+    public internal(set) var header: AnyTableSectionSupplementary?
     /// 可选的自定义 footer 描述。
-    public var footer: AnyTableSectionSupplementary?
+    public internal(set) var footer: AnyTableSectionSupplementary?
     /// section 选择模式，默认为根据 Row 选择意图自动解析。
     public var selectionMode: ListSelectionMode
     /// Section index bar 中显示的标题；`nil` 表示不贡献索引项。

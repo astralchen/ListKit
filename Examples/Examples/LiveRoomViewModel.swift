@@ -5,6 +5,8 @@ enum LiveRoomCollectionEvent: ListEvent {
     case addMessage
     case sendSelectedGift
     case sendGift(String)
+    case selectMicSeat(String)
+    case selectGift(String)
     case studioModeChanged(Int)
     case roomActivityFilterChanged(RoomActivityFilter)
     case activateCapability(String)
@@ -129,26 +131,37 @@ final class LiveRoomViewModel {
         state.pendingScrollMessageID = message.id
     }
 
-    func toggleMic(_ id: String) {
-        guard let index = state.micSeats.firstIndex(where: { $0.id == id }) else { return }
+    @discardableResult
+    func selectMicSeat(_ id: String) -> Bool {
+        guard let index = state.micSeats.firstIndex(where: { $0.id == id }),
+              !state.micSeats[index].isSpeaking else { return false }
         for seatIndex in state.micSeats.indices {
-            state.micSeats[seatIndex].isSpeaking = seatIndex == index
+            let shouldSpeak = seatIndex == index
+            guard state.micSeats[seatIndex].isSpeaking != shouldSpeak else { continue }
+            state.micSeats[seatIndex].isSpeaking = shouldSpeak
             state.micSeats[seatIndex].version += 1
         }
         state.statusVersion += 1
+        return true
     }
 
-    func selectGift(_ id: String) {
-        guard state.gifts.contains(where: { $0.id == id }) else { return }
+    @discardableResult
+    func selectGift(_ id: String) -> Bool {
+        guard state.gifts.contains(where: { $0.id == id }),
+              state.selectedGiftID != id else { return false }
         state.selectedGiftID = id
         for index in state.gifts.indices {
-            state.gifts[index].isSelected = state.gifts[index].id == id
+            let isSelected = state.gifts[index].id == id
+            guard state.gifts[index].isSelected != isSelected else { continue }
+            state.gifts[index].isSelected = isSelected
             state.gifts[index].version += 1
         }
+        return true
     }
 
-    func sendGift() {
-        guard let selectedGift else { return }
+    @discardableResult
+    func sendGift() -> Bool {
+        guard let selectedGift else { return false }
         if let index = state.gifts.firstIndex(where: { $0.id == selectedGift.id }) {
             state.gifts[index].sentCount += 1
             state.gifts[index].version += 1
@@ -165,6 +178,15 @@ final class LiveRoomViewModel {
         state.heat += selectedGift.price * 18
         state.statusVersion += 1
         state.pendingScrollMessageID = message.id
+        return true
+    }
+
+    /// 在一个状态事务中完成必要选择和发送，供带 gift payload 的列表事件使用。
+    @discardableResult
+    func sendGift(_ id: String) -> Bool {
+        guard state.gifts.contains(where: { $0.id == id }) else { return false }
+        _ = selectGift(id)
+        return sendGift()
     }
 
     func selectStudioMode(_ index: Int) {
@@ -271,8 +293,8 @@ final class LiveRoomViewModel {
         state.diagnostics.deletedRowCount = summary.deletedRowCount
         state.diagnostics.movedRowCount = summary.movedRowCount
         state.diagnostics.keptRowCount = summary.keptRowCount
-        state.diagnostics.refreshIDChangedCount = summary.refreshIDChangedCount
-        state.diagnostics.visibleRefreshCount = summary.visibleRefreshCount
+        state.diagnostics.rowRefreshIDChangedCount = summary.rowRefreshIDChangedCount
+        state.diagnostics.visibleReconfiguredRowCount = summary.refreshMetrics.visibleReconfiguredRowCount
         state.diagnostics.contentTransitionCount = summary.animation.contentTransitionCount
         state.diagnostics.anchorCompensation = summary.animation.anchorCompensation
         state.diagnostics.lastCompletionState = String(describing: summary.animation.completionState)
@@ -427,7 +449,7 @@ final class LiveRoomViewModel {
                 }
             }
             .refreshID(model)
-            .refreshPolicy(.automaticVisible)
+            .refresh(when: .automatic)
         } layout: {
             ListLayout(
                 itemHeight: .absolute(274),
@@ -442,7 +464,7 @@ final class LiveRoomViewModel {
                 cell.configure(model)
             }
             .refreshID(statusViewModel.refreshVersion)
-            .refreshPolicy(.whenRefreshIDChanges)
+            .refresh(when: .refreshIDChanges, scope: .allMatching)
         } layout: {
             ListLayout(
                 itemHeight: .absolute(112),
@@ -574,7 +596,7 @@ final class LiveRoomViewModel {
                 }
             }
             .refreshID(model)
-            .refreshPolicy(.automaticVisible)
+            .refresh(when: .automatic)
         } layout: {
             ListLayout(
                 itemHeight: .absolute(42),
@@ -590,7 +612,7 @@ final class LiveRoomViewModel {
                     cell.configure(message)
                 }
                 .refreshID(message.refreshToken)
-                .refreshPolicy(.automaticVisible)
+                .refresh(when: .automatic)
                 .contentTransition(.opacity)
                 .selectionDisabled()
                 .contextMenu { _ in
@@ -622,7 +644,7 @@ final class LiveRoomViewModel {
                 cell.configure(model)
             }
             .refreshID(model.refreshVersion)
-            .refreshPolicy(.whenRefreshIDChanges)
+            .refresh(when: .refreshIDChanges, scope: .allMatching)
             .selectionDisabled()
         } layout: {
             ListLayout(
@@ -634,7 +656,7 @@ final class LiveRoomViewModel {
 
     private func makeMicSeatsSection() -> ListSection<LiveRoomSection> {
         ListSection(.micSeats) {
-            ForEach(state.micSeats, id: \.id) { [weak self] seat in
+            ForEach(state.micSeats, id: \.id) { seat in
                 Row(model: seat, cell: MicSeatCell.self) { cell, seat, _ in
                     cell.configure(seat)
                 }
@@ -642,11 +664,11 @@ final class LiveRoomViewModel {
                 .selected(seat.isSpeaking)
                 .focusable()
                 .selectionFollowsFocus()
-                .onSelect { seat, _ in
-                    self?.toggleMic(seat.id)
+                .onSelect { seat, context in
+                    context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
                 }
-                .onPrimaryAction { seat, _ in
-                    self?.toggleMic(seat.id)
+                .onPrimaryAction { seat, context in
+                    context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
                 }
             }
         } layout: {
@@ -680,7 +702,7 @@ final class LiveRoomViewModel {
                     cell.configure(message)
                 }
                 .refreshID(message.refreshToken)
-                .refreshPolicy(.automaticVisible)
+                .refresh(when: .automatic)
                 .contentTransition(.opacity)
                 .selectionDisabled()
                 .contextMenu { _ in
@@ -713,21 +735,21 @@ final class LiveRoomViewModel {
 
     private func makeGiftsSection() -> ListSection<LiveRoomSection> {
         ListSection(.gifts) {
-            ForEach(state.gifts, id: \.id) { [weak self] gift in
+            ForEach(state.gifts, id: \.id) { gift in
                 Row(model: gift, cell: GiftCell.self) { cell, gift, _ in
                     cell.configure(gift)
                 }
                 .refreshID(gift.refreshToken)
-                .refreshPolicy(.whenRefreshIDChanges)
+                .refresh(when: .refreshIDChanges, scope: .allMatching)
                 .selected(gift.isSelected)
                 .focusable()
                 .selectionFollowsFocus()
                 .springLoadingEnabled()
-                .onSelect { gift, _ in
-                    self?.selectGift(gift.id)
+                .onSelect { gift, context in
+                    context.send(LiveRoomCollectionEvent.selectGift(gift.id))
                 }
-                .onPrimaryAction { gift, _ in
-                    self?.selectGift(gift.id)
+                .onPrimaryAction { gift, context in
+                    context.send(LiveRoomCollectionEvent.selectGift(gift.id))
                 }
                 .onHighlightChange { highlighted, context in
                     guard let cell = context.collectionViewIfAvailable?.cellForItem(at: context.indexPath) else { return }
@@ -771,7 +793,7 @@ final class LiveRoomViewModel {
                 cell.configure(self?.state.diagnostics ?? ApplyDiagnostics())
             }
             .refreshID(state.diagnostics.refreshVersion)
-            .refreshPolicy(.alwaysVisible)
+            .refresh(when: .everyApply)
         } layout: {
             ListLayout(
                 itemHeight: .estimated(58),
@@ -787,7 +809,7 @@ final class LiveRoomViewModel {
                 cell.configure(model)
             }
             .refreshID(model)
-            .refreshPolicy(.automaticVisible)
+            .refresh(when: .automatic)
             .onCellEvent({ cell, trigger in
                 cell.onAddMessage = trigger
             }, send: { _ in
