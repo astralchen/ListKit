@@ -117,9 +117,9 @@ public enum ListLayoutDimension: Hashable, Sendable {
 
     /// 用于在 boundary supplementary 前后预留空间。
     ///
-    /// - Important: `NSCollectionLayoutBoundarySupplementaryItem` 是贴在 section 边界上的视图，
-    /// 需要由 ListKit 为全宽 `.top` / `.bottom` 的 header/footer
-    /// 使用 absolute 或 estimated 值补齐 content inset，让 DSL 写法符合“header 在 rows 上方”的直觉。
+    /// - Important: 仅用于 `extendsBoundary == false` 的全宽 `.top` / `.bottom` 补充视图。
+    /// 开启 `extendsBoundary` 时，UIKit 根据补充视图的实际尺寸扩展 section，
+    /// ListKit 不再额外补齐 content inset，避免把 absolute 或 estimated 高度重复计入间距。
     var estimatedContentInsetValue: CGFloat? {
         switch self {
         case .absolute(let value), .estimated(let value):
@@ -1007,7 +1007,9 @@ public struct ListSupplementaryLayout: Hashable, Sendable {
         }
 
         switch placement {
-        case .boundary(let alignment, _, _, _):
+        case .boundary(let alignment, let extendsBoundary, _, _):
+            // UIKit 已为扩展边界的补充视图占位，只保留调用方显式声明的 section inset。
+            guard !extendsBoundary else { return .zero }
             switch alignment {
             case .top:
                 return ListLayoutInsets(top: inset)

@@ -5,6 +5,47 @@ import ListKit
 /// 只使用公开模块接口编译，防止公共 DSL 或只读描述树能力意外退回 internal。
 @MainActor
 final class ListKitPublicAPITests: XCTestCase {
+    func testExtendingBoundariesKeepOnlyExplicitSectionInsets() {
+        for height in [ListLayoutDimension.estimated(64), .absolute(64)] {
+            let section = makeBoundarySpacingSection(height: height, extendsBoundary: true)
+                .makeCompositionalLayoutSection()
+
+            XCTAssertEqual(section.contentInsets.top, 8)
+            XCTAssertEqual(section.contentInsets.bottom, 12)
+            XCTAssertEqual(section.contentInsets.leading, 16)
+            XCTAssertEqual(section.contentInsets.trailing, 20)
+            XCTAssertEqual(section.boundarySupplementaryItems.count, 2)
+            XCTAssertTrue(section.boundarySupplementaryItems.allSatisfy(\.extendsBoundary))
+        }
+    }
+
+    func testNonExtendingBoundariesRetainReservedSpace() {
+        let section = makeBoundarySpacingSection(height: .estimated(64), extendsBoundary: false)
+            .makeCompositionalLayoutSection()
+
+        XCTAssertEqual(section.contentInsets.top, 72)
+        XCTAssertEqual(section.contentInsets.bottom, 76)
+        XCTAssertEqual(section.contentInsets.leading, 16)
+        XCTAssertEqual(section.contentInsets.trailing, 20)
+        XCTAssertFalse(section.boundarySupplementaryItems.contains(where: \.extendsBoundary))
+    }
+
+    private func makeBoundarySpacingSection(
+        height: ListLayoutDimension,
+        extendsBoundary: Bool
+    ) -> ListSection<Int> {
+        ListSection(0) {
+            Row(1, model: "Content", cell: UICollectionViewCell.self) { _, _, _ in }
+        } header: {
+            Header(UICollectionReusableView.self, id: "header") { _, _ in }
+                .layout(height: height, extendsBoundary: extendsBoundary)
+        } footer: {
+            Footer(UICollectionReusableView.self, id: "footer") { _, _ in }
+                .layout(height: height, extendsBoundary: extendsBoundary)
+        }
+        .layout(.list(contentInsets: .init(top: 8, leading: 16, bottom: 12, trailing: 20)))
+    }
+
     func testRefreshRulesGroupsAndDescriptionStorageArePublic() {
         let rowRule = ListRowRefreshRule(
             trigger: .refreshIDChanges,
