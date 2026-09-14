@@ -1104,6 +1104,20 @@ print("completion:", summary.animation.completionState)
 
 ## Diagnostics
 
+库内部使用 Apple 统一日志 `Logger`，subsystem 为 `ListKit`。
+apply summary 使用 `Apply` category 和 `debug` 级别；结构与布局诊断使用
+`Diagnostics` category 和 `warning` 级别。可在 Xcode 控制台或 Console.app 中按
+subsystem/category 筛选，查看 summary 时需启用 Debug 级别日志。
+
+普通 apply summary 日志默认不打印。需要查看时，在 Xcode → Edit Scheme → Run →
+Arguments → Arguments Passed On Launch 中添加并勾选 `-ListKitLogApplySummary true`
+（参数名为 `-ListKitLogApplySummary`，紧随其后的值为 `true`）。
+只有在 DEBUG 构建、该参数值为 `true` 且 `logsApplySummary == true` 时才会输出；
+未添加参数、缺少值或值不是 `true` 时均不打印。
+`logsApplySummary: false` 始终关闭 summary 日志，Release 构建不会输出。
+Table 和 Collection 共用此开关，summary 数据仍照常生成和返回。
+诊断警告不受该启动参数控制，仍按 diagnostics 配置处理。
+
 默认配置会在 diffable apply 前检查重复 identity 和无效布局，问题存在时打印诊断并跳过本次提交，避免 UIKit 用难以定位的异常崩溃：
 
 ```swift
@@ -1188,6 +1202,17 @@ Collection 的原生 drag/drop 仍可直接使用 `dragDelegate` 与 `dropDelega
 
 ## 示例与测试
 
+使用 Xcode 打开根目录的 `ListKit.xcworkspace`，即可在同一个工作空间中管理
+`ListKit` Swift Package 和 `Examples` 示例工程：
+
+```bash
+open ListKit.xcworkspace
+```
+
+`Examples` scheme 用于运行示例，`ExamplesUnitTests` 用于运行示例单元测试；
+`ListKit` scheme 用于构建库和运行 `Tests/ListKitTests` 中的库测试。
+示例继续通过本地 Swift Package 依赖根目录的 ListKit，修改库代码后可直接在示例中验证。
+
 `Examples/` 包含 collection 与 table 两套完整示例，演示 layout、selection、事件、刷新、swipe、context menu 和 reordering。
 
 ListKit 是 iOS/UIKit 框架，有效验收项是 iOS Simulator 或 generic iOS Simulator 的
@@ -1198,7 +1223,7 @@ UIKit，因此 `no such module 'UIKit'` 不作为 ListKit 的有效失败信号�
 
 ```bash
 xcodebuild -quiet \
-  -project Examples/Examples.xcodeproj \
+  -workspace ListKit.xcworkspace \
   -scheme ExamplesUnitTests \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath /tmp/ListKitDerivedData \
@@ -1209,7 +1234,7 @@ xcodebuild -quiet \
 
 ```bash
 xcodebuild -quiet \
-  -project Examples/Examples.xcodeproj \
+  -workspace ListKit.xcworkspace \
   -scheme ExamplesUnitTests \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=26.5' \
   -derivedDataPath /tmp/ListKitDerivedData \
@@ -1218,6 +1243,8 @@ xcodebuild -quiet \
 
 可以通过 `xcrun simctl list devices available` 查看本机可用模拟器，并按实际安装的
 设备名和系统版本替换 `-destination`。
+
+运行库测试时，将上面命令中的 `-scheme ExamplesUnitTests` 替换为 `-scheme ListKit`。
 
 读取最近一次测试摘要：
 

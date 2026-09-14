@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // MARK: - Shared Apply Core
 
@@ -1121,27 +1122,40 @@ extension ListDiagnostics {
 }
 
 enum ListApplyLogger {
+    private static let applyLogger = Logger(subsystem: "ListKit", category: "Apply")
+    private static let diagnosticsLogger = Logger(subsystem: "ListKit", category: "Diagnostics")
+
     /// DEBUG 下按 diagnostics 配置输出结构问题。
     static func logDiagnostics(issues: [ListDiagnosticsIssue], options: ListApplyOptions) {
+        logDiagnostics(issues: issues, options: options.diagnostics)
+    }
+
+    /// DEBUG 下统一输出结构与布局诊断警告。
+    static func logDiagnostics(issues: [ListDiagnosticsIssue], options: ListDiagnosticsOptions) {
         #if DEBUG
-        guard options.diagnostics.mode != .disabled else { return }
+        guard options.mode != .disabled else { return }
         for issue in issues {
-            print(issue.message)
+            diagnosticsLogger.warning("\(issue.message, privacy: .public)")
         }
         #endif
     }
 
-    /// DEBUG 下输出一次 apply 的结构、刷新、动画和诊断统计。
+    /// DEBUG 下设置 -ListKitLogApplySummary true 后，按配置输出一次 apply 的统计。
     static func logApplySummary(
         _ summary: ListApplySummary,
         options: ListApplyOptions,
         prefix: String = "ListKit apply summary"
     ) {
         #if DEBUG
-        guard options.diagnostics.logsApplySummary else { return }
-        print(
+        let arguments = ProcessInfo.processInfo.arguments
+        guard options.diagnostics.logsApplySummary,
+              let argumentIndex = arguments.firstIndex(of: "-ListKitLogApplySummary"),
+              argumentIndex + 1 < arguments.count,
+              arguments[argumentIndex + 1] == "true" else { return }
+        let message = (
             "\(prefix): sectionInserted=\(summary.insertedSectionCount), sectionDeleted=\(summary.deletedSectionCount), sectionMoved=\(summary.movedSectionCount), sectionKept=\(summary.keptSectionCount), rowInserted=\(summary.insertedRowCount), rowDeleted=\(summary.deletedRowCount), rowMoved=\(summary.movedRowCount), rowKept=\(summary.keptRowCount), rowRefreshIDChanged=\(summary.rowRefreshIDChangedCount), snapshotReconfiguredRows=\(summary.refreshMetrics.snapshotReconfiguredRowCount), visibleReconfiguredRows=\(summary.refreshMetrics.visibleReconfiguredRowCount), reloadedRows=\(summary.refreshMetrics.reloadedRowCount), supplementaryRefreshIDChanged=\(summary.supplementaryRefreshIDChangedCount), visibleReconfiguredSupplementaries=\(summary.refreshMetrics.visibleReconfiguredSupplementaryCount), reloadedSections=\(summary.refreshMetrics.reloadedSectionCount), animation=\(summary.animation.completionState), snapshotAnimated=\(summary.animation.snapshotAnimated), outlineAnimated=\(summary.animation.outlineAnimatedSectionCount), contentTransitions=\(summary.animation.contentTransitionCount), layoutAnimated=\(summary.animation.layoutAnimated), scrollAnimated=\(summary.animation.scrollAnimated), anchorCompensation=\(summary.animation.anchorCompensation), reduceMotion=\(summary.animation.reduceMotionApplied), diagnostics=\(summary.diagnosticsIssues.count)"
         )
+        applyLogger.debug("\(message, privacy: .public)")
         #endif
     }
 }

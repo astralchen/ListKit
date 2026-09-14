@@ -62,11 +62,6 @@
 			path = ExamplesUITests;
 			sourceTree = "<group>";
 		};
-		77D900122FE0100000D96158 /* ../Tests/ListKitTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ../Tests/ListKitTests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,7 +95,6 @@
 			children = (
 				77D8FEAB2FDFED7600D96158 /* Examples */,
 				77D8FEC22FDFED7800D96158 /* ExamplesTests */,
-				77D900122FE0100000D96158 /* ../Tests/ListKitTests */,
 				77D8FECC2FDFED7800D96158 /* ExamplesUITests */,
 				77D8FEAA2FDFED7600D96158 /* Products */,
 			);
@@ -157,7 +151,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				77D8FEC22FDFED7800D96158 /* ExamplesTests */,
-				77D900122FE0100000D96158 /* ../Tests/ListKitTests */,
 			);
 			name = ExamplesTests;
 			packageProductDependencies = (
@@ -419,6 +412,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
@@ -477,6 +471,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 6.0;
 				VALIDATE_PRODUCT = YES;

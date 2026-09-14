@@ -2596,23 +2596,11 @@ where SectionID: Hashable & Sendable {
     ) {
         guard !issues.isEmpty, options.mode != .disabled else { return }
         lastLayoutDiagnostics.append(contentsOf: issues)
-        logLayoutDiagnostics(issues: issues, options: options)
+        ListApplyLogger.logDiagnostics(issues: issues, options: options)
 
         if options.mode == .assertion {
             assertionFailure(issues.map(\.message).joined(separator: "\n"))
         }
-    }
-
-    private func logLayoutDiagnostics(
-        issues: [ListDiagnosticsIssue],
-        options: ListDiagnosticsOptions
-    ) {
-        #if DEBUG
-        guard options.mode != .disabled else { return }
-        for issue in issues {
-            print(issue.message)
-        }
-        #endif
     }
 
     private func unresolvedLayoutIDIssue(

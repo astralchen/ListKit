@@ -47,14 +47,14 @@ public enum ListDiagnosticsMode: Equatable, Sendable {
 public struct ListDiagnosticsOptions: Sendable {
     /// 发现问题时禁用检查、跳过提交并警告，或触发 assertion。
     public var mode: ListDiagnosticsMode
-    /// 是否在 DEBUG 构建中输出每次 apply 的 summary。
+    /// 是否允许在 DEBUG 构建中输出每次 apply 的 summary；还需设置启动参数 -ListKitLogApplySummary true。
     public var logsApplySummary: Bool
 
     /// 创建 diagnostics 配置。
     ///
     /// - Parameters:
     ///   - mode: diagnostics 处理方式。
-    ///   - logsApplySummary: 是否输出 apply summary 日志。
+    ///   - logsApplySummary: 是否允许输出 apply summary 日志，仅在 DEBUG 构建且启动参数为 -ListKitLogApplySummary true 时生效。
     public init(mode: ListDiagnosticsMode = .warning, logsApplySummary: Bool = true) {
         self.mode = mode
         self.logsApplySummary = logsApplySummary
@@ -62,7 +62,7 @@ public struct ListDiagnosticsOptions: Sendable {
 
     /// 禁用结构拦截和 summary 日志的配置。
     public static let disabled = ListDiagnosticsOptions(mode: .disabled, logsApplySummary: false)
-    /// DEBUG 场景的默认配置：发现问题时警告并输出 apply summary。
+    /// DEBUG 场景的默认配置：发现问题时警告，设置 -ListKitLogApplySummary true 后输出 apply summary。
     public static let debugDefault = ListDiagnosticsOptions()
 }
 
