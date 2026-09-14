@@ -521,7 +521,7 @@ final class ListPendingMutationRequest {
         return CancellationResult(matched: false, shouldRemoveRequest: false, callbacks: [])
     }
 
-    /// adapter 释放时结束尚未进入 commit gate 的全部 subscriber。
+    /// 列表或 adapter 释放时，结束尚未进入 commit gate 的全部 subscriber。
     func cancelBeforeCommitCallbacks() -> [() -> Void] {
         guard state == .queued else { return [] }
         state = .finished
@@ -614,6 +614,17 @@ final class ListMutationScheduler {
         guard !(first.requiresCommittedUpdates && hasUncommittedUpdates) else { return false }
         pending.removeFirst().start()
         return true
+    }
+
+    /// 取消所有尚未提交的请求，并逐一完成原始 subscriber 的取消回调。
+    ///
+    /// 先移除队列并提取全部回调，再通知调用方，避免回调重入时启动待取消请求，
+    /// 或重复完成已经取消的 subscriber。正在执行的请求仍由其 UIKit completion 收尾。
+    func cancelPendingRequests() {
+        let requests = pending
+        pending.removeAll()
+        let callbacks = requests.flatMap { $0.cancelBeforeCommitCallbacks() }
+        callbacks.forEach { $0() }
     }
 
     /// 取消一个尚未进入 commit gate 的 async subscriber。

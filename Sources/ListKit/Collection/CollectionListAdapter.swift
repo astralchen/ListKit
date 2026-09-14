@@ -4,6 +4,9 @@ import UIKit
 
 /// UICollectionView 列表适配器。
 ///
+/// 适配器弱持有列表。列表释放后，新的更新和尚未提交的排队请求以
+/// `.cancelledBeforeCommit` 结束；已经提交的更新仍由原 UIKit 完成回调收尾。
+///
 /// - Usage:
 /// ```swift
 /// private lazy var adapter = CollectionListAdapter<Section>(collectionView: collectionView)
@@ -287,6 +290,9 @@ where SectionID: Hashable & Sendable {
         subscriberID: UUID? = nil,
         completion: ((ListApplySummary) -> Void)?
     ) -> ListApplySummary {
+        guard collectionView != nil else {
+            return cancelApplyBeforeCommit(transaction: transaction, completion: completion)
+        }
         let request = ListReloadAllRequest(
             transaction: transaction,
             transition: transition,
@@ -636,6 +642,10 @@ where SectionID: Hashable & Sendable {
         completion: ((ListApplySummary) -> Void)?,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
     ) -> ListApplySummary {
+        // 只在本次同步提交期间强持有视图；不把页面生命周期延长到异步动画完成后。
+        guard let collectionView else {
+            return cancelApplyBeforeCommit(transaction: options.transaction, completion: completion)
+        }
         let newSections = content()
         let resolvedTransaction = options.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
@@ -755,7 +765,7 @@ where SectionID: Hashable & Sendable {
         let generation = applyGeneration
         sections = newSections
         layoutSignature = newLayoutSignature
-        rebuildLookupTables()
+        rebuildLookupTables(in: collectionView)
         registerBackgroundDecorationsIfNeeded()
         configureSelectionBehavior()
 
@@ -974,6 +984,9 @@ where SectionID: Hashable & Sendable {
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
         let requestedTargetCount = Set(rowIDs).count
+        guard collectionView != nil else {
+            return cancelRefreshBeforeCommit(requestedTargetCount: requestedTargetCount, completion: completion)
+        }
         let subscriber = ListRowRefreshSubscriber(
             id: subscriberID,
             rowIDs: Set(rowIDs),
@@ -1281,6 +1294,9 @@ where SectionID: Hashable & Sendable {
         subscriberID: UUID? = nil,
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
+        guard collectionView != nil else {
+            return cancelRefreshBeforeCommit(requestedTargetCount: Set(sectionIDs).count, completion: completion)
+        }
         let subscriber = ListSectionReloadSubscriber(
             id: subscriberID,
             sectionIDs: Set(sectionIDs),
@@ -1603,9 +1619,44 @@ where SectionID: Hashable & Sendable {
         performNextPendingMutationIfNeeded()
     }
 
-    /// scheduler 空闲时严格启动统一 FIFO 的队首节点。
+    /// 列表已释放时，拒绝新的 apply 或 reloadAll，并完成尚未提交的排队请求。
+    private func cancelApplyBeforeCommit(
+        transaction: ListTransaction,
+        completion: ((ListApplySummary) -> Void)?
+    ) -> ListApplySummary {
+        let summary = ListApplySummary(animation: ListAnimationSummary(
+            completionState: .cancelledBeforeCommit,
+            reduceMotionApplied: transaction.resolved(
+                reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+            ).reduceMotionApplied
+        ))
+        lastApplySummary = summary
+        mutationScheduler.cancelPendingRequests()
+        completion?(summary)
+        return summary
+    }
+
+    /// 列表已释放时，保留刷新请求的目标数量并以取消状态完成回调。
+    private func cancelRefreshBeforeCommit(
+        requestedTargetCount: Int,
+        completion: ((ListRefreshSummary) -> Void)?
+    ) -> ListRefreshSummary {
+        let summary = ListRefreshSummary(
+            requestedTargetCount: requestedTargetCount,
+            animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+        )
+        mutationScheduler.cancelPendingRequests()
+        completion?(summary)
+        return summary
+    }
+
+    /// scheduler 空闲且列表仍存在时启动队首节点；列表释放后取消全部待提交请求。
     private func performNextPendingMutationIfNeeded() {
-        let hasUncommittedUpdates = collectionView?.hasUncommittedUpdates == true
+        guard let collectionView else {
+            mutationScheduler.cancelPendingRequests()
+            return
+        }
+        let hasUncommittedUpdates = collectionView.hasUncommittedUpdates
         if mutationScheduler.startNext(hasUncommittedUpdates: hasUncommittedUpdates) { return }
         if !mutationScheduler.isExecuting,
            mutationScheduler.hasPendingRequests,
@@ -1633,6 +1684,9 @@ where SectionID: Hashable & Sendable {
         options: ListApplyOptions,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
     ) async -> ListApplySummary {
+        guard collectionView != nil else {
+            return cancelApplyBeforeCommit(transaction: options.transaction, completion: nil)
+        }
         let builtSections = content()
         let resolved = options.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
@@ -2573,18 +2627,18 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    private func rebuildLookupTables() {
+    private func rebuildLookupTables(in collectionView: UICollectionView) {
         rowsByIdentity = [:]
         supplementariesByKindAndSection = [:]
 
         for section in sections {
             let sectionID = AnyListID(section.id)
             for row in section.rows {
-                row.register(collectionView!)
+                row.register(collectionView)
                 rowsByIdentity[row.identity] = row
             }
             for supplementary in section.supplementaries {
-                supplementary.register(collectionView!)
+                supplementary.register(collectionView)
                 supplementariesByKindAndSection[SupplementaryKey(kind: supplementary.kind, sectionID: sectionID)] = supplementary
             }
         }

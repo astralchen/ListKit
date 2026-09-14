@@ -4,6 +4,9 @@ import UIKit
 
 /// UITableView 列表适配器。
 ///
+/// 适配器弱持有列表。列表释放后，新的更新和尚未提交的排队请求以
+/// `.cancelledBeforeCommit` 结束；已经提交的更新仍由原 UIKit 完成回调收尾。
+///
 /// `TableListAdapter` 使用独立的 Table DSL 描述内容，并复用 ListKit 的 identity、
 /// refresh、diagnostics、apply options 和事件语义。
 ///
@@ -243,6 +246,9 @@ where SectionID: Hashable & Sendable {
         subscriberID: UUID? = nil,
         completion: ((ListApplySummary) -> Void)?
     ) -> ListApplySummary {
+        guard tableView != nil else {
+            return cancelApplyBeforeCommit(transaction: transaction, completion: completion)
+        }
         let request = ListReloadAllRequest(
             transaction: transaction,
             transition: transition,
@@ -596,6 +602,10 @@ where SectionID: Hashable & Sendable {
         completion: ((ListApplySummary) -> Void)?,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
     ) -> ListApplySummary {
+        // 只在本次同步提交期间强持有视图，不延长到异步动画完成之后。
+        guard let tableView else {
+            return cancelApplyBeforeCommit(transaction: options.transaction, completion: completion)
+        }
         let newSections = content()
         let resolvedTransaction = options.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
@@ -686,7 +696,7 @@ where SectionID: Hashable & Sendable {
         applyGeneration += 1
         let generation = applyGeneration
         sections = newSections
-        rebuildLookupTables()
+        rebuildLookupTables(in: tableView)
         configureSelectionBehavior()
 
         var snapshot = NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>()
@@ -861,6 +871,9 @@ where SectionID: Hashable & Sendable {
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
         let requestedTargetCount = Set(rowIDs).count
+        guard tableView != nil else {
+            return cancelRefreshBeforeCommit(requestedTargetCount: requestedTargetCount, completion: completion)
+        }
         let subscriber = ListRowRefreshSubscriber(
             id: subscriberID,
             rowIDs: Set(rowIDs),
@@ -1188,6 +1201,9 @@ where SectionID: Hashable & Sendable {
         subscriberID: UUID? = nil,
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
+        guard tableView != nil else {
+            return cancelRefreshBeforeCommit(requestedTargetCount: Set(sectionIDs).count, completion: completion)
+        }
         let subscriber = ListSectionReloadSubscriber(
             id: subscriberID,
             sectionIDs: Set(sectionIDs),
@@ -1292,6 +1308,10 @@ where SectionID: Hashable & Sendable {
 
     /// 执行完整 reloadData、布局、selection、supplementary 和滚动锚点恢复流程。
     private func performReloadAll(_ request: ListReloadAllRequest) {
+        guard let tableView else {
+            _ = cancelApplyBeforeCommit(transaction: request.transaction, completion: request.completion)
+            return
+        }
         let resolvedTransaction = request.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
@@ -1305,27 +1325,6 @@ where SectionID: Hashable & Sendable {
         )
         lastApplySummary = summary
         ListApplyLogger.logDiagnostics(issues: summary.diagnosticsIssues, options: options)
-
-        guard let tableView else {
-            let completedSummary = applyPlan.completedSummary(
-                visibleReconfiguredRowCount: 0,
-                visibleReloadedRowCount: 0,
-                visibleReconfiguredSupplementaryCount: 0,
-                animation: ListAnimationSummary(
-                    completionState: .completed,
-                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                )
-            )
-            lastApplySummary = completedSummary
-            ListApplyLogger.logApplySummary(
-                completedSummary,
-                options: options,
-                prefix: "ListKit table reload summary"
-            )
-            request.completion?(completedSummary)
-            performNextPendingMutationIfNeeded()
-            return
-        }
 
         let visibleAnchor: TableVisibleRowAnchor?
         switch resolvedTransaction.scrollBehavior.storage {
@@ -1502,9 +1501,44 @@ where SectionID: Hashable & Sendable {
         performNextPendingMutationIfNeeded()
     }
 
-    /// scheduler 空闲时严格启动统一 FIFO 的队首节点。
+    /// 列表已释放时，拒绝新的 apply 或 reloadAll，并完成尚未提交的排队请求。
+    private func cancelApplyBeforeCommit(
+        transaction: ListTransaction,
+        completion: ((ListApplySummary) -> Void)?
+    ) -> ListApplySummary {
+        let summary = ListApplySummary(animation: ListAnimationSummary(
+            completionState: .cancelledBeforeCommit,
+            reduceMotionApplied: transaction.resolved(
+                reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+            ).reduceMotionApplied
+        ))
+        lastApplySummary = summary
+        mutationScheduler.cancelPendingRequests()
+        completion?(summary)
+        return summary
+    }
+
+    /// 列表已释放时，保留刷新请求的目标数量并以取消状态完成回调。
+    private func cancelRefreshBeforeCommit(
+        requestedTargetCount: Int,
+        completion: ((ListRefreshSummary) -> Void)?
+    ) -> ListRefreshSummary {
+        let summary = ListRefreshSummary(
+            requestedTargetCount: requestedTargetCount,
+            animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+        )
+        mutationScheduler.cancelPendingRequests()
+        completion?(summary)
+        return summary
+    }
+
+    /// scheduler 空闲且列表仍存在时启动队首节点；列表释放后取消全部待提交请求。
     private func performNextPendingMutationIfNeeded() {
-        let hasUncommittedUpdates = tableView?.hasUncommittedUpdates == true
+        guard let tableView else {
+            mutationScheduler.cancelPendingRequests()
+            return
+        }
+        let hasUncommittedUpdates = tableView.hasUncommittedUpdates
         if mutationScheduler.startNext(hasUncommittedUpdates: hasUncommittedUpdates) { return }
         if !mutationScheduler.isExecuting,
            mutationScheduler.hasPendingRequests,
@@ -1532,6 +1566,9 @@ where SectionID: Hashable & Sendable {
         options: ListApplyOptions,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
     ) async -> ListApplySummary {
+        guard tableView != nil else {
+            return cancelApplyBeforeCommit(transaction: options.transaction, completion: nil)
+        }
         let builtSections = content()
         let resolved = options.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
@@ -2208,10 +2245,9 @@ where SectionID: Hashable & Sendable {
         return true
     }
 
-    private func rebuildLookupTables() {
+    private func rebuildLookupTables(in tableView: UITableView) {
         rowsByIdentity = [:]
 
-        guard let tableView else { return }
         for section in sections {
             section.header?.register(tableView)
             section.footer?.register(tableView)
