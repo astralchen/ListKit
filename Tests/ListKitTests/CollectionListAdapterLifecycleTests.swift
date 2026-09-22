@@ -9,7 +9,7 @@ final class CollectionListAdapterLifecycleTests: XCTestCase {
     func testApplyAfterViewReleaseCancelsWithoutBuildingContent() async {
         var view: UICollectionView? = makeCollectionView()
         let adapter = CollectionListAdapter<Int>(collectionView: view!)
-        weak var releasedView = view
+        weak let releasedView = view
         view = nil
         XCTAssertNil(releasedView)
 
@@ -38,7 +38,7 @@ final class CollectionListAdapterLifecycleTests: XCTestCase {
     func testRefreshEntryPointsCancelAfterViewRelease() async {
         var view: UICollectionView? = makeCollectionView()
         let adapter = CollectionListAdapter<Int>(collectionView: view!)
-        weak var releasedView = view
+        weak let releasedView = view
         view = nil
         XCTAssertNil(releasedView)
         var states: [ListApplyCompletionState] = []
@@ -79,8 +79,8 @@ final class CollectionListAdapterLifecycleTests: XCTestCase {
             capturedLayout.fulfill()
         }
         var adapter: CollectionListAdapter<Int>? = CollectionListAdapter(collectionView: view!)
-        weak var releasedView = view
-        weak var releasedAdapter = adapter
+        weak let releasedView = view
+        weak let releasedAdapter = adapter
         var firstStates: [ListApplyCompletionState] = []
         adapter!.apply(
             options: .init(

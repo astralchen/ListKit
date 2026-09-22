@@ -17,7 +17,13 @@ final class SectionSeparatorDecorationView: UICollectionReusableView {
 }
 
 final class SectionSeparatorLayoutAttributes: UICollectionViewLayoutAttributes {
-    var separatorColor: UIColor = .separator
+    // NSObject.isEqual(_:) 是非隔离接口；颜色存储独立同步，比较不要求 MainActor。
+    private nonisolated let colorStorage = SectionSeparatorColorStorage()
+
+    @MainActor var separatorColor: UIColor {
+        get { colorStorage.value }
+        set { colorStorage.setValue(newValue) }
+    }
 
     override func copy(with zone: NSZone? = nil) -> Any {
         let copy = super.copy(with: zone) as! SectionSeparatorLayoutAttributes
@@ -26,9 +32,30 @@ final class SectionSeparatorLayoutAttributes: UICollectionViewLayoutAttributes {
     }
 
     override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? SectionSeparatorLayoutAttributes,
-              other.separatorColor == separatorColor else { return false }
-        return super.isEqual(object)
+        guard let other = object as? SectionSeparatorLayoutAttributes else { return false }
+        let color = colorStorage.value
+        let otherColor = other.colorStorage.value
+        return color == otherColor && super.isEqual(object)
+    }
+}
+
+/// 只有 UIColor 值跨隔离域共享；所有读写均由锁保护，且不在锁内执行颜色比较。
+/// 为兼容 iOS 15 使用 NSLock；写入仍限定在 MainActor，非隔离调用只读取颜色快照。
+/// @unchecked Sendable 的保证仅覆盖此私有存储，不扩展到 UIKit 布局属性对象。
+private final class SectionSeparatorColorStorage: @unchecked Sendable {
+    private let lock = NSLock()
+    private var color: UIColor = .separator
+
+    var value: UIColor {
+        lock.lock()
+        defer { lock.unlock() }
+        return color
+    }
+
+    @MainActor func setValue(_ newValue: UIColor) {
+        lock.lock()
+        defer { lock.unlock() }
+        color = newValue
     }
 }
 

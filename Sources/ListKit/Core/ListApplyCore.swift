@@ -303,7 +303,6 @@ final class ListPendingMutationRequest {
             ListTransaction,
         ) -> Void
     ) {
-        let requestedTargetCount = Set(rowIDs).count
         self.kind = .rowRefresh
         self.updatePolicy = transaction.updatePolicy
         self.requiresCommittedUpdates = false
@@ -335,7 +334,6 @@ final class ListPendingMutationRequest {
             ListTransaction,
         ) -> Void
     ) {
-        let requestedTargetCount = Set(sectionIDs).count
         self.kind = .sectionReload
         self.updatePolicy = transaction.updatePolicy
         self.requiresCommittedUpdates = false
@@ -1053,11 +1051,11 @@ private struct ListNodeChangeFingerprint: Equatable {
 final class ListAnimationCompletionCoordinator {
     /// 初始哨兵表示“调度阶段尚未结束”，防止同步动画提前触发最终 completion。
     private var pendingCount = 1
-    /// 所有已登记动画结束后调用一次的最终回调。
-    private let completion: @MainActor () -> Void
+    /// 回调仅由本 MainActor 协调器持有和调用，不跨隔离域传递。
+    private let completion: () -> Void
 
     /// 创建带初始调度哨兵的完成协调器。
-    init(completion: @escaping @MainActor () -> Void) {
+    init(completion: @escaping () -> Void) {
         self.completion = completion
     }
 

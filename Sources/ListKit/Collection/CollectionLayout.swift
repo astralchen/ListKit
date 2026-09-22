@@ -39,7 +39,7 @@ public enum ListContentInsetsReference: Hashable, Sendable {
         switch self {
         case .systemDefault: return nil
         case .automatic: return .automatic
-        case .none: return .none
+        case .none: return UIContentInsetsReference.none
         case .safeArea: return .safeArea
         case .layoutMargins: return .layoutMargins
         case .readableContent: return .readableContent

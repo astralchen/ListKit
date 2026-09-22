@@ -9,7 +9,7 @@ final class TableListAdapterLifecycleTests: XCTestCase {
     func testApplyAfterViewReleaseCancelsWithoutBuildingContent() async {
         var view: UITableView? = makeTableView()
         let adapter = TableListAdapter<Int>(tableView: view!)
-        weak var releasedView = view
+        weak let releasedView = view
         view = nil
         XCTAssertNil(releasedView)
 
@@ -38,7 +38,7 @@ final class TableListAdapterLifecycleTests: XCTestCase {
     func testRefreshEntryPointsCancelAfterViewRelease() async {
         var view: UITableView? = makeTableView()
         let adapter = TableListAdapter<Int>(tableView: view!)
-        weak var releasedView = view
+        weak let releasedView = view
         view = nil
         XCTAssertNil(releasedView)
         var states: [ListApplyCompletionState] = []
@@ -79,8 +79,8 @@ final class TableListAdapterLifecycleTests: XCTestCase {
             capturedLayout.fulfill()
         }
         var adapter: TableListAdapter<Int>? = TableListAdapter(tableView: view!)
-        weak var releasedView = view
-        weak var releasedAdapter = adapter
+        weak let releasedView = view
+        weak let releasedAdapter = adapter
         var firstStates: [ListApplyCompletionState] = []
         adapter!.apply(
             options: .init(

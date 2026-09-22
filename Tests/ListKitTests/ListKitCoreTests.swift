@@ -2,6 +2,39 @@ import XCTest
 import UIKit
 @testable import ListKit
 
+/// 仅用于验证 NSObject 的非隔离比较入口。对象在 MainActor 初始化后封存在 fixture 内，
+/// 不再修改或向外暴露，因此后台比较期间不会并发访问 UIKit 的可变状态。
+private struct SeparatorEqualityFixtures: @unchecked Sendable {
+    private let original: SectionSeparatorLayoutAttributes
+    private let same: SectionSeparatorLayoutAttributes
+    private let differentColor: SectionSeparatorLayoutAttributes
+    private let differentFrame: SectionSeparatorLayoutAttributes
+
+    @MainActor init() {
+        original = SectionSeparatorLayoutAttributes(
+            forDecorationViewOfKind: UICollectionView.elementKindSectionSeparatorDecoration,
+            with: IndexPath(item: 0, section: 0)
+        )
+        original.frame = CGRect(x: 0, y: 0, width: 100, height: 1)
+        original.separatorColor = .systemRed
+        same = original.copy() as! SectionSeparatorLayoutAttributes
+        differentColor = original.copy() as! SectionSeparatorLayoutAttributes
+        differentColor.separatorColor = .systemBlue
+        differentFrame = original.copy() as! SectionSeparatorLayoutAttributes
+        differentFrame.frame.size.width = 200
+    }
+
+    func compare() -> (Bool, Bool, Bool, Bool, Bool) {
+        (
+            original.isEqual(same),
+            same.isEqual(original),
+            original.isEqual(differentColor),
+            original.isEqual(differentFrame),
+            original.isEqual(nil)
+        )
+    }
+}
+
 @MainActor
 final class ListKitCoreTests: XCTestCase {
     func testAsyncMutationBridgeHandlesCancelBeforeRegister() async {
@@ -1631,6 +1664,22 @@ final class ListKitCoreTests: XCTestCase {
             (firstAttributes?.copy() as? SectionSeparatorLayoutAttributes)?.separatorColor,
             .systemRed
         )
+        XCTAssertEqual(firstAttributes, firstAttributes?.copy() as? SectionSeparatorLayoutAttributes)
+        XCTAssertNotEqual(firstAttributes, secondAttributes)
+    }
+
+    func testSeparatorAttributesEqualityOffMainActorAndCopyIndependence() async {
+        let fixtures = SeparatorEqualityFixtures()
+        let result = await Task.detached {
+            dispatchPrecondition(condition: .notOnQueue(.main))
+            return fixtures.compare()
+        }.value
+
+        XCTAssertTrue(result.0)
+        XCTAssertTrue(result.1)
+        XCTAssertFalse(result.2, "修改副本颜色后，原对象与副本应不相等")
+        XCTAssertFalse(result.3)
+        XCTAssertFalse(result.4)
     }
 
     func testDefaultReusableNamesAreQualifiedWhileNibNamesStayShort() {
@@ -3004,6 +3053,15 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(configuration.contentInsetsReference, .automatic)
     }
 
+    func testCompositionalLayoutConfigurationAppliesExplicitNoInsets() {
+        XCTAssertEqual(ListContentInsetsReference.none.uiKitOverride, UIContentInsetsReference.none)
+        let configuration = ListCompositionalLayoutConfiguration(
+            contentInsetsReference: .none
+        ).makeConfiguration()
+
+        XCTAssertEqual(configuration.contentInsetsReference, .none)
+    }
+
     func testUIKitListLayoutPreservesSystemSeparatorDefaultUnlessOverridden() {
         let nativeDefault = UICollectionLayoutListConfiguration(appearance: .plain)
         let inherited = ListUIKitListLayout().makeConfiguration()
@@ -3923,7 +3981,7 @@ private final class InvalidationTrackingCompositionalLayout: UICollectionViewCom
             heightDimension: .estimated(44)
         )
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
-        let group = NSCollectionLayoutGroup.horizontal(layoutSize: itemSize, subitem: item, count: 1)
+        let group = NSCollectionLayoutGroup.horizontal(layoutSize: itemSize, subitems: [item])
         super.init(section: NSCollectionLayoutSection(group: group))
     }
 
