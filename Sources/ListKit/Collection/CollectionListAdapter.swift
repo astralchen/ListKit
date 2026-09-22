@@ -96,8 +96,8 @@ where SectionID: Hashable & Sendable {
     private var cancelPrefetchingItemsHandler: (@MainActor ([ListContext]) -> Void)?
     /// 多选上下文菜单请求的 adapter 级 provider。
     private var contextMenuItemsProvider: (@MainActor ([ListContext], CGPoint) -> UIContextMenuConfiguration?)?
-    /// 当前已展示上下文菜单对应的 Row 和原始 index path。
-    private var activeContextMenu: (row: AnyListRow, indexPath: IndexPath)?
+    /// 按配置对象身份保存菜单会话；允许旧菜单消失动画与新菜单交互交错。
+    private var contextMenuSessions: [ObjectIdentifier: CollectionContextMenuSession] = [:]
     /// Section index title 到 Section identity 的稳定映射。
     private var indexTitleEntries: [CollectionIndexTitleEntry] = []
     /// 保持可见锚点时临时添加到 contentInset.bottom 的补偿量。
@@ -2026,19 +2026,20 @@ where SectionID: Hashable & Sendable {
         if !contexts.isEmpty { cancelPrefetchingItemsHandler?(contexts) }
     }
 
+    @available(iOS, introduced: 13.0, deprecated: 16.0)
     public func collectionView(
         _ collectionView: UICollectionView,
         contextMenuConfigurationForItemAt indexPath: IndexPath,
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        guard let row = row(at: indexPath) else { return nil }
-        let configuration = row.contextMenuProvider?(context(for: indexPath, identity: row.identity))
-            ?? collectionDelegate?.collectionView?(
-                collectionView,
-                contextMenuConfigurationForItemAt: indexPath,
-                point: point
-            )
-        if configuration != nil { activeContextMenu = (row, indexPath) }
+        pruneContextMenuSessions()
+        let target = row(at: indexPath).map { CollectionContextMenuTarget(row: $0, indexPath: indexPath) }
+        let configuration = target.flatMap {
+            $0.row.contextMenuProvider?(context(for: indexPath, identity: $0.row.identity), point)
+        } ?? collectionDelegate?.collectionView?(
+            collectionView, contextMenuConfigurationForItemAt: indexPath, point: point
+        )
+        registerContextMenu(configuration, targets: target.map { [$0] } ?? [])
         return configuration
     }
 
@@ -2048,30 +2049,23 @@ where SectionID: Hashable & Sendable {
         contextMenuConfigurationForItemsAt indexPaths: [IndexPath],
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        let targets = indexPaths.compactMap { indexPath -> (row: AnyListRow, context: ListContext)? in
-            guard let row = row(at: indexPath) else { return nil }
-            return (row, context(for: indexPath, identity: row.identity))
+        pruneContextMenuSessions()
+        let targets = indexPaths.compactMap { indexPath in
+            row(at: indexPath).map { CollectionContextMenuTarget(row: $0, indexPath: indexPath) }
         }
-        let rowConfiguration = targets.first.flatMap { target in
-            target.row.contextMenuProvider?(target.context)
-        }
-        let delegateConfiguration = collectionDelegate?.collectionView?(
-            collectionView,
-            contextMenuConfigurationForItemsAt: indexPaths,
-            point: point
-        ) ?? indexPaths.first.flatMap { firstIndexPath in
+        // 按优先级惰性求值，未采用的 provider 不应创建配置或产生副作用。
+        let configuration = contextMenuItemsProvider?(targets.map {
+            context(for: $0.indexPath, identity: $0.row.identity)
+        }, point) ?? targets.first.flatMap {
+            $0.row.contextMenuProvider?(context(for: $0.indexPath, identity: $0.row.identity), point)
+        } ?? collectionDelegate?.collectionView?(
+            collectionView, contextMenuConfigurationForItemsAt: indexPaths, point: point
+        ) ?? indexPaths.first.flatMap {
             collectionDelegate?.collectionView?(
-                collectionView,
-                contextMenuConfigurationForItemAt: firstIndexPath,
-                point: point
+                collectionView, contextMenuConfigurationForItemAt: $0, point: point
             )
         }
-        let configuration = contextMenuItemsProvider?(targets.map(\.context), point)
-            ?? rowConfiguration
-            ?? delegateConfiguration
-        if configuration != nil, let first = indexPaths.first, let row = row(at: first) {
-            activeContextMenu = (row, first)
-        }
+        registerContextMenu(configuration, targets: targets)
         return configuration
     }
 
@@ -2081,12 +2075,11 @@ where SectionID: Hashable & Sendable {
         contextMenuConfiguration configuration: UIContextMenuConfiguration,
         highlightPreviewForItemAt indexPath: IndexPath
     ) -> UITargetedPreview? {
-        guard let row = row(at: indexPath) else { return nil }
-        return row.contextMenuHighlightPreviewProvider?(context(for: indexPath, identity: row.identity))
+        contextMenuPreview(configuration, indexPath: indexPath, highlighting: true)
             ?? collectionDelegate?.collectionView?(
-                collectionView,
-                contextMenuConfiguration: configuration,
-                highlightPreviewForItemAt: indexPath
+                collectionView, contextMenuConfiguration: configuration, highlightPreviewForItemAt: indexPath
+            ) ?? collectionDelegate?.collectionView?(
+                collectionView, previewForHighlightingContextMenuWithConfiguration: configuration
             )
     }
 
@@ -2096,67 +2089,141 @@ where SectionID: Hashable & Sendable {
         contextMenuConfiguration configuration: UIContextMenuConfiguration,
         dismissalPreviewForItemAt indexPath: IndexPath
     ) -> UITargetedPreview? {
-        guard let row = row(at: indexPath) else { return nil }
-        return row.contextMenuDismissalPreviewProvider?(context(for: indexPath, identity: row.identity))
+        contextMenuPreview(configuration, indexPath: indexPath, highlighting: false)
             ?? collectionDelegate?.collectionView?(
-                collectionView,
-                contextMenuConfiguration: configuration,
-                dismissalPreviewForItemAt: indexPath
+                collectionView, contextMenuConfiguration: configuration, dismissalPreviewForItemAt: indexPath
+            ) ?? collectionDelegate?.collectionView?(
+                collectionView, previewForDismissingContextMenuWithConfiguration: configuration
             )
     }
 
+    @available(iOS 13.0, *)
     public func collectionView(
         _ collectionView: UICollectionView,
         willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
         animator: any UIContextMenuInteractionCommitAnimating
     ) {
-        if let activeContextMenu {
-            activeContextMenu.row.contextMenuCommitHandler?(
-                context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity),
-                animator
+        if let target = contextMenuSession(for: configuration)?.targets.first,
+           let indexPath = dataSource.indexPath(for: target.row.identity) {
+            target.row.contextMenuCommitHandler?(
+                context(for: indexPath, identity: target.row.identity), configuration, animator
             )
         }
         collectionDelegate?.collectionView?(
-            collectionView,
-            willPerformPreviewActionForMenuWith: configuration,
-            animator: animator
+            collectionView, willPerformPreviewActionForMenuWith: configuration, animator: animator
         )
     }
 
+    @available(iOS, introduced: 13.0, deprecated: 16.0)
     public func collectionView(
         _ collectionView: UICollectionView,
         previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
     ) -> UITargetedPreview? {
-        guard let activeContextMenu else {
-            return collectionDelegate?.collectionView?(
-                collectionView,
-                previewForHighlightingContextMenuWithConfiguration: configuration
+        contextMenuPreview(configuration, highlighting: true)
+            ?? collectionDelegate?.collectionView?(
+                collectionView, previewForHighlightingContextMenuWithConfiguration: configuration
             )
-        }
-        return activeContextMenu.row.contextMenuHighlightPreviewProvider?(
-            context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity)
-        ) ?? collectionDelegate?.collectionView?(
-            collectionView,
-            previewForHighlightingContextMenuWithConfiguration: configuration
-        )
     }
 
+    @available(iOS, introduced: 13.0, deprecated: 16.0)
     public func collectionView(
         _ collectionView: UICollectionView,
         previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
     ) -> UITargetedPreview? {
-        guard let activeContextMenu else {
-            return collectionDelegate?.collectionView?(
-                collectionView,
-                previewForDismissingContextMenuWithConfiguration: configuration
+        contextMenuPreview(configuration, highlighting: false)
+            ?? collectionDelegate?.collectionView?(
+                collectionView, previewForDismissingContextMenuWithConfiguration: configuration
             )
+    }
+
+    /// 分发即将显示通知；已删除的行仍使用原始上下文参与生命周期收尾。
+    @available(iOS 13.2, *)
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        willDisplayContextMenu configuration: UIContextMenuConfiguration,
+        animator: (any UIContextMenuInteractionAnimating)?
+    ) {
+        if let target = contextMenuSession(for: configuration)?.targets.first {
+            target.row.contextMenuWillDisplayHandler?(contextMenuContext(for: target), configuration, animator)
         }
-        return activeContextMenu.row.contextMenuDismissalPreviewProvider?(
-            context(for: activeContextMenu.indexPath, identity: activeContextMenu.row.identity)
-        ) ?? collectionDelegate?.collectionView?(
-            collectionView,
-            previewForDismissingContextMenuWithConfiguration: configuration
+        collectionDelegate?.collectionView?(
+            collectionView, willDisplayContextMenu: configuration, animator: animator
         )
+    }
+
+    /// 分发即将结束通知，并在消失动画完成后仅移除本次会话。
+    @available(iOS 13.2, *)
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        willEndContextMenuInteraction configuration: UIContextMenuConfiguration,
+        animator: (any UIContextMenuInteractionAnimating)?
+    ) {
+        let session = contextMenuSession(for: configuration)
+        if let target = session?.targets.first {
+            target.row.contextMenuWillEndHandler?(contextMenuContext(for: target), configuration, animator)
+        }
+        collectionDelegate?.collectionView?(
+            collectionView, willEndContextMenuInteraction: configuration, animator: animator
+        )
+        guard let session else { return }
+        let key = ObjectIdentifier(configuration)
+        let token = session.token
+        // 不捕获 configuration 或 Row；旧动画 completion 不得清理重入创建的新会话。
+        let cleanup: @MainActor () -> Void = { [weak self] in
+            guard self?.contextMenuSessions[key]?.token == token else { return }
+            self?.contextMenuSessions.removeValue(forKey: key)
+        }
+        if let animator {
+            animator.addCompletion(cleanup)
+        } else {
+            cleanup()
+        }
+    }
+
+    /// 清扫创建后未展示、且已由 UIKit 释放配置的会话。
+    private func pruneContextMenuSessions() {
+        contextMenuSessions = contextMenuSessions.filter { $0.value.configuration != nil }
+    }
+
+    /// 以配置对象身份关联捕获的 Row，不读取或修改业务 identifier。
+    private func registerContextMenu(_ configuration: UIContextMenuConfiguration?, targets: [CollectionContextMenuTarget]) {
+        guard let configuration else { return }
+        contextMenuSessions[ObjectIdentifier(configuration)] = CollectionContextMenuSession(
+            configuration: configuration, targets: targets
+        )
+    }
+
+    /// 校验弱引用以拒绝已释放对象地址复用产生的错误匹配。
+    private func contextMenuSession(for configuration: UIContextMenuConfiguration) -> CollectionContextMenuSession? {
+        guard let session = contextMenuSessions[ObjectIdentifier(configuration)],
+              session.configuration === configuration else { return nil }
+        return session
+    }
+
+    /// 生命周期优先使用稳定身份对应的当前位置；删除后保留原始位置供业务清理。
+    private func contextMenuContext(for target: CollectionContextMenuTarget) -> ListContext {
+        context(
+            for: dataSource.indexPath(for: target.row.identity) ?? target.indexPath,
+            identity: target.row.identity
+        )
+    }
+
+    /// 预览只使用本次会话捕获且仍存在的 Row，避免复用后的 cell 触发其他行的闭包。
+    private func contextMenuPreview(
+        _ configuration: UIContextMenuConfiguration,
+        indexPath: IndexPath? = nil,
+        highlighting: Bool
+    ) -> UITargetedPreview? {
+        guard let session = contextMenuSession(for: configuration) else { return nil }
+        let target: CollectionContextMenuTarget?
+        if let indexPath {
+            target = session.targets.first { dataSource.indexPath(for: $0.row.identity) == indexPath }
+        } else {
+            target = session.targets.first
+        }
+        guard let target, let currentIndexPath = dataSource.indexPath(for: target.row.identity) else { return nil }
+        let provider = highlighting ? target.row.contextMenuHighlightPreviewProvider : target.row.contextMenuDismissalPreviewProvider
+        return provider?(context(for: currentIndexPath, identity: target.row.identity), configuration)
     }
 
     public func collectionView(
@@ -3462,6 +3529,25 @@ where SectionID: Hashable & Sendable {
     private func sameObject(_ lhs: AnyObject?, _ rhs: AnyObject?) -> Bool {
         guard let lhs, let rhs else { return false }
         return lhs === rhs
+    }
+}
+
+/// 菜单创建时捕获的行描述及原始位置，跨 snapshot 保留同一组业务闭包。
+private struct CollectionContextMenuTarget {
+    let row: AnyListRow
+    let indexPath: IndexPath
+}
+
+/// 主线程拥有的菜单会话；弱持有配置以允许回收未展示的交互。
+@MainActor
+private final class CollectionContextMenuSession {
+    weak var configuration: UIContextMenuConfiguration?
+    let token = UUID()
+    let targets: [CollectionContextMenuTarget]
+
+    init(configuration: UIContextMenuConfiguration, targets: [CollectionContextMenuTarget]) {
+        self.configuration = configuration
+        self.targets = targets
     }
 }
 

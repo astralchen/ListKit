@@ -100,10 +100,12 @@ public struct AnyListRow {
     let endDisplayHandler: (@MainActor (UICollectionViewCell, ListContext) -> Void)?
     let prefetchHandler: (@MainActor (ListContext) -> Void)?
     let cancelPrefetchHandler: (@MainActor (ListContext) -> Void)?
-    let contextMenuProvider: (@MainActor (ListContext) -> UIContextMenuConfiguration?)?
-    let contextMenuHighlightPreviewProvider: (@MainActor (ListContext) -> UITargetedPreview?)?
-    let contextMenuDismissalPreviewProvider: (@MainActor (ListContext) -> UITargetedPreview?)?
-    let contextMenuCommitHandler: (@MainActor (ListContext, any UIContextMenuInteractionCommitAnimating) -> Void)?
+    let contextMenuProvider: (@MainActor (ListContext, CGPoint) -> UIContextMenuConfiguration?)?
+    let contextMenuHighlightPreviewProvider: (@MainActor (ListContext, UIContextMenuConfiguration) -> UITargetedPreview?)?
+    let contextMenuDismissalPreviewProvider: (@MainActor (ListContext, UIContextMenuConfiguration) -> UITargetedPreview?)?
+    let contextMenuCommitHandler: (@MainActor (ListContext, UIContextMenuConfiguration, any UIContextMenuInteractionCommitAnimating) -> Void)?
+    let contextMenuWillDisplayHandler: (@MainActor (ListContext, UIContextMenuConfiguration, (any UIContextMenuInteractionAnimating)?) -> Void)?
+    let contextMenuWillEndHandler: (@MainActor (ListContext, UIContextMenuConfiguration, (any UIContextMenuInteractionAnimating)?) -> Void)?
     let leadingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let trailingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let moveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
@@ -256,10 +258,12 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     private var rowEndDisplayHandler: (@MainActor (Cell, ListContext) -> Void)?
     private var rowPrefetchHandler: (@MainActor (ListContext) -> Void)?
     private var rowCancelPrefetchHandler: (@MainActor (ListContext) -> Void)?
-    private var rowContextMenuProvider: (@MainActor (ListContext) -> UIContextMenuConfiguration?)?
-    private var rowContextMenuHighlightPreviewProvider: (@MainActor (ListContext) -> UITargetedPreview?)?
-    private var rowContextMenuDismissalPreviewProvider: (@MainActor (ListContext) -> UITargetedPreview?)?
-    private var rowContextMenuCommitHandler: (@MainActor (ListContext, any UIContextMenuInteractionCommitAnimating) -> Void)?
+    private var rowContextMenuProvider: (@MainActor (ListContext, CGPoint) -> UIContextMenuConfiguration?)?
+    private var rowContextMenuHighlightPreviewProvider: (@MainActor (ListContext, UIContextMenuConfiguration) -> UITargetedPreview?)?
+    private var rowContextMenuDismissalPreviewProvider: (@MainActor (ListContext, UIContextMenuConfiguration) -> UITargetedPreview?)?
+    private var rowContextMenuCommitHandler: (@MainActor (ListContext, UIContextMenuConfiguration, any UIContextMenuInteractionCommitAnimating) -> Void)?
+    private var rowContextMenuWillDisplayHandler: (@MainActor (ListContext, UIContextMenuConfiguration, (any UIContextMenuInteractionAnimating)?) -> Void)?
+    private var rowContextMenuWillEndHandler: (@MainActor (ListContext, UIContextMenuConfiguration, (any UIContextMenuInteractionAnimating)?) -> Void)?
     private var rowLeadingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     private var rowTrailingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     private var rowMoveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
@@ -605,7 +609,7 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     /// - Returns: 绑定菜单后的 Row。
     public func contextMenu(_ provider: @escaping @MainActor (ListContext) -> UIContextMenuConfiguration?) -> Self {
         var copy = self
-        copy.rowContextMenuProvider = provider
+        copy.rowContextMenuProvider = { context, _ in provider(context) }
         return copy
     }
 
@@ -615,8 +619,16 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         dismissal: (@MainActor (ListContext) -> UITargetedPreview?)? = nil
     ) -> Self {
         var copy = self
-        copy.rowContextMenuHighlightPreviewProvider = highlighting
-        copy.rowContextMenuDismissalPreviewProvider = dismissal
+        if let highlighting {
+            copy.rowContextMenuHighlightPreviewProvider = { context, _ in highlighting(context) }
+        } else {
+            copy.rowContextMenuHighlightPreviewProvider = nil
+        }
+        if let dismissal {
+            copy.rowContextMenuDismissalPreviewProvider = { context, _ in dismissal(context) }
+        } else {
+            copy.rowContextMenuDismissalPreviewProvider = nil
+        }
         return copy
     }
 
@@ -625,7 +637,86 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         _ handler: @escaping @MainActor (ListContext, any UIContextMenuInteractionCommitAnimating) -> Void
     ) -> Self {
         var copy = self
+        copy.rowContextMenuCommitHandler = { context, _, animator in handler(context, animator) }
+        return copy
+    }
+
+    /// 根据当前行和触发位置创建上下文菜单配置。
+    ///
+    /// - Parameter provider: 接收行上下文及 collection view 坐标系中的触发位置；返回 `nil` 时继续查询原生代理。
+    /// - Returns: 绑定菜单配置提供者后的 Row；重复设置时以后一次为准。
+    public func contextMenu(
+        _ provider: @escaping @MainActor (ListContext, CGPoint) -> UIContextMenuConfiguration?
+    ) -> Self {
+        var copy = self
+        copy.rowContextMenuProvider = provider
+        return copy
+    }
+
+    /// 根据当前菜单配置自定义高亮和收起预览。
+    ///
+    /// - Parameters:
+    ///   - highlighting: 高亮预览提供者；`nil` 表示交由原生代理或系统处理。
+    ///   - dismissal: 收起预览提供者；`nil` 表示交由原生代理或系统处理。
+    /// - Returns: 更新两个预览提供者后的 Row。
+    /// - Note: configuration 为 UIKit 本次交互使用的原始对象。行被删除后不再请求 Row 预览。
+    // 无类型的 nil 参数优先匹配既有重载，保持旧源码可编译。
+    @_disfavoredOverload
+    public func contextMenuPreview(
+        highlighting: (@MainActor (ListContext, UIContextMenuConfiguration) -> UITargetedPreview?)?,
+        dismissal: (@MainActor (ListContext, UIContextMenuConfiguration) -> UITargetedPreview?)? = nil
+    ) -> Self {
+        var copy = self
+        copy.rowContextMenuHighlightPreviewProvider = highlighting
+        copy.rowContextMenuDismissalPreviewProvider = dismissal
+        return copy
+    }
+
+    /// 仅设置接收菜单配置的收起预览，并清除高亮预览提供者。
+    ///
+    /// - Parameter dismissal: 接收当前行上下文和菜单配置的收起预览提供者。
+    /// - Returns: 更新预览提供者后的 Row。
+    public func contextMenuPreview(
+        dismissal: @escaping @MainActor (ListContext, UIContextMenuConfiguration) -> UITargetedPreview?
+    ) -> Self {
+        contextMenuPreview(highlighting: nil, dismissal: dismissal)
+    }
+
+    /// 监听预览提交，并接收触发提交的菜单配置。
+    ///
+    /// - Parameter handler: 接收当前行、原始菜单配置及提交动画器；行已删除时不调用。
+    /// - Returns: 绑定提交回调后的 Row。
+    public func onContextMenuCommit(
+        _ handler: @escaping @MainActor (ListContext, UIContextMenuConfiguration, any UIContextMenuInteractionCommitAnimating) -> Void
+    ) -> Self {
+        var copy = self
         copy.rowContextMenuCommitHandler = handler
+        return copy
+    }
+
+    /// 监听上下文菜单即将显示。
+    ///
+    /// - Parameter handler: 在原生代理之前调用；可通过动画器注册同步动画或完成工作。
+    /// - Returns: 绑定显示回调后的 Row。
+    /// - Note: 使用创建菜单时捕获的 Row；若行已删除，context 保留原始位置，该位置可能已失效。
+    public func onContextMenuWillDisplay(
+        _ handler: @escaping @MainActor (ListContext, UIContextMenuConfiguration, (any UIContextMenuInteractionAnimating)?) -> Void
+    ) -> Self {
+        var copy = self
+        copy.rowContextMenuWillDisplayHandler = handler
+        return copy
+    }
+
+    /// 监听上下文菜单交互即将结束。
+    ///
+    /// - Parameter handler: 在原生代理之前调用；动画完成清理可注册到 `animator.addCompletion`。
+    /// - Returns: 绑定结束回调后的 Row。
+    /// - Note: 行已删除时仍回调原始 Row 以完成资源清理；此时 context 的原始位置可能已失效。
+    public func onContextMenuWillEnd(
+        _ handler: @escaping @MainActor (ListContext, UIContextMenuConfiguration, (any UIContextMenuInteractionAnimating)?) -> Void
+    ) -> Self {
+        var copy = self
+        copy.rowContextMenuWillEndHandler = handler
         return copy
     }
 
@@ -758,6 +849,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
             contextMenuHighlightPreviewProvider: rowContextMenuHighlightPreviewProvider,
             contextMenuDismissalPreviewProvider: rowContextMenuDismissalPreviewProvider,
             contextMenuCommitHandler: rowContextMenuCommitHandler,
+            contextMenuWillDisplayHandler: rowContextMenuWillDisplayHandler,
+            contextMenuWillEndHandler: rowContextMenuWillEndHandler,
             leadingSwipeActionsProvider: rowLeadingSwipeActionsProvider,
             trailingSwipeActionsProvider: rowTrailingSwipeActionsProvider,
             moveHandler: rowMoveHandler
@@ -1199,6 +1292,8 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
                 contextMenuHighlightPreviewProvider: nil,
                 contextMenuDismissalPreviewProvider: nil,
                 contextMenuCommitHandler: nil,
+                contextMenuWillDisplayHandler: nil,
+                contextMenuWillEndHandler: nil,
                 leadingSwipeActionsProvider: nil,
                 trailingSwipeActionsProvider: nil,
                 moveHandler: nil

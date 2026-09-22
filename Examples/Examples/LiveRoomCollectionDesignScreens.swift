@@ -255,6 +255,16 @@ final class RoomToolkitDesignViewController: LiveRoomCollectionDesignScreenViewC
         )
     }
 
+    /// 在工具页提供新菜单 API 的独立交互演示入口。
+    override func configureNavigation() {
+        super.configureNavigation()
+        guard let item = navigationItem.rightBarButtonItem, let menu = item.menu else { return }
+        let demo = UIAction(title: "Context Menu APIs", image: UIImage(systemName: "contextualmenu.and.cursorarrow")) { [weak self] _ in
+            self?.navigationController?.pushViewController(ContextMenuDemoViewController(), animated: true)
+        }
+        item.menu = UIMenu(children: [demo] + menu.children)
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }

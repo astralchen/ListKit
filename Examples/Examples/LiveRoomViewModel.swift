@@ -520,8 +520,11 @@ final class LiveRoomViewModel {
                     .focusable()
                     .selectionFollowsFocus()
                     .springLoadingEnabled()
-                    .contextMenu { context in
-                        UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+                    .contextMenu { context, _ in
+                        UIContextMenuConfiguration(
+                            identifier: nil,
+                            previewProvider: { Self.makeCapabilityPreview(capability) }
+                        ) { _ in
                             UIMenu(children: [
                                 UIAction(title: "Activate", image: UIImage(systemName: "bolt.fill")) { _ in
                                     context.send(LiveRoomCollectionEvent.activateCapability(capability.title))
@@ -529,11 +532,22 @@ final class LiveRoomViewModel {
                             ])
                         }
                     }
-                    .contextMenuPreview(highlighting: { context in
+                    .contextMenuPreview(highlighting: { context, _ in
                         guard let collectionView = context.collectionViewIfAvailable,
-                              let cell = collectionView.cellForItem(at: context.indexPath) else { return nil }
+                              let cell = collectionView.cellForItem(at: context.indexPath),
+                              cell.window != nil else { return nil }
+                        return UITargetedPreview(view: cell)
+                    }, dismissal: { context, _ in
+                        guard let collectionView = context.collectionViewIfAvailable,
+                              let cell = collectionView.cellForItem(at: context.indexPath),
+                              cell.window != nil else { return nil }
                         return UITargetedPreview(view: cell)
                     })
+                    .onContextMenuCommit { context, _, animator in
+                        animator.addCompletion {
+                            context.send(LiveRoomCollectionEvent.activateCapability(capability.title))
+                        }
+                    }
                     .trailingSwipeActions { context in
                         let action = UIContextualAction(style: .normal, title: "Try") { _, _, completion in
                             context.send(LiveRoomCollectionEvent.activateCapability(capability.title))
@@ -554,6 +568,32 @@ final class LiveRoomViewModel {
             guard identity.rowID.typed(LiveRoomRowID.self) == .apiGuideRoot else { return }
             self?.setAPIGuideExpanded(isExpanded)
         }
+    }
+
+    /// 创建 API 能力预览；点击预览通过 Row commit 触发与菜单操作相同的事件。
+    private static func makeCapabilityPreview(_ capability: ListKitCapability) -> UIViewController {
+        let controller = UIViewController()
+        controller.preferredContentSize = CGSize(width: 320, height: 160)
+        controller.view.backgroundColor = .secondarySystemBackground
+        let title = UILabel()
+        title.text = capability.title
+        title.font = .preferredFont(forTextStyle: .headline)
+        let detail = UILabel()
+        detail.text = capability.detail
+        detail.font = .preferredFont(forTextStyle: .body)
+        detail.textColor = .secondaryLabel
+        detail.numberOfLines = 0
+        let stack = UIStackView(arrangedSubviews: [title, detail])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        controller.view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor, constant: -20),
+            stack.centerYAnchor.constraint(equalTo: controller.view.centerYAnchor)
+        ])
+        return controller
     }
 
     private static func configureCapabilityCell(

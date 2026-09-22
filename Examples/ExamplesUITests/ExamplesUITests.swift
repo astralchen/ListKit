@@ -196,6 +196,104 @@ final class ExamplesUITests: XCTestCase {
         }
     }
 
+    /// 通过真实长按验证菜单首次展示、收起后重开以及点击预览提交。
+    @MainActor
+    func testCollectionContextMenuDismissAndPreviewCommit() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let tabBar = app.tabBars["design-scheme-tabs"]
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 5))
+        tabBar.buttons["Room Toolkit"].tap()
+        let collection = app.collectionViews["room-toolkit-screen"]
+        let item = collection.staticTexts["Native interactions"]
+        XCTAssertTrue(item.waitForExistence(timeout: 3))
+        if !item.isHittable { collection.swipeUp() }
+        item.press(forDuration: 0.7)
+        let action = app.buttons["Activate"]
+        XCTAssertTrue(action.waitForExistence(timeout: 3))
+        let displayed = XCTAttachment(screenshot: app.screenshot())
+        displayed.name = "Collection context menu first presentation"
+        displayed.lifetime = .keepAlways
+        add(displayed)
+        // 点按菜单外部，验证收起后原行仍能再次建立新的菜单会话。
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.15)).tap()
+        XCTAssertTrue(action.waitForNonExistence(timeout: 3))
+        let dismissed = XCTAttachment(screenshot: app.screenshot())
+        dismissed.name = "Collection context menu dismissed"
+        dismissed.lifetime = .keepAlways
+        add(dismissed)
+        item.press(forDuration: 0.7)
+        XCTAssertTrue(action.waitForExistence(timeout: 3))
+        // UIKit 将菜单预览包装为独立的可访问性容器。
+        let preview = app.otherElements["Preview"].firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        preview.tap()
+        XCTAssertTrue(action.waitForNonExistence(timeout: 3))
+        let message = app.staticTexts["Activated Native interactions through a stable row context."]
+        XCTAssertTrue(message.waitForExistence(timeout: 5))
+        let committed = XCTAttachment(screenshot: app.screenshot())
+        committed.name = "Collection context menu preview committed"
+        committed.lifetime = .keepAlways
+        add(committed)
+    }
+
+    /// 验证新 API 演示页的坐标、配置标识、动画完成及两种菜单结束路径。
+    @MainActor
+    func testContextMenuAPIDemoShowsLifecycleAndCommit() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let tabBar = app.tabBars["design-scheme-tabs"]
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 5))
+        tabBar.buttons["Room Toolkit"].tap()
+        app.buttons["room-toolkit-header-menu"].tap()
+        app.buttons["Context Menu APIs"].tap()
+        let collection = app.collectionViews["context-menu-demo-collection"]
+        XCTAssertTrue(collection.waitForExistence(timeout: 3))
+        let log = app.textViews["context-menu-demo-log"]
+        let original = collection.cells["context-menu-original"]
+        original.press(forDuration: 0.7)
+        let action = app.buttons["Record Action"]
+        XCTAssertTrue(action.waitForExistence(timeout: 3))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.17)).tap()
+        XCTAssertTrue(action.waitForNonExistence(timeout: 3))
+        func waitForLog(_ text: String) {
+            let predicate = NSPredicate(format: "value CONTAINS %@", text)
+            expectation(for: predicate, evaluatedWith: log)
+            waitForExpectations(timeout: 5)
+        }
+        waitForLog("endCompleted · Original card #1")
+        for event in ["configuration", "x:", "y:", "highlightPreview", "willDisplay", "displayCompleted", "dismissalPreview", "willEnd"] {
+            XCTAssertTrue((log.value as? String)?.contains(event) == true, event)
+        }
+        let dismissed = XCTAttachment(screenshot: app.screenshot())
+        dismissed.name = "Menu API demo dismissal lifecycle"
+        dismissed.lifetime = .keepAlways
+        add(dismissed)
+        app.buttons["context-menu-clear-log"].tap()
+        XCTAssertEqual(log.value as? String, "Long press a card to begin.")
+        collection.cells["context-menu-preview"].press(forDuration: 0.7)
+        XCTAssertTrue(action.waitForExistence(timeout: 3))
+        let preview = app.otherElements["Preview"].firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        let displayed = XCTAttachment(screenshot: app.screenshot())
+        displayed.name = "Menu API demo configuration preview"
+        displayed.lifetime = .keepAlways
+        add(displayed)
+        preview.tap()
+        XCTAssertTrue(action.waitForNonExistence(timeout: 3))
+        waitForLog("commitCompleted · Preview & Commit #2")
+        XCTAssertTrue((log.value as? String)?.contains("commit · Preview & Commit #2 · row: Preview & Commit") == true)
+        let committed = XCTAttachment(screenshot: app.screenshot())
+        committed.name = "Menu API demo commit lifecycle"
+        committed.lifetime = .keepAlways
+        add(committed)
+        original.press(forDuration: 0.7)
+        XCTAssertTrue(action.waitForExistence(timeout: 3))
+        action.tap()
+        waitForLog("actionSelected · Original card #3")
+        waitForLog("endCompleted · Original card #3")
+    }
+
     @MainActor
     func testRoomToolkitHeaderMenuAddsSystemEvent() throws {
         let app = XCUIApplication()

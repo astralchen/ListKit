@@ -257,6 +257,82 @@ TableSection(.messages) {
 }
 ```
 
+### Collection 上下文菜单
+
+演示入口：**Room Toolkit → 右上角 More Actions → Context Menu APIs**。
+页面提供原卡片高亮和内容预览两种模式，并显示触发坐标、configuration 标识、
+高亮／收起预览、显示／结束及动画完成日志。点击内容预览可验证 commit，
+选择 Record Action 可对比菜单操作与预览提交；Clear Log 清空日志但不重置菜单编号。
+
+Collection Row 可以获取触发位置、当前菜单配置以及显示、结束和预览提交回调：
+
+```swift
+Row(model: message, id: \.id, cell: MessageCell.self) { cell, message, _ in
+    cell.configure(message)
+}
+.contextMenu { context, point in
+    // point 使用 collection view 的坐标系。
+    UIContextMenuConfiguration(
+        identifier: message.id.uuidString as NSString,
+        previewProvider: { MessagePreviewController(message: message) }
+    ) { _ in
+        UIMenu(children: [
+            UIAction(title: "复制") { _ in
+                UIPasteboard.general.string = message.text
+            }
+        ])
+    }
+}
+.contextMenuPreview(
+    highlighting: { context, configuration in
+        guard let collectionView = context.collectionViewIfAvailable,
+              let cell = collectionView.cellForItem(at: context.indexPath),
+              cell.window != nil else { return nil }
+        return UITargetedPreview(view: cell)
+    },
+    dismissal: { context, configuration in
+        guard let collectionView = context.collectionViewIfAvailable,
+              let cell = collectionView.cellForItem(at: context.indexPath),
+              cell.window != nil else { return nil }
+        return UITargetedPreview(view: cell)
+    }
+)
+.onContextMenuWillDisplay { context, configuration, animator in
+    // 可用 animator?.addAnimations / addCompletion 参与显示过渡。
+}
+.onContextMenuCommit { context, configuration, animator in
+    animator.addCompletion {
+        openMessage(message)
+    }
+}
+.onContextMenuWillEnd { context, configuration, animator in
+    // 释放业务持有的预览资源；需要等待收起完成时，使用 addCompletion。
+    // animator 为 nil 时直接完成相应清理。
+}
+```
+
+示例中的 `MessageCell`、`MessagePreviewController` 和 `openMessage` 由业务提供。旧的单参数
+`.contextMenu`、`.contextMenuPreview` 及双参数 `.onContextMenuCommit` 继续可用。
+重复设置同一种回调时以后一次为准；调用 `contextMenuPreview` 会同时替换两个预览提供者，
+仅设置 `dismissal` 时会清除原有 highlighting。所有闭包均在主线程执行。
+
+**系统版本：** ListKit 最低要求仍为 iOS 15。原生单项配置、高亮和收起预览代理方法从
+iOS 13.0 引入、iOS 16.0 弃用；显示与结束通知从 iOS 13.2 引入。adapter 在 iOS 16+
+使用新的多项配置及逐项预览入口，Row DSL 跨版本保持一致，无需由调用方分支选择。
+
+**转发顺序：** iOS 15 配置请求依次查询 Row、原生旧代理；iOS 16+ 依次查询
+`contextMenuForItems`、首个目标 Row、原生新代理、原生旧代理。只有前一级返回 `nil`
+才查询下一级。空白区域没有 Row，仅查询多项 provider 和原生新代理。预览先查询匹配 Row，
+然后查询对应的原生代理；iOS 16+ 新预览代理返回 `nil` 时继续回退旧预览代理。
+显示、结束和 commit 通知先调用 Row，再调用 `collectionDelegate`。多项菜单的逐项预览
+各自分发，生命周期和 commit 仅通知首个目标 Row。
+
+**会话与刷新：** adapter 按 configuration 对象身份关联菜单，不修改业务 identifier。
+回调使用创建菜单时捕获的 Row，位置按稳定 identity 更新；行被删除后跳过 Row 预览及 commit，
+显示／结束生命周期仍可收到原始 context，此时 `indexPath` 可能已失效，不应直接据此操作 cell。
+菜单会话保留到结束动画完成；无 animator 时在结束通知后释放。未展示且 configuration 已释放的
+会话会在后续菜单请求时清扫。业务闭包应避免强持有页面或 adapter；重复请求应创建新的 configuration 对象。
+
 ### Table 编辑、移动与滑动操作
 
 原生 table 行为可以直接声明在 `TableRow` 上：

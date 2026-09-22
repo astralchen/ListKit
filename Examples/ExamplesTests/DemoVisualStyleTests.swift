@@ -69,7 +69,7 @@ struct DemoVisualStyleTests {
             "Room Mode", "Gift Mode", "Log Mode", "Refresh Status", "Reset Demo"
         ])
         #expect(menuActionTitles(in: roomMenu) == [
-            "Refresh Status", "Add System Event", "Reset Demo"
+            "Context Menu APIs", "Refresh Status", "Add System Event", "Reset Demo"
         ])
         #expect(menuActions(in: studioMenu).first?.state == .on)
     }
