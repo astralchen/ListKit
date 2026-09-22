@@ -520,6 +520,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     }
 
     /// 监听键盘回车、遥控器等触发的主操作。
+    @available(iOS 16.0, tvOS 16.0, *)
     public func onPrimaryAction(_ handler: @escaping @MainActor (TableListContext) -> Void) -> Self {
         var copy = self
         copy.rowPrimaryActionHandler = handler
@@ -527,6 +528,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     }
 
     /// 监听主操作，并传入当前 model。
+    @available(iOS 16.0, tvOS 16.0, *)
     public func onPrimaryAction(_ handler: @escaping @MainActor (Model, TableListContext) -> Void) -> Self {
         let boxedModel = TableMainActorValueBox(value: model)
         return onPrimaryAction { context in

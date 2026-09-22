@@ -657,7 +657,7 @@ final class LiveRoomViewModel {
     private func makeMicSeatsSection() -> ListSection<LiveRoomSection> {
         ListSection(.micSeats) {
             ForEach(state.micSeats, id: \.id) { seat in
-                Row(model: seat, cell: MicSeatCell.self) { cell, seat, _ in
+                let row = Row(model: seat, cell: MicSeatCell.self) { cell, seat, _ in
                     cell.configure(seat)
                 }
                 .refreshID(seat.refreshToken)
@@ -667,8 +667,12 @@ final class LiveRoomViewModel {
                 .onSelect { seat, context in
                     context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
                 }
-                .onPrimaryAction { seat, context in
-                    context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
+                if #available(iOS 16.0, *) {
+                    row.onPrimaryAction { seat, context in
+                        context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
+                    }
+                } else {
+                    row
                 }
             }
         } layout: {
@@ -736,7 +740,7 @@ final class LiveRoomViewModel {
     private func makeGiftsSection() -> ListSection<LiveRoomSection> {
         ListSection(.gifts) {
             ForEach(state.gifts, id: \.id) { gift in
-                Row(model: gift, cell: GiftCell.self) { cell, gift, _ in
+                let row = Row(model: gift, cell: GiftCell.self) { cell, gift, _ in
                     cell.configure(gift)
                 }
                 .refreshID(gift.refreshToken)
@@ -746,9 +750,6 @@ final class LiveRoomViewModel {
                 .selectionFollowsFocus()
                 .springLoadingEnabled()
                 .onSelect { gift, context in
-                    context.send(LiveRoomCollectionEvent.selectGift(gift.id))
-                }
-                .onPrimaryAction { gift, context in
                     context.send(LiveRoomCollectionEvent.selectGift(gift.id))
                 }
                 .onHighlightChange { highlighted, context in
@@ -764,6 +765,13 @@ final class LiveRoomViewModel {
                 }, send: { gift in
                     LiveRoomCollectionEvent.sendGift(gift.id)
                 })
+                if #available(iOS 16.0, *) {
+                    row.onPrimaryAction { gift, context in
+                        context.send(LiveRoomCollectionEvent.selectGift(gift.id))
+                    }
+                } else {
+                    row
+                }
             }
         } layout: {
             GridLayout(
@@ -832,7 +840,7 @@ final class LiveRoomViewModel {
         let moderationCount = state.moderationEvents.count
         return TableSection(.moderation) {
             TableForEach(state.moderationEvents, id: \.id) { [weak self] event in
-                TableRow(model: event, cell: AdminEventTableCell.self) { cell, event, _ in
+                let row = TableRow(model: event, cell: AdminEventTableCell.self) { cell, event, _ in
                     cell.configure(event)
                 }
                 .height(.fixed(72))
@@ -844,9 +852,6 @@ final class LiveRoomViewModel {
                 .springLoadingEnabled()
                 .indentWhileEditing(false)
                 .onSelect { event, context in
-                    context.send(LiveRoomAdminEvent.select(event.id))
-                }
-                .onPrimaryAction { event, context in
                     context.send(LiveRoomAdminEvent.select(event.id))
                 }
                 .contextMenu { context in
@@ -882,6 +887,13 @@ final class LiveRoomViewModel {
                 }
                 .onMove { _, source, destination in
                     self?.moveModeration(from: source, to: destination)
+                }
+                if #available(iOS 16.0, *) {
+                    row.onPrimaryAction { event, context in
+                        context.send(LiveRoomAdminEvent.select(event.id))
+                    }
+                } else {
+                    row
                 }
             }
         } header: {

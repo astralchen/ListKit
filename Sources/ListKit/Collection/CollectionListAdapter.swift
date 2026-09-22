@@ -1764,6 +1764,7 @@ where SectionID: Hashable & Sendable {
     }
 
     /// 为 iOS 16+ 多选 item 提供一个批量 context menu。
+    @available(iOS 16.0, tvOS 17.0, *)
     @discardableResult
     public func contextMenuForItems(
         _ provider: @escaping @MainActor ([ListContext], CGPoint) -> UIContextMenuConfiguration?

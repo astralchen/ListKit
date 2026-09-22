@@ -598,6 +598,8 @@ ListSection(.gifts) {
 
 Section 默认使用 `.automatic`：声明了 `.onSelect(...)`、`.onDeselect(...)`、`.selected(...)`、`.onSelectionChange(...)`、`.selectionFollowsFocus()` 或 outline disclosure 的 Row 自动参与 section 内单选，纯展示 Row 不会进入选中态；外部 UIKit delegate 声明选择回调时也会自动启用。显式 `.selectionMode(.single)` 会让 section 内所有未禁用 Row 可选；多选使用 `.selectionMode(.multiple)`，系统多选手势需再声明 `.multipleSelectionInteraction()`；`.selectionMode(.none)` 会关闭选择及其回调。`.onHighlightChange(...)` 可以单独使用，包括在 `.selectionDisabled()` 的 Row 上；键盘、鼠标和 tvOS 风格交互还可以组合 `.focusable()` 与 `.onPrimaryAction(...)`。
 
+`Row.onPrimaryAction(...)` 和 `TableRow.onPrimaryAction(...)` 要求 iOS 16.0 / tvOS 16.0；`CollectionListAdapter.contextMenuForItems(...)` 要求 iOS 16.0 / tvOS 17.0。部署目标为 iOS 15 时，调用这些 API 需要放在 `if #available(iOS 16.0, *)` 分支中。
+
 ## Layout 与 Supplementary
 
 Collection section 可以直接声明常见布局：
