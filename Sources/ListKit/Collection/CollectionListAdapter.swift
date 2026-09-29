@@ -55,6 +55,18 @@ where SectionID: Hashable & Sendable {
     /// cell/supplementary 展示回调转发对象。
     public weak var displayDelegate: UICollectionViewDelegate?
 
+    /// 页面托管的可触摸分组索引；默认 `nil`，保留 UIKit 原生索引路径。
+    ///
+    /// 适配器弱持有控件。绑定后由 ListKit 提供标题、滑动定位与浮动字母提示，
+    /// 并停止向 UIKit 提供原生索引，避免双重显示。页面负责控件布局与本地化描述。
+    public weak var sectionIndexView: CollectionSectionIndexView? {
+        didSet {
+            if oldValue !== sectionIndexView { oldValue?.update(titles: [], selection: nil) }
+            refreshSectionIndexView()
+            collectionView?.collectionViewLayout.invalidateLayout()
+        }
+    }
+
     /// 最近一次 `apply` 的摘要。
     ///
     /// 同步 `apply` 提交后会先更新为 `.submitted` 摘要；snapshot、可见刷新、layout
@@ -841,6 +853,7 @@ where SectionID: Hashable & Sendable {
                 return
             }
             self.isApplyingSnapshot = false
+            self.refreshSectionIndexView()
             self.restoreSelection(for: selectedItemIdentities)
             self.synchronizeControlledSelection()
             self.reconcileSelection()
@@ -1528,6 +1541,7 @@ where SectionID: Hashable & Sendable {
             self.synchronizeControlledSelection()
             self.reconcileSelection()
             self.rebindVisibleSupplementaryTapHandlers()
+            self.refreshSectionIndexView()
             metrics.visibleReconfiguredRowCount = collectionView.indexPathsForVisibleItems.count
             metrics.visibleReconfiguredSupplementaryCount = self.visibleSupplementaryTargets().count
             metrics.scrollOutcome = self.performScrollBehavior(
@@ -2272,6 +2286,7 @@ where SectionID: Hashable & Sendable {
     }
 
     public func indexTitles(for collectionView: UICollectionView) -> [String]? {
+        guard sectionIndexView == nil else { return nil }
         indexTitleEntries = makeIndexTitleEntries()
         let titles = indexTitleEntries.map(\.title)
         return titles.isEmpty ? nil : titles
@@ -2295,6 +2310,28 @@ where SectionID: Hashable & Sendable {
         }
 
         return firstVisibleItemIndexPath() ?? IndexPath(item: 0, section: 0)
+    }
+
+    private func refreshSectionIndexView() {
+        guard let sectionIndexView else { return }
+        let entries = makeIndexTitleEntries()
+        sectionIndexView.update(titles: entries.map(\.title)) { [weak self] index in
+            guard let self, let collectionView = self.collectionView,
+                  !self.isApplyingSnapshot, let entry = entries[safe: index],
+                  let path = self.dataSource.indexPath(for: entry.identity) else { return }
+            collectionView.layoutIfNeeded()
+            let header = collectionView.collectionViewLayout.layoutAttributesForSupplementaryView(
+                ofKind: UICollectionView.elementKindSectionHeader,
+                at: IndexPath(item: 0, section: path.section)
+            )
+            guard let item = collectionView.layoutAttributesForItem(at: path) else { return }
+            let top = min(header?.frame.minY ?? item.frame.minY, item.frame.minY)
+            let minimum = -collectionView.adjustedContentInset.top
+            let maximum = max(minimum, collectionView.contentSize.height - collectionView.bounds.height
+                              + collectionView.adjustedContentInset.bottom)
+            collectionView.setContentOffset(CGPoint(x: collectionView.contentOffset.x,
+                y: min(maximum, max(minimum, top - collectionView.adjustedContentInset.top))), animated: false)
+        }
     }
 
     private func makeIndexTitleEntries() -> [CollectionIndexTitleEntry] {

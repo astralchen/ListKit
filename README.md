@@ -1345,3 +1345,33 @@ Sources/ListKit/
 ## License
 
 ListKit 基于 MIT License 发布，详见 [LICENSE](LICENSE)。
+
+
+### Collection 分组触摸索引
+
+`ListSection.indexTitle(_:)` 提供分组标题。需要常驻的点选／滑动索引和当前字母提示时，
+创建 `CollectionSectionIndexView`，赋给 `adapter.sectionIndexView`，并由页面放到列表的语义尾侧。
+控件不依赖 QuickLayoutKit；可使用 QuickLayout、Auto Layout 或其他宿主布局。建议宽度至少 44 pt。
+宿主先处理索引的横向安全区域；与列表等高布局时，在布局回调中将列表 `adjustedContentInset` 的 top／bottom 传给索引 `contentInsets` 的对应边缘，避免导航栏或工具栏遮挡，也避免横向安全区域重复叠加。
+
+```swift
+let index = CollectionSectionIndexView()
+index.accessibilityLabel = "联系人索引" // 应用负责本地化
+adapter.sectionIndexView = index
+// 页面将 collectionView 和 index 并排布局，避免索引覆盖行内容。
+adapter.apply(transaction: .disabled) {
+    ListSection("A") {
+        Row("alice", model: "Alice", cell: UICollectionViewListCell.self) { cell, name, _ in
+            var content = UIListContentConfiguration.cell()
+            content.text = name
+            cell.contentConfiguration = content
+        }
+    }.indexTitle("A")
+}
+```
+
+索引只包含有可定位行的分组，按提交顺序排列；隐藏某分组索引使用 `.indexTitle(nil)`。
+所有标题清空后控件自动隐藏。点选和滑动定位分组顶部，列表尾部按实际可滚动范围限制；
+不选择联系人、不触发 Row 动作。VoiceOver 使用可调整控件逐项定位，值为当前标题。
+数据更新后通过行 identity 解析当前位置；snapshot 提交期间忽略定位，避免陈旧 IndexPath。
+绑定自定义索引时关闭原生索引数据返回，解除绑定后恢复原生路径。控件由页面持有，adapter 弱持有。
