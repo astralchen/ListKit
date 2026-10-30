@@ -1,10 +1,206 @@
 # 整体布局 DSL 验证记录
 
-更新日期：2026-10-29。使用 XcodeBuildMCP、ListKit.xcworkspace、Debug、iPhone 17 Pro / iOS 26.5 Simulator，关闭签名与并行测试。最低部署要求仍是 iOS 15。
+最新更新：2026-10-30。2026-10-29 轮验证使用 XcodeBuildMCP、ListKit.xcworkspace、Debug、iPhone 17 Pro / iOS 26.5 Simulator，关闭签名与并行测试。最低部署要求仍是 iOS 15。
 
 本记录对应整体布局与 decorationItems 集合 API。此前 0.5.0 同步的验证不作为本次最终实现通过的证据。
 
-## 2026-10-29 身份替换的正交滚动保持与未启用 kind 隔离（当前实现）
+## 2026-10-30 执行中正交偏移快照失效修复
+
+显式滚动找到有效目标后，更新目标 Section 的滚动版本并清除其 pending 恢复。
+`apply` 和 `reloadSections` 捕获的偏移快照记录该版本；完成阶段仅恢复版本仍匹配的
+快照，避免刷新开始之后发出的显式滚动被旧位置覆盖。版本按 Section identity 隔离，
+Section 移除时清理；公共 API 不变。
+
+先将两项失败探针、completion 内滚动与 transaction 滚动两个对照纳入正式回归，
+再增加两项矩阵测试，分别覆盖 `apply` 和 `reloadSections`：
+
+- 双正交 Section 同时刷新，只让显式滚动的目标快照失效；另一个 Section 人为归零后
+  必须恢复原位置。随后再次刷新，两个 Section 都必须保持各自最新的位置。
+- 不存在的 Section 和空 Section 滚动返回失败；人为归零后仍恢复已捕获的旧位置。
+
+`OrthogonalRefreshRegressionTests` 共 20 个方法，本轮新增 6 个。
+修复前专项 20 项中 **17 通过、3 失败**（6 条失败断言），包括两项原始探针和双 Section
+矩阵；结果 `/tmp/listkit-inflight-offset-before.xcresult`。
+修复后专项 **20/20 通过，0 跳过**；结果 `/tmp/listkit-inflight-offset-focused.xcresult`。
+
+最终库全量回归 **394/394 通过，0 失败、0 跳过**，环境为 Debug、iPhone 17 Pro /
+iOS 26.5 Simulator、关闭并行测试；结果 `/tmp/listkit-inflight-offset-library-final.xcresult`，
+摘要 `/tmp/listkit-inflight-offset-library-summary.json`。
+iOS 15 编译契约 **22 个正例、62 个预期拒绝例全部符合预期**，日志
+`/tmp/listkit-inflight-offset-api.log`；这不是 iOS 15 runtime 验证。
+
+Examples 默认方案完整回归 **73/73 用例通过，0 失败、0 跳过**，包括 53 个单元用例和
+20 个 UI 用例；启动用例包含 4 种配置，UI 日志共 23 次实际执行。结果
+`/tmp/listkit-inflight-offset-examples-final.xcresult`，摘要
+`/tmp/listkit-inflight-offset-examples-summary.json`。
+
+82 个库、示例及测试 Swift 文件的校验值与全量验证开始时一致，记录
+`/tmp/listkit-inflight-offset-validated-source.json`；`git diff --check` 通过。
+没有提交或推送。未验证真机、Release 或旧版 iOS runtime；iOS 26.5 模拟器通过
+不代表 estimated 主轴精确分页等既有限制已解除。
+
+## 2026-10-30 队列拒绝与显式滚动边界修复
+
+补齐上次复审发现的四项旧分支遗漏，不修改公共 API：
+
+- Collection/Table 诊断拒绝 apply 后完成回调并继续推进队列；completion 重入仍排在
+  已有 serial 请求之后。
+- Collection 的 `scrollToLastItem`、transaction `scrollTo`/`scrollToLast` 共用显式滚动入口。
+  先验证实际目标，再清除该 Section 的 pending 正交偏移，避免旧恢复覆盖新滚动；
+  无效目标和无关 Section 的 pending 恢复继续保留。
+- 尚未提交的 apply/reloadAll 被取代时，最终摘要将刷新指标归零，同时保留声明差异、
+  诊断信息和 Reduce Motion 状态；提交后被取代的请求继续保留实际执行指标。
+  apply 未提交即取消或失去 adapter 的完成路径也采用零实际动作。
+
+正式新增 21 个测试方法：
+
+- 将临时审查的全部 14 个探针纳入正式回归，包括 250 轮 beginCommit/取消竞争、
+  合并 subscriber 部分及全部取消、completion 重入、队列拒绝、未提交摘要及偏移竞争。
+- 补充 7 个对照：Collection/Table 的诊断 completion 重入与 queued reloadAll 摘要，
+  无效末项目标、有效 transaction 滚动和跨 Section 滚动隔离。
+- `RefreshQueueBoundaryRegressionTests` 位于 `RefreshCancellationRegressionTests.swift`，
+  共 15 个方法；`OrthogonalRefreshRegressionTests` 新增 6 个，现为 14 个方法。
+
+验证证据：
+
+- 生产代码修改前，正式审查探针 **14 项：8 通过、6 失败**（8 条失败断言），对应四项
+  缺陷；结果 `/tmp/listkit-queue-scroll-fix-before.xcresult`。
+- 修复后相关专项 **45/45 通过**，结果 `/tmp/listkit-queue-scroll-fix-focused.xcresult`。
+- 补齐对照后的队列与偏移专项 **29/29 通过**，结果
+  `/tmp/listkit-queue-scroll-fix-expanded.xcresult`。
+- 最终原始 `ListKit.xcworkspace / ListKit` 全量回归：**388/388 通过，0 失败、0 跳过**。
+  Debug、专用 iPhone 17 Pro / iOS 26.5 Simulator、禁用并行测试。结果
+  `/tmp/listkit-queue-scroll-fix-library-final.xcresult`，摘要
+  `/tmp/listkit-queue-scroll-fix-library-summary.json`。
+- iOS 15 编译契约：**22 个正例、62 个预期拒绝例全部符合预期**，日志
+  `/tmp/listkit-queue-scroll-fix-api.log`。这不是 iOS 15 runtime 验证。
+- Examples 默认方案完整回归：**73/73 用例通过，0 失败、0 跳过**，包括 53 个单元用例
+  和 20 个 UI 用例；启动用例运行 4 种配置，UI 日志共 23 次实际执行。结果
+  `/tmp/listkit-queue-scroll-fix-examples-final.xcresult`，摘要
+  `/tmp/listkit-queue-scroll-fix-examples-summary.json`。
+- 55 个 Swift 源码及测试文件的校验值与全量验证时一致，记录
+  `/tmp/listkit-queue-scroll-fix-validated-source.json`；`git diff --check` 通过。
+  暂存区为空，HEAD 保持 `f0d7728`，没有提交或推送。
+
+此前已保存的审查证据 `/tmp/listkit-commit-boundary-review-full.xcresult` 和修复前源码
+对照 `/tmp/listkit-commit-boundary-review-before.xcresult` 保留；这些发现属于旧分支遗漏，
+不是上一轮 beginCommit 修复引入的新回归。
+
+未验证真机、Release 或旧版 iOS runtime；estimated 主轴精确分页沿用既有边界。
+
+## 2026-10-30 二次审查后的边界修复
+
+在上一轮修复基础上，补齐 completion 内取消、正交偏移延迟恢复与 superseded 摘要三类边界。
+没有修改公共 API，也未提交或推送。
+
+实现变化：
+
+- `ListAsyncMutationBridge.beginCommit()` 在锁内与取消竞争。Collection/Table 的 apply、
+  reloadAll、定向 Row 和 Section 刷新在真正执行时调用，避免 completion 中取消后仍抢先
+  提交；提交后取消仍等待真实结果。commit 前已经取消的 async 请求统一返回零实际动作，
+  不受取消通知从队列移除、出队检查或替代回调到达的顺序影响。合并请求按 subscriber 过滤，取消的更强 Row action
+  不再影响仍有效的请求，取消队首后继续推进后续请求。
+- 正交偏移捕获优先采用该 Section 尚未消费的 pending 恢复目标，防止刚出现的新容器
+  初始偏移覆盖屏幕外的旧位置。实际恢复后移除 pending，后续滚动仍保存新的观察值。
+- 已提交且被取代的 apply 在真实完成时用实际 metrics 生成 `.superseded` 摘要，并发布到
+  `lastApplySummary`；不执行尚未开始的过期显式滚动。Collection/Table 保持对称。
+
+正式新增 30 个用例：
+
+- `RefreshCancellationRegressionTests`：16 个。Collection/Table 的 completion 内取消、
+  提前取消和提交后取消；Row、Section、reloadAll 入口；取消合并 Row 的更强 action 后，
+  completion subscriber 继续重配且仅完成一次；取消唯一 subscriber 后队列继续推进；
+  提前取消含 allMatching 刷新计划的 apply 时，摘要不报告未执行的 snapshot 动作。
+- `OrthogonalRefreshRegressionTests`（位于 `SupplementaryReloadIsolationTests.swift`）：8 个。
+  屏幕外 reload 后立即再次 reload/apply reload；不再次 reload 和等待恢复后的对照；
+  恢复后继续滚动；删除重插、内容缩短裁剪与连续合并 section reload。
+- `RefreshMechanismRegressionTests` 增加 6 个（现为 23 个）：Collection/Table 的
+  header/footer 实际刷新与 superseded 摘要一致性，以及过期显式滚动不执行。
+
+验证证据：
+
+- 先纳入上一轮审查的全部 14 个失败探针与对照：**9 通过、5 失败**（11 条失败断言），
+  结果 `/tmp/listkit-refresh-boundary-fix-before.xcresult`；失败覆盖两种 adapter 的取消与摘要，
+  以及屏幕外恢复期间连续 reload 的偏移丢失。保留修复前证据。
+- 优先修复取消与偏移后，相关测试及生命周期检查 **19/19 通过**，结果
+  `/tmp/listkit-refresh-boundary-fix-priority.xcresult`。扩展专项 **43/43 通过**，结果
+  `/tmp/listkit-refresh-boundary-fix-expanded.xcresult`。
+- 收尾补充 allMatching 取消摘要探针：Collection/Table **2/2 失败**，均错误报告
+  `snapshotReconfiguredRowCount = 1`；结果
+  `/tmp/listkit-refresh-boundary-fix-cancel-summary-all-matching.xcresult`。随后统一 bridge 的
+  commit 前取消结果。初版可见刷新对照通过，因为该计划本来没有 snapshot 动作。
+- 原始 `ListKit.xcworkspace / ListKit` 完整回归：**367/367 通过，0 失败、0 跳过**。
+  Debug、专用 iPhone 17 Pro / iOS 26.5 Simulator、禁用并行测试。结果
+  `/tmp/listkit-refresh-boundary-fix-library-final-v2.xcresult`，摘要
+  `/tmp/listkit-refresh-boundary-fix-library-final-v2-summary.json`。
+- 最终源码的 Examples 默认方案完整回归：**73/73 用例通过，0 失败、0 跳过**，包含
+  53 个单元用例和 20 个 UI 用例。启动用例运行 4 种配置，UI 日志共 23 次实际执行。
+  结果 `/tmp/listkit-refresh-boundary-fix-examples-final-v2.xcresult`，摘要
+  `/tmp/listkit-refresh-boundary-fix-examples-final-v2-summary.json`。
+- 最终 6 个生产/测试文件的校验值与全量验证时一致，记录
+  `/tmp/listkit-refresh-boundary-fix-validated-source.json`；`git diff --check` 通过。
+  暂存区为空，HEAD 保持 `f0d7728`，没有提交或推送。
+- iOS 15 编译契约：**22 个正例、62 个预期拒绝例全部符合预期**，日志
+  `/tmp/listkit-refresh-boundary-fix-api-final.log`。不代表 iOS 15 runtime 验证。
+
+中间 Examples UI 运行因补充取消摘要修复而主动中止，日志
+`/tmp/listkit-refresh-boundary-fix-examples-final.log` 保留，不作为最终通过证据。
+
+本轮未验证真机、Release 或旧版 iOS runtime；estimated 主轴精确分页沿用既有边界。
+
+## 2026-10-30 刷新机制与布局刷新回归
+
+本轮只修复刷新调度、Table supplementary 结构变化和 Section reload 的正交位置恢复，
+不改公共 API、不引入新的布局模型。保留此前分页实验及历史失败记录。
+
+实现变化：
+
+- 已提交的 apply 即使被标记为 superseded，也完成可见 Row、header/footer/supplementary
+  刷新及布局失效，再交给下一请求。被取代的显式滚动指令仍不执行。
+- Collection/Table 的 apply、定向 Row 刷新和 Section reload 在 completion 重入时检查
+  已有 pending 队列；只有真正出队的 apply 可以绕过排队检查，保持 serial 调用顺序。
+- Table 按 section 与 header/footer 角色检测 identity（包含视图类型）和存在性变化，
+  安排 Section reload；纯 refreshID 变化继续按节点规则重配，不升级为 Section reload。
+- Collection 对刷新计划中全部 reload Section 保存正交偏移；主动 reloadSections 也接入
+  布局后恢复，并恢复选择。沿用按 Section identity 关联、范围裁剪和屏幕外延迟恢复。
+
+正式新增 `Tests/ListKitTests/RefreshMechanismRegressionTests.swift`，共 17 个测试方法。
+覆盖 Collection/Table 连续合并与 completion 重入、混合定向刷新队列、布局签名变化、
+header/footer 身份与类型替换、never trigger、纯 refreshID 隔离、附属视图增删与选择，
+以及连续/居中分页 × 动画开/关的 Section reload 和 reloadAll 位置保持。
+
+验证与证据：
+
+- 修复前首先纳入 12 个正式用例：10 失败、2 通过；包括本轮新补的 Table 队列重入和
+  footer 身份/类型对称失败。结果 `/tmp/listkit-refresh-fix-before.xcresult`。
+- 优先修复连续合并与队列顺序后，4/4 定向测试通过；四类修复及隔离、生命周期专项
+  共 32/32 通过。结果 `/tmp/listkit-refresh-fix-queue.xcresult`、
+  `/tmp/listkit-refresh-fix-focused.xcresult`。
+- 最终原始 `ListKit.xcworkspace / ListKit` 方案：**337/337 通过，0 失败、0 跳过**。
+  Debug，专用 iPhone 17 Pro / iOS 26.5 Simulator，禁用并行测试；无需临时 App 宿主。
+  结果 `/tmp/listkit-refresh-fix-library-final.xcresult`，详细日志
+  `/tmp/listkit-refresh-fix-library-final.log`。
+- Examples 默认方案完整回归：**73/73 用例通过，0 失败、0 跳过**。包括 53 个单元用例与
+  20 个 UI 用例；启动用例有 4 种配置，因此 UI 日志记录 23 次实际执行。
+  覆盖 Layout Lab、刷新滚动、选择、菜单、横屏安全区与启动性能。
+  结果 `/tmp/listkit-refresh-fix-examples-final.xcresult`，详细日志
+  `/tmp/listkit-refresh-fix-examples-final.log`。`NATIVE_PAGING_PROBE` 下的独立实验不属于默认方案。
+- `git diff --check` 通过；没有暂存、提交或推送。
+- iOS 15 编译契约：22 个正例、62 个预期拒绝例全部符合预期；
+  日志 `/tmp/listkit-refresh-fix-api.log`。这不是 iOS 15 runtime 验证。
+
+中间失败及环境边界：
+
+- 扩展用例曾错误要求移除自定义 Table supplementary 后 `headerView/footerView` 必须为 nil；
+  UIKit 可以返回系统默认空占位视图。测试已改为验证原自定义类型退出，未放宽本次四类
+  缺陷的内容、顺序或偏移断言。原失败日志 `/tmp/listkit-refresh-fix-expanded.log` 保留。
+- 共享模拟器上的中间完整运行曾停在结果收集阶段；临时 App 宿主完整运行还出现额外
+  约 62pt 横向安全区导致的既有布局夹具断言差异。相关日志
+  `/tmp/listkit-refresh-fix-full.log`、`/tmp/listkit-refresh-fix-host-final.log` 保留；
+  这些运行不作为最终通过证据。最终使用专用模拟器和仓库原始方案，全部既有布局断言未改。
+- 未进行真机、Release 或旧版 iOS runtime 验证；estimated 主轴精确分页仍按原有文档边界处理。
+
+## 2026-10-29 身份替换的正交滚动保持与未启用 kind 隔离（历史验证）
 
 本轮保留实际 kind、Section reload 和纯 refreshID 重配语义，没有新增公共 API。身份替换只对启用的 kind 安排 Section 重载：内建布局检查新几何声明，EnvironmentLayout 在最近一次真实 UIKit 环境中解析新分支，已解析的实际 boundary/item kinds 用于区别“仅注册内容”与“已启用几何”。自定义 provider 自有 boundary 及已显示的自有 item supplementary 继续参与替换，不能仅按屏幕可见性过滤整个 Section。
 

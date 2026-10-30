@@ -804,3 +804,442 @@ private final class ReviewCell: UICollectionViewCell {
 }
 private class ReviewView: UICollectionReusableView { var value = 0 }
 private final class OtherReviewView: ReviewView {}
+
+@MainActor final class OrthogonalRefreshRegressionTests: XCTestCase {
+  private func horizontal(_ version: Int, count: Int = 30, id: Int = 0) -> ListSection<Int> {
+    ListSection(id) {
+      for row in 0..<count {
+        Row(row, model: row, cell: ReviewCell.self) { _, _, _ in }.refresh(when: .never)
+      }
+    } layout: {
+      GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).gridCrossAxisSize(.fixed(80))
+        .orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0).boundarySupplementaries {
+          BoundarySupplementaryLayout(
+            kind: "header", size: .init(width: .fractionalWidth(1), height: .absolute(30)),
+            alignment: .top)
+        }
+    } supplementaries: {
+      SectionSupplementary(ReviewView.self, kind: "header", id: 0) { view, _ in view.value = version
+      }
+      .refreshID(version).refresh(when: .refreshIDChanges, action: .reloadSection)
+    }
+  }
+  private func vertical() -> ListSection<Int> {
+    ListSection(1) {
+      for row in 0..<40 {
+        Row(row, model: row, cell: ReviewCell.self) { _, _, _ in }.refresh(when: .never)
+      }
+    } layout: {
+      GridLayout(tracks: 1).itemMainAxisSize(.fixed(40))
+    }
+  }
+  private func inner(_ view: UIView) -> UIScrollView? {
+    for child in view.subviews {
+      if child is UICollectionViewCell { continue }
+      if let scroll = child as? UIScrollView { return scroll }
+      if let found = inner(child) { return found }
+    }
+    return nil
+  }
+  private func seed(_ f: ReviewFixture) async throws {
+    await f.adapter.apply(transaction: .disabled) {
+      horizontal(0)
+      vertical()
+    }
+    f.collection.layoutIfNeeded()
+    let scroll = try XCTUnwrap(inner(f.collection))
+    scroll.setContentOffset(CGPoint(x: 600, y: 0), animated: false)
+    scroll.layoutIfNeeded()
+    f.collection.layoutIfNeeded()
+    XCTAssertEqual(scroll.contentOffset.x, 600, accuracy: 1)
+  }
+  func testOffscreenReloadThenImmediateVisibleReloadRetainsPendingOffset() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    XCTAssertFalse(f.collection.indexPathsForVisibleItems.contains { $0.section == 0 })
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    await Task.yield()
+    f.collection.layoutIfNeeded()
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+  }
+  func testOffscreenReloadRestoresOffsetWithoutSecondReload() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    XCTAssertFalse(f.collection.indexPathsForVisibleItems.contains { $0.section == 0 })
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    let restored = expectation(description: "deferred restoration turn")
+    DispatchQueue.main.async { restored.fulfill() }
+    await fulfillment(of: [restored], timeout: 3)
+    f.collection.layoutIfNeeded()
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+  }
+  func testOffscreenReloadThenVisibleReloadAfterRestorationRetainsOffset() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    let restored = expectation(description: "deferred restoration turn")
+    DispatchQueue.main.async { restored.fulfill() }
+    await fulfillment(of: [restored], timeout: 3)
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.layoutIfNeeded()
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+  }
+  func testOffscreenReloadThenImmediateApplyReloadRetainsPendingOffset() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    await f.adapter.apply(transaction: .disabled) {
+      horizontal(1)
+      vertical()
+    }
+    f.collection.layoutIfNeeded()
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+  }
+  func testRestoredOffsetDoesNotOverrideSubsequentScrolling() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    let restored = expectation(description: "restoration finished")
+    DispatchQueue.main.async { restored.fulfill() }
+    await fulfillment(of: [restored], timeout: 3)
+    let scroll = try XCTUnwrap(inner(f.collection))
+    XCTAssertEqual(scroll.contentOffset.x, 600, accuracy: 1)
+    scroll.setContentOffset(CGPoint(x: 900, y: scroll.contentOffset.y), animated: false)
+    scroll.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.layoutIfNeeded()
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 900, accuracy: 1)
+  }
+  func testOffscreenPendingOffsetDoesNotLeakIntoReinsertedSection() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    await f.adapter.apply(transaction: .disabled) { vertical() }
+    await f.adapter.apply(transaction: .disabled) {
+      horizontal(0)
+      vertical()
+    }
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    await Task.yield()
+    f.collection.layoutIfNeeded()
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 0, accuracy: 1)
+  }
+  func testReloadClampsOffsetWhenContentShrinks() async throws {
+    for animated in [false, true] {
+      let f = ReviewFixture()
+      defer { f.close() }
+      try await seed(f)
+      await f.adapter.apply(transaction: .init(animation: animated ? .enabled : .disabled)) {
+        horizontal(1, count: 3)
+        vertical()
+      }
+      f.collection.layoutIfNeeded()
+      let scroll = try XCTUnwrap(inner(f.collection))
+      let maxX = max(
+        -scroll.adjustedContentInset.left,
+        scroll.contentSize.width - scroll.bounds.width + scroll.adjustedContentInset.right)
+      XCTAssertLessThanOrEqual(scroll.contentOffset.x, maxX + 1)
+      XCTAssertGreaterThanOrEqual(scroll.contentOffset.x, -scroll.adjustedContentInset.left - 1)
+    }
+  }
+  func testCoalescedSectionReloadPreservesOrthogonalOffset() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    let done = expectation(description: "coalesced section reloads")
+    done.expectedFulfillmentCount = 2
+    f.adapter.apply(transaction: .disabled, completion: { _ in done.fulfill() }) {
+      horizontal(1)
+      vertical()
+    }
+    f.adapter.apply(transaction: .disabled, completion: { _ in done.fulfill() }) {
+      horizontal(1)
+      vertical()
+    }
+    await fulfillment(of: [done], timeout: 4)
+    f.collection.layoutIfNeeded()
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+  }
+}
+
+extension OrthogonalRefreshRegressionTests {
+  func testDirectScrollWinsOverPendingRestore() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    XCTAssertTrue(f.adapter.scrollToLastItem(in: 0, at: .right, animated: false))
+    f.collection.layoutIfNeeded()
+    let immediate = try XCTUnwrap(inner(f.collection)).contentOffset.x
+    XCTAssertGreaterThan(immediate, 2000)
+    let turn = expectation(description: "pending restoration executed")
+    DispatchQueue.main.async { turn.fulfill() }
+    await fulfillment(of: [turn], timeout: 3)
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, immediate, accuracy: 1)
+  }
+  func testDirectScrollAfterRestorationWins() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    let restored = expectation(description: "pending restoration executed")
+    DispatchQueue.main.async { restored.fulfill() }
+    await fulfillment(of: [restored], timeout: 3)
+    XCTAssertTrue(f.adapter.scrollToLastItem(in: 0, at: .right, animated: false))
+    f.collection.layoutIfNeeded()
+    let immediate = try XCTUnwrap(inner(f.collection)).contentOffset.x
+    XCTAssertGreaterThan(immediate, 2000)
+    await Task.yield()
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, immediate, accuracy: 1)
+  }
+  func testMissingScrollTargetKeepsPendingOffset() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    await f.adapter.apply(
+      transaction: .disabled.scrollBehavior(.scrollTo(ListScrollTarget(999), position: .bottom))
+    ) {
+      horizontal(0)
+      vertical()
+    }
+    f.collection.setContentOffset(.zero, animated: false)
+    f.collection.layoutIfNeeded()
+    let restored = expectation(description: "pending restoration executed")
+    DispatchQueue.main.async { restored.fulfill() }
+    await fulfillment(of: [restored], timeout: 3)
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+  }
+}
+
+extension OrthogonalRefreshRegressionTests {
+  func testMissingLastItemTargetsKeepPendingOffset() async throws {
+    for useTransaction in [false, true] {
+      let f = ReviewFixture()
+      defer { f.close() }
+      try await seed(f)
+      f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+      f.collection.layoutIfNeeded()
+      _ = await f.adapter.reloadSections([0], transaction: .disabled)
+      if useTransaction {
+        await f.adapter.apply(transaction: .disabled.scrollBehavior(.scrollToLast(in: 999))) {
+          horizontal(0)
+          vertical()
+        }
+      } else {
+        XCTAssertFalse(f.adapter.scrollToLastItem(in: 999, animated: false))
+      }
+      f.collection.setContentOffset(.zero, animated: false)
+      f.collection.layoutIfNeeded()
+      let restored = expectation(description: "pending restoration completed")
+      DispatchQueue.main.async { restored.fulfill() }
+      await fulfillment(of: [restored], timeout: 3)
+      XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+    }
+  }
+  func testTransactionScrollWinsOverPendingOffset() async throws {
+    let f = ReviewFixture()
+    defer { f.close() }
+    try await seed(f)
+    f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+    f.collection.layoutIfNeeded()
+    _ = await f.adapter.reloadSections([0], transaction: .disabled)
+    await f.adapter.apply(
+      transaction: .disabled.scrollBehavior(.scrollToLast(in: 0, position: .nearest))
+    ) {
+      horizontal(0)
+      vertical()
+    }
+    f.collection.layoutIfNeeded()
+    let targetOffset = try XCTUnwrap(inner(f.collection)).contentOffset.x
+    XCTAssertGreaterThan(targetOffset, 2000)
+    let restored = expectation(description: "scheduled restoration turn")
+    DispatchQueue.main.async { restored.fulfill() }
+    await fulfillment(of: [restored], timeout: 3)
+    XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, targetOffset, accuracy: 1)
+  }
+  func testScrollToOtherSectionKeepsPendingOrthogonalOffset() async throws {
+    for useTransaction in [false, true] {
+      let f = ReviewFixture()
+      defer { f.close() }
+      try await seed(f)
+      f.collection.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+      f.collection.layoutIfNeeded()
+      _ = await f.adapter.reloadSections([0], transaction: .disabled)
+      if useTransaction {
+        await f.adapter.apply(transaction: .disabled.scrollBehavior(.scrollToLast(in: 1))) {
+          horizontal(0)
+          vertical()
+        }
+      } else {
+        XCTAssertTrue(f.adapter.scrollToLastItem(in: 1, animated: false))
+      }
+      f.collection.setContentOffset(.zero, animated: false)
+      f.collection.layoutIfNeeded()
+      let restored = expectation(description: "unrelated section restoration completed")
+      DispatchQueue.main.async { restored.fulfill() }
+      await fulfillment(of: [restored], timeout: 3)
+      XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+    }
+  }
+}
+
+extension OrthogonalRefreshRegressionTests {
+    func testScrollDuringSectionReloadKeepsLatestOffset() async throws {
+        let f = ReviewFixture(); defer { f.close() }; try await seed(f)
+        let done = expectation(description: "reload finishes")
+        f.adapter.reloadSections([0], transaction: .disabled, completion: { _ in done.fulfill() })
+        XCTAssertTrue(f.adapter.scrollToLastItem(in: 0, at: .right, animated: false))
+        f.collection.layoutIfNeeded()
+        let scrolled = try XCTUnwrap(inner(f.collection)).contentOffset.x
+        XCTAssertGreaterThan(scrolled, 2000)
+        await fulfillment(of: [done], timeout: 3)
+        XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, scrolled, accuracy: 1)
+    }
+    func testScrollDuringApplyReloadKeepsLatestOffset() async throws {
+        let f = ReviewFixture(); defer { f.close() }; try await seed(f)
+        let done = expectation(description: "apply finishes")
+        f.adapter.apply(transaction: .disabled, completion: { _ in done.fulfill() }) {
+            horizontal(1); vertical()
+        }
+        XCTAssertTrue(f.adapter.scrollToLastItem(in: 0, at: .right, animated: false))
+        f.collection.layoutIfNeeded()
+        let scrolled = try XCTUnwrap(inner(f.collection)).contentOffset.x
+        XCTAssertGreaterThan(scrolled, 2000)
+        await fulfillment(of: [done], timeout: 3)
+        XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, scrolled, accuracy: 1)
+    }
+    func testScrollFromReloadCompletionKeepsLatestOffset() async throws {
+        let f = ReviewFixture(); defer { f.close() }; try await seed(f)
+        let done = expectation(description: "reload and explicit scroll finish")
+        var scrolled: CGFloat = 0
+        f.adapter.reloadSections([0], transaction: .disabled, completion: { _ in
+            XCTAssertTrue(f.adapter.scrollToLastItem(in: 0, at: .right, animated: false))
+            f.collection.layoutIfNeeded()
+            scrolled = self.inner(f.collection)?.contentOffset.x ?? 0
+            done.fulfill()
+        })
+        await fulfillment(of: [done], timeout: 3)
+        XCTAssertGreaterThan(scrolled, 2000)
+        XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, scrolled, accuracy: 1)
+    }
+    func testTransactionScrollOverridesCapturedReloadOffset() async throws {
+        let f = ReviewFixture(); defer { f.close() }; try await seed(f)
+        await f.adapter.apply(transaction: .disabled.scrollBehavior(.scrollToLast(in: 0, position: .nearest))) {
+            horizontal(1); vertical()
+        }
+        f.collection.layoutIfNeeded()
+        XCTAssertGreaterThan(try XCTUnwrap(inner(f.collection)).contentOffset.x, 2000)
+    }
+
+    func testScrollDuringRefreshOnlyInvalidatesTargetSectionSnapshot() async throws {
+        for useApply in [false, true] {
+            let f = ReviewFixture(); defer { f.close() }
+            await f.adapter.apply(transaction: .disabled) {
+                horizontal(0); horizontal(0, id: 2)
+            }
+            f.collection.layoutIfNeeded()
+            func scroll(in section: Int) throws -> UIScrollView {
+                let path = try XCTUnwrap(f.collection.indexPathsForVisibleItems.first { $0.section == section })
+                var view = try XCTUnwrap(f.collection.cellForItem(at: path)).superview
+                while let current = view, current !== f.collection {
+                    if let scroll = current as? UIScrollView { return scroll }
+                    view = current.superview
+                }
+                return try XCTUnwrap(nil as UIScrollView?, "Orthogonal scroll container unavailable")
+            }
+            for (section, offset) in [(0, 600.0), (1, 300.0)] {
+                let view = try scroll(in: section)
+                view.setContentOffset(CGPoint(x: offset, y: 0), animated: false)
+                view.layoutIfNeeded()
+                XCTAssertEqual(view.contentOffset.x, offset, accuracy: 1)
+            }
+            let done = expectation(description: "both sections refreshed")
+            if useApply {
+                f.adapter.apply(transaction: .disabled, completion: { _ in done.fulfill() }) {
+                    horizontal(1); horizontal(1, id: 2)
+                }
+            } else {
+                f.adapter.reloadSections([0, 2], transaction: .disabled, completion: { _ in done.fulfill() })
+            }
+            XCTAssertTrue(f.adapter.scrollToLastItem(in: 0, at: .right, animated: false))
+            f.collection.layoutIfNeeded()
+            let targetOffset = try scroll(in: 0).contentOffset.x
+            XCTAssertGreaterThan(targetOffset, 2000)
+            // Force the unrelated container to need its captured restoration.
+            try scroll(in: 1).setContentOffset(.zero, animated: false)
+            await fulfillment(of: [done], timeout: 3)
+            XCTAssertEqual(try scroll(in: 0).contentOffset.x, targetOffset, accuracy: 1)
+            XCTAssertEqual(try scroll(in: 1).contentOffset.x, 300, accuracy: 1)
+            // A later capture must still preserve the new explicit position.
+            _ = await f.adapter.reloadSections([0, 2], transaction: .disabled)
+            XCTAssertEqual(try scroll(in: 0).contentOffset.x, targetOffset, accuracy: 1)
+            XCTAssertEqual(try scroll(in: 1).contentOffset.x, 300, accuracy: 1)
+        }
+    }
+
+    func testInvalidScrollDuringRefreshKeepsCapturedOffset() async throws {
+        for useApply in [false, true] {
+            let f = ReviewFixture(); defer { f.close() }
+            try await seed(f)
+            await f.adapter.apply(transaction: .disabled) {
+                horizontal(0); vertical(); ListSection(2) {}
+            }
+            let done = expectation(description: "refresh with invalid scroll finishes")
+            if useApply {
+                f.adapter.apply(transaction: .disabled, completion: { _ in done.fulfill() }) {
+                    horizontal(1); vertical(); ListSection(2) {}
+                }
+            } else {
+                f.adapter.reloadSections([0], transaction: .disabled, completion: { _ in done.fulfill() })
+            }
+            XCTAssertFalse(f.adapter.scrollToLastItem(in: 999, animated: false))
+            XCTAssertFalse(f.adapter.scrollToLastItem(in: 2, animated: false))
+            // Restoration must actually run, rather than merely leave an unchanged offset.
+            try XCTUnwrap(inner(f.collection)).setContentOffset(.zero, animated: false)
+            await fulfillment(of: [done], timeout: 3)
+            XCTAssertEqual(try XCTUnwrap(inner(f.collection)).contentOffset.x, 600, accuracy: 1)
+        }
+    }
+}

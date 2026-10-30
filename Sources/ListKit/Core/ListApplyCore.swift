@@ -11,6 +11,7 @@ final class ListAsyncMutationBridge<Result: Sendable>: @unchecked Sendable {
     private var cancellation: (@Sendable () -> Void)?
     private var wasCancelled = false
     private var isFinished = false
+    private var hasCommitted = false
 
     init(cancelledResult: Result) {
         self.cancelledResult = cancelledResult
@@ -34,10 +35,24 @@ final class ListAsyncMutationBridge<Result: Sendable>: @unchecked Sendable {
         return true
     }
 
-    /// 记录取消状态，并在锁外通知已注册的取消处理器；已完成请求不再处理。
+    /// 在实际执行入口与取消原子竞争；失败时立即交付取消结果。
+    /// 排队中的请求不能提前调用，提交成功后取消只等待真实完成。
+    func beginCommit() -> Bool {
+        lock.lock()
+        guard !wasCancelled, !isFinished else {
+            lock.unlock()
+            resume(returning: cancelledResult)
+            return false
+        }
+        hasCommitted = true
+        lock.unlock()
+        return true
+    }
+
+    /// 记录取消状态，并在锁外通知已注册的取消处理器；已提交请求等待真实完成。
     func cancel() {
         lock.lock()
-        guard !isFinished else {
+        guard !isFinished, !hasCommitted else {
             lock.unlock()
             return
         }
@@ -54,12 +69,15 @@ final class ListAsyncMutationBridge<Result: Sendable>: @unchecked Sendable {
             lock.unlock()
             return
         }
+        // 取消通知可能通过队列移除、出队检查或被取代回调到达。
+        // commit 前已取消时统一返回零实际动作，不能泄露尚未执行的计划指标。
+        let resolvedResult = wasCancelled && !hasCommitted ? cancelledResult : result
         isFinished = true
         let continuation = continuation
         self.continuation = nil
         cancellation = nil
         lock.unlock()
-        continuation?.resume(returning: result)
+        continuation?.resume(returning: resolvedResult)
     }
 }
 
@@ -186,6 +204,7 @@ struct ListReloadAllRequest {
     let transition: ListContentTransition
     /// 仅 async 调用设置，用于 commit gate 前从统一队列移除 subscriber。
     let subscriberID: UUID?
+    var beginCommit: (() -> Bool)? = nil
     /// 内部状态、布局和滚动锚点恢复后调用的最终回调。
     let completion: ((ListApplySummary) -> Void)?
 }
@@ -299,6 +318,7 @@ final class ListPendingMutationRequest {
         action: ListRowRefreshAction,
         transaction: ListTransaction,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListRefreshSummary) -> Void)?,
         execute: @escaping (
             [ListRowRefreshSubscriber],
@@ -322,6 +342,7 @@ final class ListPendingMutationRequest {
                 id: subscriberID,
                 rowIDs: Set(rowIDs),
                 action: action,
+                beginCommit: beginCommit,
                 completion: completion
             )],
             execute: execute
@@ -332,6 +353,7 @@ final class ListPendingMutationRequest {
         sectionIDs: [AnyListID],
         transaction: ListTransaction,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListRefreshSummary) -> Void)?,
         execute: @escaping (
             [ListSectionReloadSubscriber],
@@ -350,6 +372,7 @@ final class ListPendingMutationRequest {
             subscribers: [ListSectionReloadSubscriber(
                 id: subscriberID,
                 sectionIDs: Set(sectionIDs),
+                beginCommit: beginCommit,
                 completion: completion
             )],
             execute: execute
@@ -556,12 +579,16 @@ struct ListRowRefreshSubscriber {
     let id: UUID?
     let rowIDs: Set<AnyListID>
     let action: ListRowRefreshAction
+    /// async subscriber 在真正执行时检查取消；返回 false 已恢复其 continuation。
+    var beginCommit: (() -> Bool)? = nil
     let completion: ((ListRefreshSummary) -> Void)?
 }
 
 struct ListSectionReloadSubscriber {
     let id: UUID?
     let sectionIDs: Set<AnyListID>
+    /// async subscriber 在真正执行时检查取消；返回 false 已恢复其 continuation。
+    var beginCommit: (() -> Bool)? = nil
     let completion: ((ListRefreshSummary) -> Void)?
 }
 
