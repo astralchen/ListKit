@@ -249,6 +249,7 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction,
         transition: ListContentTransition,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListApplySummary) -> Void)?
     ) -> ListApplySummary {
         guard tableView != nil else {
@@ -258,6 +259,7 @@ where SectionID: Hashable & Sendable {
             transaction: transaction,
             transition: transition,
             subscriberID: subscriberID,
+            beginCommit: beginCommit,
             completion: completion
         )
         let summary = makeReloadAllPlan(transaction: transaction).initialSummary.replacingAnimation(
@@ -308,6 +310,7 @@ where SectionID: Hashable & Sendable {
                     transaction: transaction,
                     transition: transition,
                     subscriberID: subscriberID,
+                    beginCommit: bridge.beginCommit,
                     completion: { bridge.resume(returning: $0) }
                 )
             }
@@ -552,6 +555,7 @@ where SectionID: Hashable & Sendable {
                     ids,
                     transaction: transaction,
                     subscriberID: subscriberID,
+                    beginCommit: bridge.beginCommit,
                     completion: { bridge.resume(returning: $0) }
                 )
             }
@@ -589,6 +593,7 @@ where SectionID: Hashable & Sendable {
                     action: action,
                     transaction: transaction,
                     subscriberID: subscriberID,
+                    beginCommit: bridge.beginCommit,
                     completion: { bridge.resume(returning: $0) }
                 )
             }
@@ -605,7 +610,9 @@ where SectionID: Hashable & Sendable {
     /// 执行一次描述树提交；coordinator 忙碌时保存描述树并返回初始 `.submitted` 摘要。
     private func _apply(
         options: ListApplyOptions,
+        isDequeued: Bool = false,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListApplySummary) -> Void)?,
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]
     ) -> ListApplySummary {
@@ -618,7 +625,8 @@ where SectionID: Hashable & Sendable {
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
         let diagnosticsIssues = ListDiagnostics.validate(Self.makeCoreSnapshots(from: newSections))
-        if mutationCoordinator.isExecuting {
+        // completion 可以重入；即使当前 token 已释放，也不能越过先前排队的请求。
+        if mutationCoordinator.isExecuting || (!isDequeued && mutationScheduler.hasPendingRequests) {
             let deferredPlan = ListApplyPlanner.makePlan(
                 old: Self.makeCoreSnapshots(from: sections),
                 new: Self.makeCoreSnapshots(from: newSections),
@@ -639,8 +647,7 @@ where SectionID: Hashable & Sendable {
                         ListAnimationSummary(
                             completionState: .cancelledBeforeCommit,
                             reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                        )
-                    ))
+                        ), refreshMetrics: .zero))
                 },
                 start: { [weak self] in
                     guard let self else {
@@ -648,29 +655,47 @@ where SectionID: Hashable & Sendable {
                             ListAnimationSummary(
                                 completionState: .cancelledBeforeCommit,
                                 reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                            )
-                        ))
+                            ), refreshMetrics: .zero))
                         return
                     }
-                    _ = self._apply(options: options, completion: completion) { newSections }
+                    _ = self._apply(
+                        options: options, isDequeued: true, beginCommit: beginCommit, completion: completion
+                    ) { newSections }
                 },
                 supersede: {
                     completion?(deferredSummary.replacingAnimation(
                         ListAnimationSummary(
                             completionState: .superseded,
                             reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                        )
-                    ))
+                        ), refreshMetrics: .zero))
                 }
             ))
             return deferredSummary
         }
 
+        guard beginCommit?() != false else {
+            performNextPendingMutationIfNeeded()
+            return ListApplySummary(animation: ListAnimationSummary(
+                completionState: .cancelledBeforeCommit,
+                reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+            ))
+        }
+
+        // UITableView 按 section/角色持有 header/footer；仅替换描述树不会重新请求视图。
+        // 身份（包括视图类型）变化属于结构更新，不受 refresh trigger 限制。
+        let previousSections = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
+        let supplementaryReplacementSections = newSections.compactMap { section -> AnyListID? in
+            guard let previous = previousSections[section.id] else { return nil }
+            return previous.header?.identity != section.header?.identity
+                || previous.footer?.identity != section.footer?.identity
+                ? AnyListID(section.id) : nil
+        }
         let applyPlan = ListApplyPlanner.makePlan(
             old: Self.makeCoreSnapshots(from: sections),
             new: Self.makeCoreSnapshots(from: newSections),
             options: options,
-            diagnosticsIssues: diagnosticsIssues
+            diagnosticsIssues: diagnosticsIssues,
+            supplementaryReplacementSections: supplementaryReplacementSections
         )
 
         if !applyPlan.shouldApplyDiffable {
@@ -684,6 +709,8 @@ where SectionID: Hashable & Sendable {
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options, prefix: "ListKit table apply summary")
             completion?(summary)
+            // 诊断拒绝也结束了当前队首请求；completion 重入后继续推进剩余队列。
+            performNextPendingMutationIfNeeded()
             return summary
         }
 
@@ -760,7 +787,9 @@ where SectionID: Hashable & Sendable {
         // UIKit 尚未退出内部提交栈时继续执行选择、布局或下一次 mutation。
         let didApplyBox = TableMainActorCallbackBox { [weak self] in
             guard let self else { return }
-            guard self.applyGeneration == generation, !mutationToken.isSuperseded else {
+            // 已提交的描述树已经成为下次 diff 的基线；即使结果被取代，
+            // 仍须完成其可见刷新和布局，否则相同 refreshID 的后续请求会漏更新。
+            guard self.applyGeneration == generation else {
                 finishAsSuperseded()
                 return
             }
@@ -770,15 +799,17 @@ where SectionID: Hashable & Sendable {
             self.reconcileSelection()
             let metrics = TableApplyAnimationMetrics()
             let animationCoordinator = ListAnimationCompletionCoordinator {
-                guard self.applyGeneration == generation, !mutationToken.isSuperseded else {
+                guard self.applyGeneration == generation else {
                     finishAsSuperseded()
                     return
                 }
-                let scrollOutcome = self.performScrollBehavior(
-                    resolvedTransaction.scrollBehavior,
-                    visibleAnchor: visibleAnchor,
-                    animated: resolvedTransaction.scrollAnimation
-                )
+                let scrollOutcome = mutationToken.isSuperseded
+                    ? TableScrollOutcome()
+                    : self.performScrollBehavior(
+                        resolvedTransaction.scrollBehavior,
+                        visibleAnchor: visibleAnchor,
+                        animated: resolvedTransaction.scrollAnimation
+                    )
                 let snapshotAnimated = options.applicationMode == .differences
                     && resolvedTransaction.snapshotAnimation
                     && applyPlan.hasSnapshotChanges
@@ -787,7 +818,7 @@ where SectionID: Hashable & Sendable {
                     visibleReloadedRowCount: metrics.visibleReloadedRowCount,
                     visibleReconfiguredSupplementaryCount: metrics.visibleReconfiguredSupplementaryCount,
                     animation: ListAnimationSummary(
-                        completionState: .completed,
+                        completionState: mutationToken.isSuperseded ? .superseded : .completed,
                         snapshotAnimated: snapshotAnimated,
                         animatedSectionCount: snapshotAnimated ? applyPlan.changedSectionCount : 0,
                         contentTransitionCount: metrics.contentTransitionCount,
@@ -875,6 +906,7 @@ where SectionID: Hashable & Sendable {
         action: ListRowRefreshAction,
         transaction: ListTransaction,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
         let requestedTargetCount = Set(rowIDs).count
@@ -885,9 +917,10 @@ where SectionID: Hashable & Sendable {
             id: subscriberID,
             rowIDs: Set(rowIDs),
             action: action,
+            beginCommit: beginCommit,
             completion: completion
         )
-        if mutationCoordinator.isExecuting {
+        if mutationCoordinator.isExecuting || mutationScheduler.hasPendingRequests {
             enqueuePendingMutation(ListPendingMutationRequest(
                 rowIDs: rowIDs,
                 sectionID: sectionID,
@@ -895,6 +928,7 @@ where SectionID: Hashable & Sendable {
                 action: action,
                 transaction: transaction,
                 subscriberID: subscriberID,
+                beginCommit: beginCommit,
                 completion: completion,
                 execute: { [weak self] subscribers, sectionID, scope, transaction in
                     guard let self else {
@@ -927,6 +961,13 @@ where SectionID: Hashable & Sendable {
         scope: ListRefreshScope,
         transaction: ListTransaction
     ) -> ListRefreshSummary {
+        let subscribers = subscribers.filter { $0.beginCommit?() != false }
+        guard !subscribers.isEmpty else {
+            performNextPendingMutationIfNeeded()
+            return ListRefreshSummary(
+                animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+            )
+        }
         var snapshot = dataSource.snapshot()
         let visibleIdentities = Set((tableView?.indexPathsForVisibleRows ?? []).compactMap { row(at: $0)?.identity })
         var matchedBySubscriber: [Set<AnyListIdentity>] = []
@@ -1206,6 +1247,7 @@ where SectionID: Hashable & Sendable {
         _ sectionIDs: [AnyListID],
         transaction: ListTransaction,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
         guard tableView != nil else {
@@ -1214,13 +1256,15 @@ where SectionID: Hashable & Sendable {
         let subscriber = ListSectionReloadSubscriber(
             id: subscriberID,
             sectionIDs: Set(sectionIDs),
+            beginCommit: beginCommit,
             completion: completion
         )
-        if mutationCoordinator.isExecuting {
+        if mutationCoordinator.isExecuting || mutationScheduler.hasPendingRequests {
             enqueuePendingMutation(ListPendingMutationRequest(
                 sectionIDs: sectionIDs,
                 transaction: transaction,
                 subscriberID: subscriberID,
+                beginCommit: beginCommit,
                 completion: completion,
                 execute: { [weak self] subscribers, transaction in
                     guard let self else {
@@ -1244,6 +1288,13 @@ where SectionID: Hashable & Sendable {
         _ subscribers: [ListSectionReloadSubscriber],
         transaction: ListTransaction
     ) -> ListRefreshSummary {
+        let subscribers = subscribers.filter { $0.beginCommit?() != false }
+        guard !subscribers.isEmpty else {
+            performNextPendingMutationIfNeeded()
+            return ListRefreshSummary(
+                animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+            )
+        }
         var snapshot = dataSource.snapshot()
         let currentSectionIDs = Set(snapshot.sectionIdentifiers)
         let matchedBySubscriber = subscribers.map { $0.sectionIDs.intersection(currentSectionIDs) }
@@ -1315,6 +1366,10 @@ where SectionID: Hashable & Sendable {
 
     /// 执行完整 reloadData、布局、selection、supplementary 和滚动锚点恢复流程。
     private func performReloadAll(_ request: ListReloadAllRequest) {
+        guard request.beginCommit?() != false else {
+            performNextPendingMutationIfNeeded()
+            return
+        }
         guard let tableView else {
             _ = cancelApplyBeforeCommit(transaction: request.transaction, completion: request.completion)
             return
@@ -1485,7 +1540,7 @@ where SectionID: Hashable & Sendable {
             .replacingAnimation(ListAnimationSummary(
                 completionState: .superseded,
                 reduceMotionApplied: resolved.reduceMotionApplied
-            ))
+            ), refreshMetrics: .zero)
         let cancelledSummary = ListApplySummary(animation: ListAnimationSummary(
             completionState: .cancelledBeforeCommit,
             reduceMotionApplied: resolved.reduceMotionApplied
@@ -1602,6 +1657,7 @@ where SectionID: Hashable & Sendable {
                 _ = _apply(
                     options: options,
                     subscriberID: subscriberID,
+                    beginCommit: bridge.beginCommit,
                     completion: { bridge.resume(returning: $0) }
                 ) {
                     builtSections

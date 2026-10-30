@@ -98,6 +98,8 @@ where SectionID: Hashable & Sendable {
     private var orthogonalSectionIDs: Set<AnyListID> = []
     private var orthogonalScrollStates: [AnyListID: ListOrthogonalScrollState] = [:]
     private var pendingOrthogonalOffsets: [AnyListID: CGPoint] = [:]
+    /// 显式滚动也使执行中的刷新闭包所持有的旧偏移失效，按分区隔离。
+    private var explicitScrollRevisions: [AnyListID: UUID] = [:]
     private var isOrthogonalRestorationScheduled = false
     private var layoutSignature: [ListSectionLayoutSignature<SectionID>] = []
     /// 实际持有并提交 diffable snapshot 的 data source。
@@ -321,6 +323,7 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction,
         transition: ListContentTransition,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListApplySummary) -> Void)?
     ) -> ListApplySummary {
         guard collectionView != nil else {
@@ -330,6 +333,7 @@ where SectionID: Hashable & Sendable {
             transaction: transaction,
             transition: transition,
             subscriberID: subscriberID,
+            beginCommit: beginCommit,
             completion: completion
         )
         let summary = makeReloadAllPlan(transaction: transaction).initialSummary.replacingAnimation(
@@ -385,6 +389,7 @@ where SectionID: Hashable & Sendable {
                     transaction: transaction,
                     transition: transition,
                     subscriberID: subscriberID,
+                    beginCommit: bridge.beginCommit,
                     completion: { bridge.resume(returning: $0) }
                 )
             }
@@ -634,6 +639,7 @@ where SectionID: Hashable & Sendable {
                     ids,
                     transaction: transaction,
                     subscriberID: subscriberID,
+                    beginCommit: bridge.beginCommit,
                     completion: { bridge.resume(returning: $0) }
                 )
             }
@@ -675,6 +681,7 @@ where SectionID: Hashable & Sendable {
                     action: action,
                     transaction: transaction,
                     subscriberID: subscriberID,
+                    beginCommit: bridge.beginCommit,
                     completion: { bridge.resume(returning: $0) }
                 )
             }
@@ -686,7 +693,9 @@ where SectionID: Hashable & Sendable {
     /// 执行一次描述树提交；coordinator 忙碌时保存描述树并返回初始 `.submitted` 摘要。
     private func _apply(
         options: ListApplyOptions,
+        isDequeued: Bool = false,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListApplySummary) -> Void)?,
         @ListSectionBuilder<SectionID> _ content: () -> [ListSection<SectionID>]
     ) -> ListApplySummary {
@@ -699,7 +708,8 @@ where SectionID: Hashable & Sendable {
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
         let diagnosticsIssues = ListDiagnostics.validate(newSections)
-        if mutationCoordinator.isExecuting {
+        // completion 可以重入；即使当前 token 已释放，也不能越过先前排队的请求。
+        if mutationCoordinator.isExecuting || (!isDequeued && mutationScheduler.hasPendingRequests) {
             let deferredPlan = ListApplyPlanner.makePlan(
                 old: Self.makeCoreSnapshots(from: sections),
                 new: Self.makeCoreSnapshots(from: newSections),
@@ -722,8 +732,7 @@ where SectionID: Hashable & Sendable {
                                 ListAnimationSummary(
                                     completionState: .cancelledBeforeCommit,
                                     reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                                )
-                            ))
+                                ), refreshMetrics: .zero))
                     },
                     start: { [weak self] in
                         guard let self else {
@@ -732,11 +741,12 @@ where SectionID: Hashable & Sendable {
                                     ListAnimationSummary(
                                         completionState: .cancelledBeforeCommit,
                                         reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                                    )
-                                ))
+                                    ), refreshMetrics: .zero))
                             return
                         }
-                        _ = self._apply(options: options, completion: completion) { newSections }
+                        _ = self._apply(
+                            options: options, isDequeued: true, beginCommit: beginCommit, completion: completion
+                        ) { newSections }
                     },
                     supersede: {
                         completion?(
@@ -744,11 +754,18 @@ where SectionID: Hashable & Sendable {
                                 ListAnimationSummary(
                                     completionState: .superseded,
                                     reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                                )
-                            ))
+                                ), refreshMetrics: .zero))
                     }
                 ))
             return deferredSummary
+        }
+
+        guard beginCommit?() != false else {
+            performNextPendingMutationIfNeeded()
+            return ListApplySummary(animation: ListAnimationSummary(
+                completionState: .cancelledBeforeCommit,
+                reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+            ))
         }
 
         let newLayoutSignature = Self.makeLayoutSignature(from: newSections)
@@ -824,6 +841,8 @@ where SectionID: Hashable & Sendable {
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options)
             completion?(summary)
+            // 诊断拒绝也结束了当前队首请求；completion 重入后继续推进剩余队列。
+            performNextPendingMutationIfNeeded()
             return summary
         }
 
@@ -839,10 +858,7 @@ where SectionID: Hashable & Sendable {
             cancelTemporaryAnchorReservation()
         }
         let selectedItemIdentities = captureSelectedItemIdentities()
-        let replacementSectionIDs = Set(supplementaryReplacementSections)
-        bindOrthogonalScrollViews()
-        let orthogonalOffsets = orthogonalScrollStates.mapValues(\.offset)
-            .filter { replacementSectionIDs.contains($0.key) }
+        let orthogonalOffsets = captureOrthogonalOffsets(in: Set(applyPlan.snapshotReloadSections))
 
         applyGeneration += 1
         let generation = applyGeneration
@@ -857,6 +873,7 @@ where SectionID: Hashable & Sendable {
         orthogonalSectionIDs.formIntersection(activeSectionIDs)
         orthogonalScrollStates = orthogonalScrollStates.filter { activeSectionIDs.contains($0.key) }
         pendingOrthogonalOffsets = pendingOrthogonalOffsets.filter { activeSectionIDs.contains($0.key) }
+        explicitScrollRevisions = explicitScrollRevisions.filter { activeSectionIDs.contains($0.key) }
         layoutSignature = newLayoutSignature
         rebuildLookupTables(in: collectionView)
         registerDecorationsIfNeeded()
@@ -930,7 +947,9 @@ where SectionID: Hashable & Sendable {
         }
         let finishApply: @MainActor () -> Void = { [weak self] in
             guard let self else { return }
-            guard self.applyGeneration == generation, !mutationToken.isSuperseded else {
+            // 已提交的描述树已经成为下次 diff 的基线；即使结果被取代，
+            // 仍须完成其可见刷新和布局，否则相同 refreshID 的后续请求会漏更新。
+            guard self.applyGeneration == generation else {
                 finishAsSuperseded()
                 return
             }
@@ -941,7 +960,7 @@ where SectionID: Hashable & Sendable {
             self.reconcileSelection()
             let metrics = CollectionApplyAnimationMetrics()
             let completeAnimation = {
-                guard self.applyGeneration == generation, !mutationToken.isSuperseded else {
+                guard self.applyGeneration == generation else {
                     finishAsSuperseded()
                     return
                 }
@@ -954,7 +973,7 @@ where SectionID: Hashable & Sendable {
                     visibleReloadedRowCount: metrics.visibleReloadedRowCount,
                     visibleReconfiguredSupplementaryCount: metrics.visibleReconfiguredSupplementaryCount,
                     animation: ListAnimationSummary(
-                        completionState: .completed,
+                        completionState: mutationToken.isSuperseded ? .superseded : .completed,
                         snapshotAnimated: snapshotAnimated,
                         animatedSectionCount: snapshotAnimated ? applyPlan.changedSectionCount : 0,
                         outlineAnimatedSectionCount: resolvedTransaction.outlineAnimation
@@ -1000,13 +1019,9 @@ where SectionID: Hashable & Sendable {
                     || supplementaryRefresh.needsLayoutInvalidation
             }
             let performFinalScroll = {
-                guard self.applyGeneration == generation, !mutationToken.isSuperseded else { return }
+                guard self.applyGeneration == generation else { return }
                 self.restoreOrthogonalOffsets(orthogonalOffsets)
-                // 显式滚动请求优先于不可见分区的延迟偏移恢复。
-                switch resolvedTransaction.scrollBehavior.storage {
-                case .scrollTo, .scrollToLast: self.pendingOrthogonalOffsets.removeAll()
-                case .none, .preserveVisiblePosition: break
-                }
+                guard !mutationToken.isSuperseded else { return }
                 metrics.scrollOutcome = self.performScrollBehavior(
                     resolvedTransaction.scrollBehavior,
                     visibleAnchor: visibleAnchor,
@@ -1085,6 +1100,7 @@ where SectionID: Hashable & Sendable {
         action: ListRowRefreshAction,
         transaction: ListTransaction,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
         let requestedTargetCount = Set(rowIDs).count
@@ -1096,9 +1112,10 @@ where SectionID: Hashable & Sendable {
             id: subscriberID,
             rowIDs: Set(rowIDs),
             action: action,
+            beginCommit: beginCommit,
             completion: completion
         )
-        if mutationCoordinator.isExecuting {
+        if mutationCoordinator.isExecuting || mutationScheduler.hasPendingRequests {
             enqueuePendingMutation(
                 ListPendingMutationRequest(
                     rowIDs: rowIDs,
@@ -1107,6 +1124,7 @@ where SectionID: Hashable & Sendable {
                     action: action,
                     transaction: transaction,
                     subscriberID: subscriberID,
+                    beginCommit: beginCommit,
                     completion: completion,
                     execute: { [weak self] subscribers, sectionID, scope, transaction in
                         guard let self else {
@@ -1140,6 +1158,13 @@ where SectionID: Hashable & Sendable {
         scope: ListRefreshScope,
         transaction: ListTransaction
     ) -> ListRefreshSummary {
+        let subscribers = subscribers.filter { $0.beginCommit?() != false }
+        guard !subscribers.isEmpty else {
+            performNextPendingMutationIfNeeded()
+            return ListRefreshSummary(
+                animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+            )
+        }
         var snapshot = dataSource.snapshot()
         let visibleIdentities = Set(
             collectionView?.indexPathsForVisibleItems.compactMap { row(at: $0)?.identity } ?? [])
@@ -1408,6 +1433,7 @@ where SectionID: Hashable & Sendable {
         _ sectionIDs: [AnyListID],
         transaction: ListTransaction,
         subscriberID: UUID? = nil,
+        beginCommit: (() -> Bool)? = nil,
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
         guard collectionView != nil else {
@@ -1417,14 +1443,16 @@ where SectionID: Hashable & Sendable {
         let subscriber = ListSectionReloadSubscriber(
             id: subscriberID,
             sectionIDs: Set(sectionIDs),
+            beginCommit: beginCommit,
             completion: completion
         )
-        if mutationCoordinator.isExecuting {
+        if mutationCoordinator.isExecuting || mutationScheduler.hasPendingRequests {
             enqueuePendingMutation(
                 ListPendingMutationRequest(
                     sectionIDs: sectionIDs,
                     transaction: transaction,
                     subscriberID: subscriberID,
+                    beginCommit: beginCommit,
                     completion: completion,
                     execute: { [weak self] subscribers, transaction in
                         guard let self else {
@@ -1449,6 +1477,13 @@ where SectionID: Hashable & Sendable {
         _ subscribers: [ListSectionReloadSubscriber],
         transaction: ListTransaction
     ) -> ListRefreshSummary {
+        let subscribers = subscribers.filter { $0.beginCommit?() != false }
+        guard !subscribers.isEmpty else {
+            performNextPendingMutationIfNeeded()
+            return ListRefreshSummary(
+                animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+            )
+        }
         var snapshot = dataSource.snapshot()
         let currentSectionIDs = Set(snapshot.sectionIdentifiers)
         let matchedBySubscriber = subscribers.map { $0.sectionIDs.intersection(currentSectionIDs) }
@@ -1467,6 +1502,8 @@ where SectionID: Hashable & Sendable {
             return ListRefreshSummary(requestedTargetCount: subscribers.first?.sectionIDs.count ?? 0)
         }
         let orderedRefreshSectionIDs = snapshot.sectionIdentifiers.filter(refreshSectionIDs.contains)
+        let selectedItemIdentities = captureSelectedItemIdentities()
+        let orthogonalOffsets = captureOrthogonalOffsets(in: refreshSectionIDs)
 
         let outlineApplications = orderedRefreshSectionIDs.compactMap {
             sectionID -> ListOutlineSnapshotApplication? in
@@ -1482,6 +1519,7 @@ where SectionID: Hashable & Sendable {
             )
         }
         snapshot.reloadSections(orderedRefreshSectionIDs)
+        isApplyingSnapshot = true
         let mutationToken = mutationCoordinator.begin(
             kind: .sectionReload,
             updatePolicy: transaction.updatePolicy
@@ -1507,8 +1545,13 @@ where SectionID: Hashable & Sendable {
                 }
                 return
             }
-            self.mutationCoordinator.finish(mutationToken)
+            self.isApplyingSnapshot = false
+            self.restoreSelection(for: selectedItemIdentities)
+            self.synchronizeControlledSelection()
+            self.reconcileSelection()
             self.rebindVisibleSupplementaryTapHandlers()
+            self.restoreOrthogonalOffsets(orthogonalOffsets)
+            self.mutationCoordinator.finish(mutationToken)
             subscribers.enumerated().forEach { index, subscriber in
                 subscriber.completion?(
                     ListRefreshSummary(
@@ -1552,6 +1595,10 @@ where SectionID: Hashable & Sendable {
 
     /// 执行完整 reloadData、布局、selection、supplementary 和滚动锚点恢复流程。
     private func performReloadAll(_ request: ListReloadAllRequest) {
+        guard request.beginCommit?() != false else {
+            performNextPendingMutationIfNeeded()
+            return
+        }
         let resolvedTransaction = request.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
@@ -1723,7 +1770,7 @@ where SectionID: Hashable & Sendable {
                 ListAnimationSummary(
                     completionState: .superseded,
                     reduceMotionApplied: resolved.reduceMotionApplied
-                ))
+                ), refreshMetrics: .zero)
         let cancelledSummary = ListApplySummary(
             animation: ListAnimationSummary(
                 completionState: .cancelledBeforeCommit,
@@ -1849,6 +1896,7 @@ where SectionID: Hashable & Sendable {
                 _ = _apply(
                     options: options,
                     subscriberID: subscriberID,
+                    beginCommit: bridge.beginCommit,
                     completion: { bridge.resume(returning: $0) }
                 ) {
                     builtSections
@@ -2779,11 +2827,8 @@ where SectionID: Hashable & Sendable {
         at scrollPosition: UICollectionView.ScrollPosition = .bottom,
         animated: Bool = true
     ) -> Bool {
-        guard let collectionView, let indexPath = lastItemIndexPath(in: sectionID) else {
-            return false
-        }
-        collectionView.scrollToItem(at: indexPath, at: scrollPosition, animated: animated)
-        return true
+        guard let indexPath = lastItemIndexPath(in: sectionID) else { return false }
+        return performExplicitScroll(to: indexPath, at: scrollPosition, animated: animated)
     }
 
     /// 解析业务 kind 和所属 item 位置，得到实际 UIKit supplementary 地址。
@@ -3720,6 +3765,19 @@ where SectionID: Hashable & Sendable {
         return views
     }
 
+    /// 新出现的容器可能尚未恢复，不能用它的初始偏移覆盖屏幕外保留的目标。
+    /// pending 在真正恢复后移除，此后的用户滚动继续以观察到的偏移为准。
+    private func captureOrthogonalOffsets(in sectionIDs: Set<AnyListID>) -> [AnyListID: ListOrthogonalOffsetSnapshot] {
+        bindOrthogonalScrollViews()
+        let offsets = orthogonalScrollStates.mapValues(\.offset)
+            .merging(pendingOrthogonalOffsets) { _, pending in pending }
+            .filter { sectionIDs.contains($0.key) }
+        return Dictionary(uniqueKeysWithValues: offsets.map { sectionID, offset in
+            (sectionID, ListOrthogonalOffsetSnapshot(
+                offset: offset, scrollRevision: explicitScrollRevisions[sectionID]))
+        })
+    }
+
     private func scheduleOrthogonalOffsetRestoration() {
         guard !isOrthogonalRestorationScheduled else { return }
         isOrthogonalRestorationScheduled = true
@@ -3732,9 +3790,14 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    private func restoreOrthogonalOffsets(_ offsets: [AnyListID: CGPoint]) {
+    private func restoreOrthogonalOffsets(_ offsets: [AnyListID: ListOrthogonalOffsetSnapshot]) {
         guard let collectionView else { return }
-        pendingOrthogonalOffsets.merge(offsets.filter { orthogonalSectionIDs.contains($0.key) }) { _, new in new }
+        // 不能把已被显式滚动取代的闭包快照重新放回 pending。
+        let validOffsets = offsets.filter {
+            orthogonalSectionIDs.contains($0.key)
+                && $0.value.scrollRevision == explicitScrollRevisions[$0.key]
+        }.mapValues(\.offset)
+        pendingOrthogonalOffsets.merge(validOffsets) { _, new in new }
         collectionView.layoutIfNeeded()
         for (sectionID, scrollView) in bindOrthogonalScrollViews() {
             guard let offset = pendingOrthogonalOffsets.removeValue(forKey: sectionID) else { continue }
@@ -4013,6 +4076,22 @@ where SectionID: Hashable & Sendable {
         return compensation
     }
 
+    /// 只有实际找到的滚动目标可以取代该分区的延迟恢复；其他分区继续保留位置。
+    @discardableResult
+    private func performExplicitScroll(
+        to indexPath: IndexPath,
+        at position: UICollectionView.ScrollPosition,
+        animated: Bool
+    ) -> Bool {
+        guard let collectionView, let identity = dataSource.itemIdentifier(for: indexPath) else {
+            return false
+        }
+        explicitScrollRevisions[identity.sectionID] = UUID()
+        pendingOrthogonalOffsets.removeValue(forKey: identity.sectionID)
+        collectionView.scrollToItem(at: indexPath, at: position, animated: animated)
+        return true
+    }
+
     private func performScrollBehavior(
         _ behavior: ListScrollBehavior,
         visibleAnchor: ListVisibleRowAnchor?,
@@ -4034,23 +4113,23 @@ where SectionID: Hashable & Sendable {
             guard let indexPath = indexPaths(for: target).first else {
                 return ListScrollOutcome(anchorCompensation: compensation)
             }
-            collectionView.scrollToItem(
-                at: indexPath,
+            let didScroll = performExplicitScroll(
+                to: indexPath,
                 at: position.collectionViewPosition,
                 animated: animated
             )
-            return ListScrollOutcome(animated: animated, anchorCompensation: compensation)
+            return ListScrollOutcome(animated: didScroll && animated, anchorCompensation: compensation)
         case .scrollToLast(let sectionID, let position):
             let compensation = normalizeAnchorCompensation()
             guard let indexPath = lastItemIndexPath(inAnySectionID: sectionID) else {
                 return ListScrollOutcome(anchorCompensation: compensation)
             }
-            collectionView.scrollToItem(
-                at: indexPath,
+            let didScroll = performExplicitScroll(
+                to: indexPath,
                 at: position.collectionViewPosition,
                 animated: animated
             )
-            return ListScrollOutcome(animated: animated, anchorCompensation: compensation)
+            return ListScrollOutcome(animated: didScroll && animated, anchorCompensation: compensation)
         }
     }
 
@@ -4180,6 +4259,11 @@ private final class ListOrthogonalScrollState {
             }
         }
     }
+}
+
+private struct ListOrthogonalOffsetSnapshot {
+    let offset: CGPoint
+    let scrollRevision: UUID?
 }
 
 private struct SupplementaryKey: Hashable {

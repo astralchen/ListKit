@@ -608,7 +608,11 @@ public struct ListApplySummary: Equatable, Sendable {
 }
 
 extension ListApplySummary {
-    func replacingAnimation(_ animation: ListAnimationSummary) -> ListApplySummary {
+    /// 未提交的终止结果可覆盖刷新指标，同时保留声明差异和诊断信息。
+    func replacingAnimation(
+        _ animation: ListAnimationSummary,
+        refreshMetrics: ListRefreshMetrics? = nil
+    ) -> ListApplySummary {
         ListApplySummary(
             insertedSectionCount: insertedSectionCount,
             deletedSectionCount: deletedSectionCount,
@@ -620,7 +624,7 @@ extension ListApplySummary {
             keptRowCount: keptRowCount,
             rowRefreshIDChangedCount: rowRefreshIDChangedCount,
             supplementaryRefreshIDChangedCount: supplementaryRefreshIDChangedCount,
-            refreshMetrics: refreshMetrics,
+            refreshMetrics: refreshMetrics ?? self.refreshMetrics,
             diagnosticsIssues: diagnosticsIssues,
             animation: animation
         )
