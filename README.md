@@ -59,11 +59,13 @@ adapter.apply {
 https://github.com/astralchen/ListKit.git
 ```
 
+将 **Dependency Rule** 设置为 **Branch**，分支填写 `main`。
+
 或在 `Package.swift` 中声明：
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/astralchen/ListKit.git", from: "1.0.0")
+    .package(url: "https://github.com/astralchen/ListKit.git", branch: "main")
 ],
 targets: [
     .target(
