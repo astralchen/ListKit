@@ -1,0 +1,121 @@
+{
+  "scope": "Unique scenario coverage: horizontal from verified, vertical from final. Earlier failures remain unchanged in each run summary.",
+  "directions": {
+    "ltr-horizontal": {
+      "run": "verified",
+      "gestures": 21,
+      "updates": 12,
+      "badgeTaps": 11,
+      "edgeChecks": 33,
+      "maxAbsoluteEdgeError": 0.0,
+      "tailCountsVisited": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "invalidBadgeRequests": 0,
+      "snapshots": 45,
+      "fallbackRules": [
+        "empty",
+        "first",
+        "predecessor",
+        "same",
+        "successor"
+      ]
+    },
+    "ltr-vertical": {
+      "run": "final",
+      "gestures": 21,
+      "updates": 12,
+      "badgeTaps": 11,
+      "edgeChecks": 33,
+      "maxAbsoluteEdgeError": 0.0,
+      "tailCountsVisited": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "invalidBadgeRequests": 0,
+      "snapshots": 45,
+      "fallbackRules": [
+        "empty",
+        "first",
+        "predecessor",
+        "same",
+        "successor"
+      ]
+    },
+    "rtl-horizontal": {
+      "run": "verified",
+      "gestures": 21,
+      "updates": 12,
+      "badgeTaps": 11,
+      "edgeChecks": 33,
+      "maxAbsoluteEdgeError": 0.0,
+      "tailCountsVisited": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "invalidBadgeRequests": 0,
+      "snapshots": 45,
+      "fallbackRules": [
+        "empty",
+        "first",
+        "predecessor",
+        "same",
+        "successor"
+      ]
+    },
+    "rtl-vertical": {
+      "run": "final",
+      "gestures": 21,
+      "updates": 12,
+      "badgeTaps": 11,
+      "edgeChecks": 33,
+      "maxAbsoluteEdgeError": 0.0,
+      "tailCountsVisited": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "invalidBadgeRequests": 0,
+      "snapshots": 45,
+      "fallbackRules": [
+        "empty",
+        "first",
+        "predecessor",
+        "same",
+        "successor"
+      ]
+    }
+  },
+  "totals": {
+    "gestures": 84,
+    "updates": 48,
+    "badgeTaps": 44,
+    "edgeChecks": 132,
+    "snapshots": 180
+  },
+  "existingRegression": {
+    "run": "final",
+    "test": "StablePagingProbeUITests/testMeasuredLineSlotsWithPublicAnchor",
+    "passed": true,
+    "gestures": 12,
+    "updates": 8,
+    "screenAndOffsetError": 0
+  },
+  "prototypeSHA256": "10e599aa9ef615100d9b4f032fe102da839a0504b9275fbb7893ab2fa25f0c34"
+}

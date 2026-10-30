@@ -1,0 +1,19 @@
+--- before/SceneDelegate.swift
++++ after/SceneDelegate.swift
+@@ -16,9 +16,13 @@
+         guard let windowScene = scene as? UIWindowScene else { return }
+ 
+         let window = UIWindow(windowScene: windowScene)
+-        window.rootViewController = ProcessInfo.processInfo.arguments.contains("-LayoutLab")
+-            ? UINavigationController(rootViewController: LayoutLabViewController())
+-            : LiveRoomDemoViewController()
++        if ProcessInfo.processInfo.arguments.contains("-NativePagingProbe") {
++            window.rootViewController = UINavigationController(rootViewController: NativePagingProbeViewController())
++        } else {
++            window.rootViewController = ProcessInfo.processInfo.arguments.contains("-LayoutLab")
++                ? UINavigationController(rootViewController: LayoutLabViewController())
++                : LiveRoomDemoViewController()
++        }
+         window.makeKeyAndVisible()
+         self.window = window
+     }

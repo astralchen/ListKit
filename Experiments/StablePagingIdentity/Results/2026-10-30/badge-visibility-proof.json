@@ -1,0 +1,64 @@
+{
+  "source": "final-ltr-horizontal-live-trace.json",
+  "stage": "ltr-horizontal-content-back",
+  "collectionScreenBounds": [
+    50,
+    330,
+    340,
+    210
+  ],
+  "mainOffset": 335,
+  "groupStride": 335,
+  "visibleItems": [
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+  ],
+  "instantiatedBadgeItems": [
+    6,
+    9,
+    7,
+    10,
+    8,
+    11
+  ],
+  "excluded": [
+    {
+      "item": 12,
+      "cellScreenFrame": [
+        385,
+        330,
+        79,
+        100
+      ],
+      "expectedBadgeScreenFrame": [
+        446,
+        330,
+        18,
+        18
+      ],
+      "visibleCellWidth": 5
+    },
+    {
+      "item": 13,
+      "cellScreenFrame": [
+        385,
+        440,
+        85,
+        100
+      ],
+      "expectedBadgeScreenFrame": [
+        452,
+        440,
+        18,
+        18
+      ],
+      "visibleCellWidth": 5
+    }
+  ]
+}

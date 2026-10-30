@@ -95,71 +95,76 @@ final class ContextMenuDemoViewController: UIViewController {
         adapter.apply(transaction: .disabled) { makeSections() }
     }
 
-    /// 每个闭包均消费新 API 提供的参数；页面弱捕获，菜单动画不会保活已退出的页面。
+    @ListSectionBuilder<Int>
     private func makeSections() -> [ListSection<Int>] {
-        [ListSection(0) {
+        ListSection(0) {
             for item in Item.allCases {
-                Row(item, model: item, cell: UICollectionViewListCell.self) { cell, item, _ in
-                    var content = cell.defaultContentConfiguration()
-                    content.text = item.rawValue
-                    content.secondaryText = item.detail
-                    content.secondaryTextProperties.numberOfLines = 0
-                    content.image = UIImage(systemName: item == .original ? "hand.point.up.left" : "rectangle.on.rectangle")
-                    cell.contentConfiguration = content
-                    cell.accessibilityIdentifier = item == .original ? "context-menu-original" : "context-menu-preview"
-                }
-                .contextMenu { [weak self] context, point in
-                    self?.makeConfiguration(item: item, context: context, point: point)
-                }
-                .contextMenuPreview(highlighting: { [weak self] context, configuration in
-                    self?.targetedPreview(context: context, configuration: configuration, phase: "highlightPreview")
-                }, dismissal: { [weak self] context, configuration in
-                    self?.targetedPreview(context: context, configuration: configuration, phase: "dismissalPreview")
-                })
-                .onContextMenuWillDisplay { [weak self] _, configuration, animator in
-                    guard let self else { return }
-                    let id = self.identifier(configuration)
-                    self.record("willDisplay · \(id) · animator: \(animator != nil)")
-                    self.statusLabel.text = "Presenting · \(id)"
-                    self.statusLabel.alpha = 0.5
-                    let animations: () -> Void = { [weak self] in self?.statusLabel.alpha = 1 }
-                    let completion: () -> Void = { [weak self] in
-                        self?.record("displayCompleted · \(id)")
-                        self?.statusLabel.text = "Visible · \(id)"
-                    }
-                    if let animator {
-                        animator.addAnimations(animations)
-                        animator.addCompletion(completion)
-                    } else {
-                        animations()
-                        completion()
-                    }
-                }
-                .onContextMenuWillEnd { [weak self] _, configuration, animator in
-                    guard let self else { return }
-                    let id = self.identifier(configuration)
-                    self.record("willEnd · \(id) · animator: \(animator != nil)")
-                    self.statusLabel.text = "Ending · \(id)"
-                    let completion: () -> Void = { [weak self] in
-                        self?.record("endCompleted · \(id)")
-                        self?.statusLabel.text = "Ended · \(id)"
-                    }
-                    if let animator { animator.addCompletion(completion) } else { completion() }
-                }
-                .onContextMenuCommit { [weak self] context, configuration, animator in
-                    guard let self else { return }
-                    let id = self.identifier(configuration)
-                    self.record("commit · \(id) · row: \(context.item(as: Item.self)?.rawValue ?? "unknown")")
-                    animator.preferredCommitStyle = .dismiss
-                    animator.addCompletion { [weak self] in
-                        self?.record("commitCompleted · \(id)")
-                        self?.statusLabel.text = "Committed · \(id)"
-                    }
-                }
+                menuRow(for: item)
             }
         } layout: {
             UIKitListLayout(appearance: .insetGrouped, headerTopPadding: 0)
-        }]
+        }
+    }
+
+    /// 每个闭包均消费 API 提供的参数；页面弱捕获，菜单动画不会保活已退出的页面。
+    private func menuRow(for item: Item) -> Row<Item, Item, UICollectionViewListCell> {
+        Row(item, model: item, cell: UICollectionViewListCell.self) { cell, item, _ in
+            var content = cell.defaultContentConfiguration()
+            content.text = item.rawValue
+            content.secondaryText = item.detail
+            content.secondaryTextProperties.numberOfLines = 0
+            content.image = UIImage(systemName: item == .original ? "hand.point.up.left" : "rectangle.on.rectangle")
+            cell.contentConfiguration = content
+            cell.accessibilityIdentifier = item == .original ? "context-menu-original" : "context-menu-preview"
+        }
+        .contextMenu { [weak self] context, point in
+            self?.makeConfiguration(item: item, context: context, point: point)
+        }
+        .contextMenuPreview(highlighting: { [weak self] context, configuration in
+            self?.targetedPreview(context: context, configuration: configuration, phase: "highlightPreview")
+        }, dismissal: { [weak self] context, configuration in
+            self?.targetedPreview(context: context, configuration: configuration, phase: "dismissalPreview")
+        })
+        .onContextMenuWillDisplay { [weak self] _, configuration, animator in
+            guard let self else { return }
+            let id = self.identifier(configuration)
+            self.record("willDisplay · \(id) · animator: \(animator != nil)")
+            self.statusLabel.text = "Presenting · \(id)"
+            self.statusLabel.alpha = 0.5
+            let animations: () -> Void = { [weak self] in self?.statusLabel.alpha = 1 }
+            let completion: () -> Void = { [weak self] in
+                self?.record("displayCompleted · \(id)")
+                self?.statusLabel.text = "Visible · \(id)"
+            }
+            if let animator {
+                animator.addAnimations(animations)
+                animator.addCompletion(completion)
+            } else {
+                animations()
+                completion()
+            }
+        }
+        .onContextMenuWillEnd { [weak self] _, configuration, animator in
+            guard let self else { return }
+            let id = self.identifier(configuration)
+            self.record("willEnd · \(id) · animator: \(animator != nil)")
+            self.statusLabel.text = "Ending · \(id)"
+            let completion: () -> Void = { [weak self] in
+                self?.record("endCompleted · \(id)")
+                self?.statusLabel.text = "Ended · \(id)"
+            }
+            if let animator { animator.addCompletion(completion) } else { completion() }
+        }
+        .onContextMenuCommit { [weak self] context, configuration, animator in
+            guard let self else { return }
+            let id = self.identifier(configuration)
+            self.record("commit · \(id) · row: \(context.item(as: Item.self)?.rawValue ?? "unknown")")
+            animator.preferredCommitStyle = .dismiss
+            animator.addCompletion { [weak self] in
+                self?.record("commitCompleted · \(id)")
+                self?.statusLabel.text = "Committed · \(id)"
+            }
+        }
     }
 
     /// 将触发位置与唯一菜单编号带入内容预览，菜单行为和所有回调共享同一个 configuration。

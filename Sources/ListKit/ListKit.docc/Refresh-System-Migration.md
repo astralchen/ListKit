@@ -35,10 +35,10 @@ Row 的动作强度为：`reload` 高于带布局重测量的 `reconfigure`，�
 
 ## Supplementary 刷新
 
-Header、Footer 和自定义 Supplementary 使用 ``ListSupplementaryRefreshRule``：
+SectionSupplementary 使用 ``ListSupplementaryRefreshRule``：
 
 ```swift
-Header(ProfileHeaderView.self, id: "profile") { view, _ in
+SectionSupplementary(ProfileHeaderView.self, kind: "profile", id: "profile") { view, _ in
     view.configure(title: title)
 }
 .refreshID(titleVersion)

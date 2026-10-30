@@ -1,0 +1,2 @@
+  PID  PPID ELAPSED COMMAND
+14968 13395   04:06 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl diagnose -l -b --timeout=600 --log-option=--last --log-option=4m --output=/tmp/listkit-stable-paging-20261030/geometry.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics --no-archive --udid=9CC16D4E-D6ED-4441-819D-53F30F278283

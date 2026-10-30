@@ -1,5 +1,6 @@
-import XCTest
 import UIKit
+import XCTest
+
 @testable import ListKit
 
 /// 仅用于验证 NSObject 的非隔离比较入口。对象在 MainActor 初始化后封存在 fixture 内，
@@ -69,7 +70,8 @@ final class ListKitCoreTests: XCTestCase {
         var firstState: ListApplyCompletionState?
         var secondState: ListApplyCompletionState?
         var executedSubscribers: [ListRowRefreshSubscriber] = []
-        let execute: (
+        let execute:
+        (
             [ListRowRefreshSubscriber],
             AnyListID?,
             ListRefreshScope,
@@ -77,33 +79,36 @@ final class ListKitCoreTests: XCTestCase {
         ) -> Void = { subscribers, _, _, _ in
             executedSubscribers = subscribers
             subscribers.forEach { subscriber in
-                subscriber.completion?(ListRefreshSummary(
-                    requestedTargetCount: subscriber.rowIDs.count,
-                    matchedTargetCount: subscriber.rowIDs.count,
-                    animation: ListAnimationSummary(completionState: .completed)
-                ))
+                subscriber.completion?(
+                    ListRefreshSummary(
+                        requestedTargetCount: subscriber.rowIDs.count,
+                        matchedTargetCount: subscriber.rowIDs.count,
+                        animation: ListAnimationSummary(completionState: .completed)
+                    ))
             }
         }
-        scheduler.enqueue(ListPendingMutationRequest(
-            rowIDs: [AnyListID("first")],
-            sectionID: nil,
-            scope: .visible,
-            action: .reconfigure(layout: .none),
-            transaction: .automatic,
-            subscriberID: firstID,
-            completion: { firstState = $0.animation.completionState },
-            execute: execute
-        ))
-        scheduler.enqueue(ListPendingMutationRequest(
-            rowIDs: [AnyListID("second")],
-            sectionID: nil,
-            scope: .visible,
-            action: .reload,
-            transaction: .automatic,
-            subscriberID: secondID,
-            completion: { secondState = $0.animation.completionState },
-            execute: execute
-        ))
+        scheduler.enqueue(
+            ListPendingMutationRequest(
+                rowIDs: [AnyListID("first")],
+                sectionID: nil,
+                scope: .visible,
+                action: .reconfigure(layout: .none),
+                transaction: .automatic,
+                subscriberID: firstID,
+                completion: { firstState = $0.animation.completionState },
+                execute: execute
+            ))
+        scheduler.enqueue(
+            ListPendingMutationRequest(
+                rowIDs: [AnyListID("second")],
+                sectionID: nil,
+                scope: .visible,
+                action: .reload,
+                transaction: .automatic,
+                subscriberID: secondID,
+                completion: { secondState = $0.animation.completionState },
+                execute: execute
+            ))
 
         XCTAssertTrue(scheduler.cancelSubscriber(firstID))
         XCTAssertEqual(firstState, .cancelledBeforeCommit)
@@ -116,31 +121,34 @@ final class ListKitCoreTests: XCTestCase {
         let scheduler = ListMutationScheduler()
         let cancellableID = UUID()
         var executedSubscribers: [ListRowRefreshSubscriber] = []
-        let execute: (
+        let execute:
+        (
             [ListRowRefreshSubscriber],
             AnyListID?,
             ListRefreshScope,
             ListTransaction
         ) -> Void = { subscribers, _, _, _ in executedSubscribers = subscribers }
-        scheduler.enqueue(ListPendingMutationRequest(
-            rowIDs: [AnyListID("fire-and-forget")],
-            sectionID: nil,
-            scope: .visible,
-            action: .reconfigure(layout: .none),
-            transaction: .automatic,
-            completion: nil,
-            execute: execute
-        ))
-        scheduler.enqueue(ListPendingMutationRequest(
-            rowIDs: [AnyListID("cancelled")],
-            sectionID: nil,
-            scope: .visible,
-            action: .reload,
-            transaction: .automatic,
-            subscriberID: cancellableID,
-            completion: { _ in },
-            execute: execute
-        ))
+        scheduler.enqueue(
+            ListPendingMutationRequest(
+                rowIDs: [AnyListID("fire-and-forget")],
+                sectionID: nil,
+                scope: .visible,
+                action: .reconfigure(layout: .none),
+                transaction: .automatic,
+                completion: nil,
+                execute: execute
+            ))
+        scheduler.enqueue(
+            ListPendingMutationRequest(
+                rowIDs: [AnyListID("cancelled")],
+                sectionID: nil,
+                scope: .visible,
+                action: .reload,
+                transaction: .automatic,
+                subscriberID: cancellableID,
+                completion: { _ in },
+                execute: execute
+            ))
 
         XCTAssertTrue(scheduler.cancelSubscriber(cancellableID))
         XCTAssertTrue(scheduler.startNext(hasUncommittedUpdates: false))
@@ -155,7 +163,8 @@ final class ListKitCoreTests: XCTestCase {
         var firstCompletion: ListRefreshSummary?
         var secondCompletion: ListRefreshSummary?
 
-        let execute: (
+        let execute:
+        (
             [ListRowRefreshSubscriber],
             AnyListID?,
             ListRefreshScope,
@@ -164,16 +173,17 @@ final class ListKitCoreTests: XCTestCase {
             executionCount += 1
             executedSubscribers = subscribers
             subscribers.forEach { subscriber in
-                subscriber.completion?(ListRefreshSummary(
-                    requestedTargetCount: subscriber.rowIDs.count,
-                    matchedTargetCount: subscriber.rowIDs.count,
-                    refreshMetrics: ListRefreshMetrics(
-                        reloadedRowCount: subscriber.action == .reload
+                subscriber.completion?(
+                    ListRefreshSummary(
+                        requestedTargetCount: subscriber.rowIDs.count,
+                        matchedTargetCount: subscriber.rowIDs.count,
+                        refreshMetrics: ListRefreshMetrics(
+                            reloadedRowCount: subscriber.action == .reload
                             ? subscriber.rowIDs.count
                             : 0
-                    ),
-                    animation: ListAnimationSummary(completionState: .completed)
-                ))
+                        ),
+                        animation: ListAnimationSummary(completionState: .completed)
+                    ))
             }
         }
         let first = ListPendingMutationRequest(
@@ -199,14 +209,18 @@ final class ListKitCoreTests: XCTestCase {
         first.start()
 
         XCTAssertEqual(executionCount, 1)
-        XCTAssertEqual(executedSubscribers.map(\.rowIDs), [
-            [AnyListID("first")],
-            [AnyListID("second")]
-        ])
-        XCTAssertEqual(executedSubscribers.map(\.action), [
-            .reconfigure(layout: .none),
-            .reload
-        ])
+        XCTAssertEqual(
+            executedSubscribers.map(\.rowIDs),
+            [
+                [AnyListID("first")],
+                [AnyListID("second")],
+            ])
+        XCTAssertEqual(
+            executedSubscribers.map(\.action),
+            [
+                .reconfigure(layout: .none),
+                .reload,
+            ])
         XCTAssertEqual(firstCompletion?.requestedTargetCount, 1)
         XCTAssertEqual(secondCompletion?.requestedTargetCount, 1)
         XCTAssertEqual(firstCompletion?.refreshMetrics.reloadedRowCount, 0)
@@ -235,12 +249,13 @@ final class ListKitCoreTests: XCTestCase {
         let scheduler = ListMutationScheduler()
         let active = scheduler.coordinator.begin(kind: .apply, updatePolicy: .coalesceLatest)
 
-        scheduler.enqueue(ListPendingMutationRequest(
-            kind: .apply,
-            updatePolicy: .coalesceLatest,
-            start: {},
-            supersede: {}
-        ))
+        scheduler.enqueue(
+            ListPendingMutationRequest(
+                kind: .apply,
+                updatePolicy: .coalesceLatest,
+                start: {},
+                supersede: {}
+            ))
 
         XCTAssertTrue(active.isSuperseded)
         scheduler.coordinator.finish(active)
@@ -256,17 +271,18 @@ final class ListKitCoreTests: XCTestCase {
             executionCount += 1
             executedSubscribers = subscribers
             subscribers.forEach { subscriber in
-                subscriber.completion?(ListRefreshSummary(
-                    requestedTargetCount: subscriber.sectionIDs.count,
-                    matchedTargetCount: subscriber.sectionIDs.count,
-                    refreshMetrics: ListRefreshMetrics(
-                        reloadedSectionCount: subscriber.sectionIDs.count
-                    ),
-                    animation: ListAnimationSummary(
-                        completionState: .completed,
-                        layoutInvalidated: true
-                    )
-                ))
+                subscriber.completion?(
+                    ListRefreshSummary(
+                        requestedTargetCount: subscriber.sectionIDs.count,
+                        matchedTargetCount: subscriber.sectionIDs.count,
+                        refreshMetrics: ListRefreshMetrics(
+                            reloadedSectionCount: subscriber.sectionIDs.count
+                        ),
+                        animation: ListAnimationSummary(
+                            completionState: .completed,
+                            layoutInvalidated: true
+                        )
+                    ))
             }
         }
         let first = ListPendingMutationRequest(
@@ -286,10 +302,12 @@ final class ListKitCoreTests: XCTestCase {
         first.start()
 
         XCTAssertEqual(executionCount, 1)
-        XCTAssertEqual(executedSubscribers.map(\.sectionIDs), [
-            [AnyListID(0)],
-            [AnyListID(1)]
-        ])
+        XCTAssertEqual(
+            executedSubscribers.map(\.sectionIDs),
+            [
+                [AnyListID(0)],
+                [AnyListID(1)],
+            ])
         XCTAssertEqual(firstCompletion?.requestedTargetCount, 1)
         XCTAssertEqual(secondCompletion?.requestedTargetCount, 1)
         XCTAssertEqual(firstCompletion?.refreshMetrics.reloadedSectionCount, 1)
@@ -592,13 +610,24 @@ final class ListKitCoreTests: XCTestCase {
                 }
                 .refreshID(1)
                 .refresh(when: .never)
-            } header: {
-                Header(HeaderView.self, id: "header") { view, _ in
-                    view.title = headerText
-                }
-                .refreshID(1)
-                .refresh(when: .never)
-                .layout(height: .absolute(32))
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                    .boundarySupplementaries {
+                        BoundarySupplementaryLayout(
+                            kind: UICollectionView.elementKindSectionHeader,
+                            size: .init(width: .fractionalWidth(1), height: .absolute(32)), alignment: .top
+                        ).whenContentExists()
+                    }
+
+            } supplementaries: {
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                    ,
+                    id: "header") { view, _ in
+                        view.title = headerText
+                    }
+                    .refreshID(1)
+                    .refresh(when: .never)
             }
         }
         collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
@@ -681,13 +710,24 @@ final class ListKitCoreTests: XCTestCase {
                 }
                 .refreshID(1)
                 .refresh(when: .never)
-            } header: {
-                Header(HeaderView.self, id: "header") { view, _ in
-                    view.title = headerText
-                }
-                .refreshID(1)
-                .refresh(when: .never)
-                .layout(height: .absolute(32))
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                    .boundarySupplementaries {
+                        BoundarySupplementaryLayout(
+                            kind: UICollectionView.elementKindSectionHeader,
+                            size: .init(width: .fractionalWidth(1), height: .absolute(32)), alignment: .top
+                        ).whenContentExists()
+                    }
+
+            } supplementaries: {
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                    ,
+                    id: "header") { view, _ in
+                        view.title = headerText
+                    }
+                    .refreshID(1)
+                    .refresh(when: .never)
             }
         }
         collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
@@ -1054,7 +1094,8 @@ final class ListKitCoreTests: XCTestCase {
             .selectionMode(.single)
         }
         collectionView.layoutIfNeeded()
-        collectionView.selectItem(at: IndexPath(item: 0, section: 1), animated: false, scrollPosition: [])
+        collectionView.selectItem(
+            at: IndexPath(item: 0, section: 1), animated: false, scrollPosition: [])
         let selectedIdentity = try XCTUnwrap(adapter.itemIdentity(at: IndexPath(item: 0, section: 1)))
 
         _ = await adapter.apply(transaction: .disabled) {
@@ -1167,14 +1208,13 @@ final class ListKitCoreTests: XCTestCase {
 
         func outlineSection(headerVersion: Int) -> ListSection<Int> {
             let header: ListSectionSupplementary<Int> = SectionSupplementary(
-                UICollectionView.elementKindSectionHeader,
-                HeaderView.self,
-                id: "outline-header"
-            ) { view, _ in
-                view.title = "Header \(headerVersion)"
-            }
-            .refreshID(headerVersion)
-            .refresh(when: .refreshIDChanges)
+                HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                ,
+                id: "outline-header") { view, _ in
+                    view.title = "Header \(headerVersion)"
+                }
+                .refreshID(headerVersion)
+                .refresh(when: .refreshIDChanges)
 
             return ListSection(1) {
                 DisclosureGroup(
@@ -1184,13 +1224,15 @@ final class ListKitCoreTests: XCTestCase {
                 ) {
                     Row("child", model: "Child", cell: UICollectionViewListCell.self) { _, _, _ in }
                 }
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0).boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionHeader,
+                        size: .init(width: .fractionalWidth(1), height: .absolute(32)), alignment: .top)
+                }
             } supplementaries: {
                 header
             }
-            .boundarySupplementaryLayout(
-                kind: UICollectionView.elementKindSectionHeader,
-                height: .absolute(32)
-            )
         }
 
         _ = await adapter.apply(
@@ -1238,8 +1280,12 @@ final class ListKitCoreTests: XCTestCase {
         let first = makeTestListNode("first", refreshID: 1)
         let second = makeTestListNode("second", refreshID: 1)
         let plan = ListApplyPlanner.makePlan(
-            old: [ListSectionSnapshot(sectionID: AnyListID(0), rows: [first, second], supplementaries: [])],
-            new: [ListSectionSnapshot(sectionID: AnyListID(0), rows: [second, first], supplementaries: [])],
+            old: [
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [first, second], supplementaries: [])
+            ],
+            new: [
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [second, first], supplementaries: [])
+            ],
             options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
             diagnosticsIssues: []
         )
@@ -1254,11 +1300,11 @@ final class ListKitCoreTests: XCTestCase {
         let insertionAndDeletion = ListApplyPlanner.makePlan(
             old: [
                 ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
-                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: [])
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: []),
             ],
             new: [
                 ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
-                ListSectionSnapshot(sectionID: AnyListID(2), rows: [], supplementaries: [])
+                ListSectionSnapshot(sectionID: AnyListID(2), rows: [], supplementaries: []),
             ],
             options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
             diagnosticsIssues: []
@@ -1276,11 +1322,11 @@ final class ListKitCoreTests: XCTestCase {
         let reordering = ListApplyPlanner.makePlan(
             old: [
                 ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
-                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: [])
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: []),
             ],
             new: [
                 ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: []),
-                ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: [])
+                ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
             ],
             options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
             diagnosticsIssues: []
@@ -1301,11 +1347,11 @@ final class ListKitCoreTests: XCTestCase {
         let plan = ListApplyPlanner.makePlan(
             old: [
                 ListSectionSnapshot(sectionID: AnyListID(0), rows: [oldRow], supplementaries: []),
-                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: [])
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [], supplementaries: []),
             ],
             new: [
                 ListSectionSnapshot(sectionID: AnyListID(0), rows: [], supplementaries: []),
-                ListSectionSnapshot(sectionID: AnyListID(1), rows: [rehomedRow], supplementaries: [])
+                ListSectionSnapshot(sectionID: AnyListID(1), rows: [rehomedRow], supplementaries: []),
             ],
             options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
             diagnosticsIssues: []
@@ -1452,7 +1498,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testUnrelatedFlatSectionUpdateDoesNotAnimateOutlineSection() async {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         _ = await adapter.apply(
@@ -1475,7 +1522,8 @@ final class ListKitCoreTests: XCTestCase {
         let initialOutlineAnimationGeneration = adapter.outlineAnimationGeneration
 
         _ = await adapter.apply(
-            options: .init(transaction: ListTransaction(animation: .enabled), applicationMode: .differences)
+            options: .init(
+                transaction: ListTransaction(animation: .enabled), applicationMode: .differences)
         ) {
             ListSection(0) {
                 DisclosureGroup(
@@ -1494,7 +1542,8 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(adapter.outlineAnimationGeneration, initialOutlineAnimationGeneration)
 
         _ = await adapter.apply(
-            options: .init(transaction: ListTransaction(animation: .enabled), applicationMode: .differences)
+            options: .init(
+                transaction: ListTransaction(animation: .enabled), applicationMode: .differences)
         ) {
             ListSection(0) {
                 DisclosureGroup(
@@ -1518,7 +1567,7 @@ final class ListKitCoreTests: XCTestCase {
     func testBuilderSupportsForEachAndConditionalRows() {
         let users = [
             User(id: 1, name: "A", isVIP: false, version: 1),
-            User(id: 2, name: "B", isVIP: true, version: 1)
+            User(id: 2, name: "B", isVIP: true, version: 1),
         ]
 
         let sections = ListSectionsBuilder<Int>.build {
@@ -1536,9 +1585,22 @@ final class ListKitCoreTests: XCTestCase {
                         .refreshID(user.version)
                     }
                 }
-            }
-            .header(HeaderView.self, id: "header") { view, _ in
-                view.title = "Users"
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                    .boundarySupplementaries {
+                        BoundarySupplementaryLayout(
+                            kind: UICollectionView.elementKindSectionHeader,
+                            size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                        ).whenContentExists()
+                    }
+
+            } supplementaries: {
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                    ,
+                    id: "header") { view, _ in
+                        view.title = "Users"
+                    }
             }
         }
 
@@ -1553,14 +1615,17 @@ final class ListKitCoreTests: XCTestCase {
     func testForEachSupportsClosureIDForFallbackIdentity() {
         let users = [
             UserProfile(userID: "", accountID: "account-1", name: "A"),
-            UserProfile(userID: "user-2", accountID: "account-2", name: "B")
+            UserProfile(userID: "user-2", accountID: "account-2", name: "B"),
         ]
 
         let sections = ListSectionsBuilder<Int>.build {
             ListSection(0) {
-                ForEach(users, id: { user in
-                    user.userID.isEmpty ? "account-\(user.accountID)" : user.userID
-                }) { user in
+                ForEach(
+                    users,
+                    id: { user in
+                        user.userID.isEmpty ? "account-\(user.accountID)" : user.userID
+                    }
+                ) { user in
                     Row(model: user, cell: NormalUserCell.self) { cell, user, _ in
                         cell.name = user.name
                     }
@@ -1573,19 +1638,22 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testSingleIdentifiableModelRowUsesModelID() {
-        let row = Row(model: IdentifiedUser(id: 7, name: "A"), cell: NormalUserCell.self) { cell, user, _ in
+        let row = Row(model: IdentifiedUser(id: 7, name: "A"), cell: NormalUserCell.self) {
+            cell, user, _ in
             cell.name = user.name
         }
-        .eraseToAnyListRow(sectionID: 0)
+            .eraseToAnyListRow(sectionID: 0)
 
         XCTAssertEqual(row.identity.rowID.typed(Int.self), 7)
     }
 
     func testSingleModelRowSupportsKeyPathID() {
-        let row = Row(model: User(id: 9, name: "A", isVIP: false, version: 1), id: \.id, cell: NormalUserCell.self) { cell, user, _ in
+        let row = Row(
+            model: User(id: 9, name: "A", isVIP: false, version: 1), id: \.id, cell: NormalUserCell.self
+        ) { cell, user, _ in
             cell.name = user.name
         }
-        .eraseToAnyListRow(sectionID: 0)
+            .eraseToAnyListRow(sectionID: 0)
 
         XCTAssertEqual(row.identity.rowID.typed(Int.self), 9)
     }
@@ -1596,10 +1664,10 @@ final class ListKitCoreTests: XCTestCase {
             cell.name = "provider"
             return cell
         }
-        .onSelect { context in
-            XCTAssertEqual(context.indexPath.item, 0)
-        }
-        .eraseToAnyListRows(sectionID: 0)[0]
+            .onSelect { context in
+                XCTAssertEqual(context.indexPath.item, 0)
+            }
+            .eraseToAnyListRows(sectionID: 0)[0]
 
         XCTAssertEqual(row.identity.rowID.typed(String.self), "provider")
         XCTAssertEqual(row.identity.presentationID, ObjectIdentifier(NormalUserCell.self))
@@ -1615,46 +1683,52 @@ final class ListKitCoreTests: XCTestCase {
             "UICollectionView.ElementKindSectionBackgroundDecoration"
         )
 
-        let layout = UICollectionViewCompositionalSeparatorLayout(section: NSCollectionLayoutSection(
-            group: NSCollectionLayoutGroup.horizontal(
-                layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1),
-                    heightDimension: .absolute(44)
-                ),
-                subitems: [
-                    NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
+        let layout = UICollectionViewCompositionalSeparatorLayout(
+            section: NSCollectionLayoutSection(
+                group: NSCollectionLayoutGroup.horizontal(
+                    layoutSize: NSCollectionLayoutSize(
                         widthDimension: .fractionalWidth(1),
-                        heightDimension: .fractionalHeight(1)
-                    ))
-                ]
-            )
-        ))
+                        heightDimension: .absolute(44)
+                    ),
+                    subitems: [
+                        NSCollectionLayoutItem(
+                            layoutSize: NSCollectionLayoutSize(
+                                widthDimension: .fractionalWidth(1),
+                                heightDimension: .fractionalHeight(1)
+                            ))
+                    ]
+                )
+            ))
         XCTAssertEqual(layout.separatorInsets, .zero)
         layout.separatorInsets = .init(top: 0, leading: 12, bottom: 0, trailing: 12)
         XCTAssertEqual(layout.separatorInsets.leading, 12)
 
-        let secondLayout = UICollectionViewCompositionalSeparatorLayout(section: NSCollectionLayoutSection(
-            group: NSCollectionLayoutGroup.horizontal(
-                layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1),
-                    heightDimension: .absolute(44)
-                ),
-                subitems: [
-                    NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
+        let secondLayout = UICollectionViewCompositionalSeparatorLayout(
+            section: NSCollectionLayoutSection(
+                group: NSCollectionLayoutGroup.horizontal(
+                    layoutSize: NSCollectionLayoutSize(
                         widthDimension: .fractionalWidth(1),
-                        heightDimension: .fractionalHeight(1)
-                    ))
-                ]
-            )
-        ))
+                        heightDimension: .absolute(44)
+                    ),
+                    subitems: [
+                        NSCollectionLayoutItem(
+                            layoutSize: NSCollectionLayoutSize(
+                                widthDimension: .fractionalWidth(1),
+                                heightDimension: .fractionalHeight(1)
+                            ))
+                    ]
+                )
+            ))
         layout.separatorColor = .systemRed
         secondLayout.separatorColor = .systemBlue
 
-        let firstAttributes = layout.layoutAttributesForDecorationView(
+        let firstAttributes =
+        layout.layoutAttributesForDecorationView(
             ofKind: UICollectionView.elementKindSectionSeparatorDecoration,
             at: IndexPath(item: 0, section: 0)
         ) as? SectionSeparatorLayoutAttributes
-        let secondAttributes = secondLayout.layoutAttributesForDecorationView(
+        let secondAttributes =
+        secondLayout.layoutAttributesForDecorationView(
             ofKind: UICollectionView.elementKindSectionSeparatorDecoration,
             at: IndexPath(item: 0, section: 0)
         ) as? SectionSeparatorLayoutAttributes
@@ -1696,12 +1770,14 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionReusableNamespaceCreatesCellRegistrationWithClassFallback() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
-        let registration: UICollectionView.CellRegistration<NormalUserCell, User> = collectionView.lk.cellRegistration(
-            NormalUserCell.self
-        ) { cell, _, user in
-            cell.name = user.name
-        }
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let registration: UICollectionView.CellRegistration<NormalUserCell, User> = collectionView.lk
+            .cellRegistration(
+                NormalUserCell.self
+            ) { cell, _, user in
+                cell.name = user.name
+            }
 
         let cell = collectionView.dequeueConfiguredReusableCell(
             using: registration,
@@ -1714,10 +1790,11 @@ final class ListKitCoreTests: XCTestCase {
 
     func testCollectionReusableNamespaceCreatesSupplementaryRegistrationWithClassFallback() {
         let layout = UICollectionViewCompositionalLayout { _, _ in
-            let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
-                widthDimension: .fractionalWidth(1),
-                heightDimension: .fractionalHeight(1)
-            ))
+            let item = NSCollectionLayoutItem(
+                layoutSize: NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1),
+                    heightDimension: .fractionalHeight(1)
+                ))
             let group = NSCollectionLayoutGroup.horizontal(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(1),
@@ -1742,7 +1819,8 @@ final class ListKitCoreTests: XCTestCase {
             frame: CGRect(x: 0, y: 0, width: 320, height: 120),
             collectionViewLayout: layout
         )
-        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewCell, Int> { _, _, _ in }
+        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewCell, Int> { _, _, _ in
+        }
         let dataSource = UICollectionViewDiffableDataSource<Int, Int>(
             collectionView: collectionView
         ) { collectionView, indexPath, item in
@@ -1771,7 +1849,8 @@ final class ListKitCoreTests: XCTestCase {
         collectionView.reloadData()
         collectionView.layoutIfNeeded()
 
-        let view = dataSource.collectionView(
+        let view =
+        dataSource.collectionView(
             collectionView,
             viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionHeader,
             at: IndexPath(item: 0, section: 0)
@@ -1781,10 +1860,14 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testIdentityUsesCellTypeAndRefreshIDSeparately() {
-        let normal = Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+        let normal = Row(
+            1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self
+        ) { _, _, _ in }
             .refreshID(1)
             .eraseToAnyListRow(sectionID: 0)
-        let refreshed = Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { _, _, _ in }
+        let refreshed = Row(
+            1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self
+        ) { _, _, _ in }
             .refreshID(2)
             .eraseToAnyListRow(sectionID: 0)
         let vip = Row(1, model: User(id: 1, name: "B", isVIP: true, version: 2), cell: VIPUserCell.self) { _, _, _ in }
@@ -1797,7 +1880,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testAdapterDispatchesSelectionAndCustomEvents() async {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var selectedID: Int?
         var receivedEvent: UserEvent?
@@ -1807,7 +1891,8 @@ final class ListKitCoreTests: XCTestCase {
         }
         await adapter.apply(transaction: .disabled) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, context in
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, context in
                     context.send(UserEvent.avatarTap(userID: 1))
                 }
                 .onSelect { context in
@@ -1825,10 +1910,14 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testVariantChangesIdentityForSameCellType() {
-        let compact = Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+        let compact = Row(
+            1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self
+        ) { _, _, _ in }
             .variant("compact")
             .eraseToAnyListRow(sectionID: 0)
-        let expanded = Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+        let expanded = Row(
+            1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self
+        ) { _, _, _ in }
             .variant("expanded")
             .eraseToAnyListRow(sectionID: 0)
 
@@ -1836,7 +1925,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testVisibleReconfigureUsesExistingCell() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let context = ListContext(
             identity: AnyListIdentity(
                 sectionID: AnyListID(0),
@@ -1846,10 +1936,12 @@ final class ListKitCoreTests: XCTestCase {
             indexPath: IndexPath(item: 0, section: 0),
             collectionView: collectionView
         ) { _, _ in }
-        let row = Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { cell, user, _ in
+        let row = Row(
+            1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self
+        ) { cell, user, _ in
             cell.name = user.name
         }
-        .eraseToAnyListRow(sectionID: 0)
+            .eraseToAnyListRow(sectionID: 0)
         let existingCell = NormalUserCell()
 
         row.configureVisibleCell(existingCell, context)
@@ -1858,7 +1950,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testHeaderTapCanSendCustomEvent() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         var receivedEvent: UserEvent?
         let context = ListContext(
             identity: AnyListIdentity(
@@ -1872,11 +1965,25 @@ final class ListKitCoreTests: XCTestCase {
             receivedEvent = event as? UserEvent
         }
         let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .header(HeaderView.self, id: "header") { _, _ in }
-        .onHeaderTap { context in
-            context.send(UserEvent.headerTap)
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                .boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionHeader,
+                        size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                    ).whenContentExists()
+                }
+
+        } supplementaries: {
+            SectionSupplementary(
+                HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                ,
+                id: "header") { _, _ in }.onTap { context in
+                    context.send(UserEvent.headerTap)
+                }
         }
 
         section.supplementaries.first?.tapHandler?(context)
@@ -1905,14 +2012,41 @@ final class ListKitCoreTests: XCTestCase {
     func testDiagnosticsReportsDuplicateIdentities() {
         let sections = ListSectionsBuilder<Int>.build {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { _, _, _ in }
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                    .boundarySupplementaries {
+                        BoundarySupplementaryLayout(
+                            kind: UICollectionView.elementKindSectionHeader,
+                            size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                        ).whenContentExists()
+                        BoundarySupplementaryLayout(
+                            kind: UICollectionView.elementKindSectionHeader,
+                            size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                        ).whenContentExists()
+                    }
+
+            } supplementaries: {
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                    ,
+                    id: "same-header") { _, _ in }
+
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                    ,
+                    id: "same-header") { _, _ in }
             }
-            .header(HeaderView.self, id: "same-header") { _, _ in }
-            .supplementary(UICollectionView.elementKindSectionHeader, HeaderView.self, id: "same-header") { _, _ in }
 
             ListSection(0) {
-                Row(2, model: User(id: 2, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                Row(2, model: User(id: 2, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
             }
         }
 
@@ -1924,7 +2058,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testDiagnosticsWarningSkipsDuplicateSectionsWithoutTrapping() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         let result = adapter.apply(
@@ -1947,7 +2082,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionDiagnosticsRejectionPreservesLastValidSnapshot() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         adapter.apply(options: .init(transaction: .disabled, applicationMode: .reloadData)) {
@@ -1973,7 +2109,8 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(result.diagnosticsIssues.contains { $0.kind == .duplicateSection })
         XCTAssertEqual(collectionView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 9)
-        XCTAssertEqual(adapter.rowIdentifier(at: IndexPath(item: 0, section: 0), as: String.self), "valid")
+        XCTAssertEqual(
+            adapter.rowIdentifier(at: IndexPath(item: 0, section: 0), as: String.self), "valid")
         XCTAssertTrue(adapter.indexPaths(forRowID: "invalid-a").isEmpty)
         XCTAssertTrue(adapter.indexPaths(forRowID: "invalid-b").isEmpty)
     }
@@ -2005,13 +2142,15 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(result.diagnosticsIssues.contains { $0.kind == .duplicateSection })
         XCTAssertEqual(tableView.numberOfSections, 1)
         XCTAssertEqual(adapter.sectionIdentifier(at: 0), 9)
-        XCTAssertEqual(adapter.rowIdentifier(at: IndexPath(row: 0, section: 0), as: String.self), "valid")
+        XCTAssertEqual(
+            adapter.rowIdentifier(at: IndexPath(row: 0, section: 0), as: String.self), "valid")
         XCTAssertTrue(adapter.indexPaths(forRowID: "invalid-a").isEmpty)
         XCTAssertTrue(adapter.indexPaths(forRowID: "invalid-b").isEmpty)
     }
 
     func testApplyOptionsExposeSummaryAndAvoidDuplicateDiffableCrash() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let options = ListApplyOptions(
             transaction: .disabled,
@@ -2020,18 +2159,24 @@ final class ListKitCoreTests: XCTestCase {
 
         _ = adapter.apply(options: options) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                    .refreshID(1)
-                    .refresh(when: .refreshIDChanges, scope: .allMatching)
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                .refreshID(1)
+                .refresh(when: .refreshIDChanges, scope: .allMatching)
             }
         }
 
         let result = adapter.apply(options: options) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { _, _, _ in }
-                    .refreshID(2)
-                    .refresh(when: .refreshIDChanges, scope: .allMatching)
-                Row(2, model: User(id: 2, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                .refreshID(2)
+                .refresh(when: .refreshIDChanges, scope: .allMatching)
+                Row(2, model: User(id: 2, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
             }
         }
 
@@ -2047,8 +2192,12 @@ final class ListKitCoreTests: XCTestCase {
             )
         ) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { _, _, _ in }
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
             }
         }
 
@@ -2056,16 +2205,19 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testRowRuleOwnsSnapshotRefreshWithoutApplyLevelStrategy() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         _ = adapter.apply(
             options: ListApplyOptions(transaction: .disabled)
         ) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                    .refreshID(1)
-                    .refresh(when: .refreshIDChanges, scope: .allMatching)
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                .refreshID(1)
+                .refresh(when: .refreshIDChanges, scope: .allMatching)
             }
         }
 
@@ -2073,9 +2225,11 @@ final class ListKitCoreTests: XCTestCase {
             options: ListApplyOptions(transaction: .disabled)
         ) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) { _, _, _ in }
-                    .refreshID(2)
-                    .refresh(when: .refreshIDChanges, scope: .allMatching)
+                Row(1, model: User(id: 1, name: "B", isVIP: false, version: 2), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                .refreshID(2)
+                .refresh(when: .refreshIDChanges, scope: .allMatching)
             }
         }
 
@@ -2086,7 +2240,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testModelAwareRowEventsAndPrefetchReceiveModel() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var selectedUserID: Int?
         var deselectedUserID: Int?
@@ -2095,11 +2250,13 @@ final class ListKitCoreTests: XCTestCase {
 
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                    .onSelect { user, _ in selectedUserID = user.id }
-                    .onDeselect { user, _ in deselectedUserID = user.id }
-                    .onPrefetch { user, _ in prefetchedUserID = user.id }
-                    .onCancelPrefetch { user, _ in cancelledUserID = user.id }
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                .onSelect { user, _ in selectedUserID = user.id }
+                .onDeselect { user, _ in deselectedUserID = user.id }
+                .onPrefetch { user, _ in prefetchedUserID = user.id }
+                .onCancelPrefetch { user, _ in cancelledUserID = user.id }
             }
         }
         let indexPath = IndexPath(item: 0, section: 0)
@@ -2115,7 +2272,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionLifecycleUsesCapturedRowAfterSnapshotChanges() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let displayDelegate = CollectionDisplayDelegateSpy()
         var endedUserID: Int?
@@ -2124,9 +2282,11 @@ final class ListKitCoreTests: XCTestCase {
 
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                    .onEndDisplay { _, _ in endedUserID = 1 }
-                    .onCancelPrefetch { user, _ in cancelledUserID = user.id }
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                .onEndDisplay { _, _ in endedUserID = 1 }
+                .onCancelPrefetch { user, _ in cancelledUserID = user.id }
             }
         }
 
@@ -2137,7 +2297,9 @@ final class ListKitCoreTests: XCTestCase {
 
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
-                Row(2, model: User(id: 2, name: "B", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                Row(2, model: User(id: 2, name: "B", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
             }
         }
 
@@ -2150,7 +2312,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionLifecycleUsesCapturedRowWhenDeletedSectionIndexPathIsReused() async {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var endedRowID: String?
         var cancelledRowID: String?
@@ -2186,24 +2349,33 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionSelectionModeIsEnforcedPerSection() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var deselectedUserID: Int?
 
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
-                Row(0, model: User(id: 0, name: "None", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                Row(
+                    0, model: User(id: 0, name: "None", isVIP: false, version: 1), cell: NormalUserCell.self
+                ) { _, _, _ in }
             }
             .selectionMode(.none)
             ListSection(1) {
-                Row(10, model: User(id: 10, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                    .onDeselect { user, _ in deselectedUserID = user.id }
-                Row(11, model: User(id: 11, name: "B", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                Row(10, model: User(id: 10, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                .onDeselect { user, _ in deselectedUserID = user.id }
+                Row(11, model: User(id: 11, name: "B", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
             }
             .selectionMode(.single)
             .multipleSelectionInteraction()
             ListSection(2) {
-                Row(20, model: User(id: 20, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                Row(20, model: User(id: 20, name: "C", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
             }
             .selectionMode(.multiple)
             .multipleSelectionInteraction()
@@ -2242,7 +2414,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionAutomaticSelectionUsesRowIntent() async {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         _ = await adapter.apply(transaction: .disabled) {
@@ -2252,7 +2425,8 @@ final class ListKitCoreTests: XCTestCase {
         }
 
         XCTAssertFalse(collectionView.allowsSelection)
-        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 0)))
+        XCTAssertFalse(
+            adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 0)))
 
         _ = await adapter.apply(transaction: .disabled) {
             ListSection(0) {
@@ -2273,11 +2447,16 @@ final class ListKitCoreTests: XCTestCase {
 
         XCTAssertTrue(collectionView.allowsSelection)
         XCTAssertFalse(collectionView.allowsMultipleSelection)
-        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 0)))
-        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 1)))
-        XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 1, section: 1)))
-        XCTAssertTrue(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 2, section: 1)))
-        XCTAssertFalse(adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 3, section: 1)))
+        XCTAssertFalse(
+            adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 0)))
+        XCTAssertFalse(
+            adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 0, section: 1)))
+        XCTAssertTrue(
+            adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 1, section: 1)))
+        XCTAssertTrue(
+            adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 2, section: 1)))
+        XCTAssertFalse(
+            adapter.collectionView(collectionView, shouldSelectItemAt: IndexPath(item: 3, section: 1)))
         XCTAssertFalse(
             adapter.collectionView(
                 collectionView,
@@ -2287,7 +2466,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionControlledSelectionSynchronizesAcrossApply() async {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let indexPath = IndexPath(item: 0, section: 0)
 
@@ -2317,7 +2497,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionHighlightIntentDoesNotEnableRowSelection() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let indexPath = IndexPath(item: 0, section: 0)
         var highlightChanges: [Bool] = []
@@ -2341,7 +2522,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCollectionAutomaticSelectionUsesExternalDelegateIntent() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let selectionDelegate = CollectionSelectionDelegateSpy()
         let indexPath = IndexPath(item: 0, section: 0)
@@ -2360,7 +2542,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testCellEventBindingSendsTypedEvent() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var receivedEvent: UserEvent?
 
@@ -2369,15 +2552,21 @@ final class ListKitCoreTests: XCTestCase {
         }
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: EventCell.self) { _, _, _ in }
-                    .onCellEvent({ cell, send in
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: EventCell.self) {
+                    _, _, _ in
+                }
+                .onCellEvent(
+                    { cell, send in
                         cell.onButtonTap = send
-                    }, send: { user in
+                    },
+                    send: { user in
                         UserEvent.buttonTap(userID: user.id)
                     })
             }
         }
-        let cell = adapter.collectionView(collectionView, cellForItemAt: IndexPath(item: 0, section: 0)) as? EventCell
+        let cell =
+        adapter.collectionView(collectionView, cellForItemAt: IndexPath(item: 0, section: 0))
+        as? EventCell
         cell?.onButtonTap?()
 
         XCTAssertEqual(receivedEvent, .buttonTap(userID: 1))
@@ -2414,27 +2603,51 @@ final class ListKitCoreTests: XCTestCase {
             .refresh(when: .refreshIDChanges)
 
         let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                .selected(true)
-        }
-        .layout("user-grid")
-        .selectionMode(.multiple)
-        .stickyHeader()
-        .backgroundDecoration("user-background")
-        .supplementary(header)
-        .supplementary("badge", HeaderView.self, id: "badge") { _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+            .selected(true)
+        } layout: {
+            GridLayout(tracks: 2)
+                .boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: "badge",
+                        size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                    ).whenContentExists()
+                }
+                .decorationItems {
+                    DecorationItemLayout(kind: "section-decoration", backgroundInsets: .zero, zIndex: -1)
+                        .whenContentExists()
+                }
+        } supplementaries: {
+            SectionSupplementary(header)
 
-        XCTAssertEqual(section.layoutID?.typed(String.self), "user-grid")
+            SectionSupplementary(
+                HeaderView.self, kind: "badge", id: "badge"
+            ) { _, _ in }
+        } decorations: {
+            SectionDecoration(kind: "section-decoration", elementKind: "user-background")
+        }
+            .selectionMode(.multiple)
+
+        guard case .gridConfiguration(let grid) = section.declaredLayout else {
+            return XCTFail("Expected grid")
+        }
+        XCTAssertEqual(grid.tracks, .count(2))
+        XCTAssertEqual(grid.options.boundaries.count, 1)
+        XCTAssertEqual(grid.options.decorations?.count, 1)
         XCTAssertEqual(section.selectionMode, .multiple)
-        XCTAssertTrue(section.isHeaderSticky)
-        XCTAssertEqual(section.backgroundDecorationKind, "user-background")
+        XCTAssertEqual(section.decorations.first?.elementKind, "user-background")
+        XCTAssertEqual(section.decorations.first?.kind, "section-decoration")
         XCTAssertTrue(section.rows[0].isSelected == true)
         XCTAssertEqual(section.supplementaries[0].refreshRule.trigger, .refreshIDChanges)
-        XCTAssertEqual(section.supplementaries.map(\.kind), [UICollectionView.elementKindSectionHeader, "badge"])
+        XCTAssertEqual(
+            section.supplementaries.map(\.kind), [UICollectionView.elementKindSectionHeader, "badge"])
     }
 
     func testSelectionChangeAndDelegateForwarding() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let scrollDelegate = ScrollDelegateSpy()
         let layoutDelegate = FlowLayoutDelegateSpy()
@@ -2443,14 +2656,19 @@ final class ListKitCoreTests: XCTestCase {
         adapter.scrollDelegate = scrollDelegate
         adapter.layoutDelegate = layoutDelegate
         let applyCompleted = expectation(description: "selection apply")
-        adapter.apply(transaction: .disabled, completion: { _ in
-            applyCompleted.fulfill()
-        }) {
+        adapter.apply(
+            transaction: .disabled,
+            completion: { _ in
+                applyCompleted.fulfill()
+            }
+        ) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-                    .onSelectionChange { isSelected, _ in
-                        selectionChanges.append(isSelected)
-                    }
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+                .onSelectionChange { isSelected, _ in
+                    selectionChanges.append(isSelected)
+                }
             }
         }
         wait(for: [applyCompleted], timeout: 1)
@@ -2459,7 +2677,8 @@ final class ListKitCoreTests: XCTestCase {
         adapter.collectionView(collectionView, didSelectItemAt: indexPath)
         adapter.collectionView(collectionView, didDeselectItemAt: indexPath)
         adapter.scrollViewDidScroll(collectionView)
-        let size = adapter.collectionView(collectionView, layout: collectionView.collectionViewLayout, sizeForItemAt: indexPath)
+        let size = adapter.collectionView(
+            collectionView, layout: collectionView.collectionViewLayout, sizeForItemAt: indexPath)
 
         XCTAssertEqual(selectionChanges, [true, false])
         XCTAssertEqual(scrollDelegate.didScrollCount, 1)
@@ -2468,7 +2687,8 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testScrollDelegateIsNotForwardedDuringSnapshotApply() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let scrollDelegate = ScrollDelegateSpy()
         adapter.scrollDelegate = scrollDelegate
@@ -2482,253 +2702,108 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(scrollDelegate.didScrollCount, 1)
     }
 
-    func testLayoutDSLKiroSpecFilesExist() throws {
-        let packageRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let specRoot = packageRoot
-            .appendingPathComponent(".kiro")
-            .appendingPathComponent("specs")
-            .appendingPathComponent("listkit-layout-dsl")
-
-        let requirements = try String(contentsOf: specRoot.appendingPathComponent("requirements.md"))
-        let design = try String(contentsOf: specRoot.appendingPathComponent("design.md"))
-        let tasks = try String(contentsOf: specRoot.appendingPathComponent("tasks.md"))
-
-        XCTAssertTrue(requirements.contains(".layout(.grid(columns: 2, spacing: 12))"))
-        XCTAssertTrue(design.contains("ListSupplementaryPlacement"))
-        XCTAssertTrue(tasks.contains("compositional layout helper"))
-    }
-
-    func testSectionLayoutDSLPreservesLegacyLayoutID() {
-        let gridSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .layout(.grid(columns: 2, spacing: 12))
-
-        guard case let .gridConfiguration(grid)? = gridSection.sectionLayout else {
-            return XCTFail("Expected grid layout")
-        }
-        XCTAssertEqual(grid.columns, 2)
-        XCTAssertEqual(grid.spacing, 12)
-
-        let legacySection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .layout("legacy-grid")
-
-        XCTAssertEqual(legacySection.layoutID?.typed(String.self), "legacy-grid")
-        XCTAssertNil(legacySection.sectionLayout)
-    }
-
     func testSectionLayoutBuilderSwitchesLayoutConditionally() {
         let gridSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
         } layout: {
             if true {
-                GridLayout(columns: 2, spacing: 12)
+                GridLayout(tracks: 2).trackSpacing(12).lineSpacing(12)
             } else {
-                ListLayout(spacing: 8)
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(8).lineSpacing(8)
             }
         }
 
         let defaultSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
         } layout: {
             if false {
-                GridLayout(columns: 2, spacing: 12)
+                GridLayout(tracks: 2).trackSpacing(12).lineSpacing(12)
             }
         }
 
-        XCTAssertEqual(gridSection.sectionLayout, ListSectionLayout.grid(columns: 2, spacing: 12))
-        XCTAssertNil(defaultSection.sectionLayout)
-    }
-
-    func testSectionLayoutModifiersUseLastLayoutSource() {
-        let legacyThenList = ListSection(0) {
-            Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .layout("legacy")
-        .layout(.list(spacing: 8))
-
-        let listThenCustom = ListSection(1) {
-            Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .layout(.grid(columns: 2, spacing: 12))
-        .layout(.custom(id: "manual") { _, _, _ in
-            ListSectionLayout.list().makeCompositionalSection(itemSupplementaries: [])
-        })
-
-        let customThenLegacy = ListSection(2) {
-            Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .layout(.custom(id: "manual") { _, _, _ in
-            ListSectionLayout.list().makeCompositionalSection(itemSupplementaries: [])
-        })
-        .layout("legacy")
-
-        XCTAssertNil(legacyThenList.layoutID)
-        XCTAssertEqual(legacyThenList.sectionLayout, .list(spacing: 8))
-        XCTAssertNil(legacyThenList.customSectionLayout)
-
-        XCTAssertNil(listThenCustom.layoutID)
-        XCTAssertNil(listThenCustom.sectionLayout)
-        XCTAssertEqual(listThenCustom.customSectionLayout?.id.typed(String.self), "manual")
-
-        XCTAssertEqual(customThenLegacy.layoutID?.typed(String.self), "legacy")
-        XCTAssertNil(customThenLegacy.sectionLayout)
-        XCTAssertNil(customThenLegacy.customSectionLayout)
-    }
-
-    func testSupplementaryLayoutBuilderConfiguresBoundaryAndItemLayoutsConditionally() {
-        let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        } header: {
-            Header(HeaderView.self, id: "header") { _, _ in }
-        } supplementaries: {
-            SectionSupplementary("dot", HeaderView.self, id: "dot") { _, _ in }
-        } supplementaryLayouts: {
-            if true {
-                BoundarySupplementaryLayout(
-                    kind: UICollectionView.elementKindSectionHeader,
-                    height: .absolute(36),
-                    pinned: true
-                )
-            }
-            if true {
-                ItemSupplementaryLayout(
-                    kind: "dot",
-                    anchor: .topTrailing,
-                    width: .absolute(16),
-                    height: .absolute(16),
-                    fractionalOffset: CGPoint(x: 0.2, y: -0.2)
-                )
-            }
-        }
-
-        let defaultHeaderSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        } header: {
-            Header(HeaderView.self, id: "header") { _, _ in }
-        } supplementaryLayouts: {
-            if false {
-                BoundarySupplementaryLayout(
-                    kind: UICollectionView.elementKindSectionHeader,
-                    height: .absolute(36),
-                    pinned: true
-                )
-            }
-        }
-
-        let layouts = section.resolvedSupplementaryLayouts()
-        let headerLayout = layouts.first { $0.kind == UICollectionView.elementKindSectionHeader }
-        let dotLayout = layouts.first { $0.kind == "dot" }
-        let defaultHeaderLayout = defaultHeaderSection.resolvedSupplementaryLayouts().first
-
-        XCTAssertEqual(headerLayout?.height, .absolute(36))
-        if case let .boundary(_, _, pinned, _)? = headerLayout?.placement {
-            XCTAssertTrue(pinned)
-        } else {
-            XCTFail("Expected boundary header layout")
-        }
-        XCTAssertTrue(dotLayout?.placement.isItem == true)
-        XCTAssertEqual(defaultHeaderLayout?.height, .estimated(44))
+        XCTAssertEqual(
+            gridSection.declaredLayout, .gridConfiguration(GridLayout(tracks: 2).trackSpacing(12).lineSpacing(12)))
+        XCTAssertEqual(defaultSection.declaredLayout, .defaultLayout)
     }
 
     func testSectionSupplementaryUsesExplicitItemSupplementaryLayoutModifier() {
         let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                .itemSupplementaries {
+                    ItemSupplementaryLayout(
+                        kind: "dot", size: .init(width: .absolute(16), height: .absolute(16)),
+                        itemAnchor: .topTrailing
+                    ).anchorFractionalOffset(CGPoint(x: 0.2, y: -0.2)).zIndex(8).whenContentExists()
+                }
+
         } supplementaries: {
-            SectionSupplementary("dot", HeaderView.self, id: "dot") { _, _ in }
-                .itemSupplementaryLayout(
-                    anchor: .topTrailing,
-                    width: .absolute(16),
-                    height: .absolute(16),
-                    fractionalOffset: CGPoint(x: 0.2, y: -0.2),
-                    zIndex: 8
-                )
+            SectionSupplementary(HeaderView.self, kind: "dot", id: "dot") { _, _ in }
         }
 
-        let layout = section.resolvedSupplementaryLayouts().first { $0.kind == "dot" }
+        let layout = section.layoutSource.options?.items.first { $0.kind == "dot" }
 
-        XCTAssertEqual(layout?.placement, .itemSupplementary(anchor: .topTrailing, fractionalOffset: ListLayoutPoint(x: 0.2, y: -0.2)))
-        XCTAssertEqual(layout?.width, .absolute(16))
-        XCTAssertEqual(layout?.height, .absolute(16))
-        XCTAssertEqual(layout?.zIndex, 8)
-    }
-
-    func testSupplementaryDiagnosticsReportOrphanLayoutsAndDuplicateKinds() {
-        let orphanBoundary = ListSection(0) {
-            Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .boundarySupplementaryLayout(kind: "badge", width: .absolute(64), height: .absolute(28))
-
-        let orphanItem = ListSection(1) {
-            Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .itemSupplementaryLayout(kind: "dot", anchor: .topTrailing, width: .absolute(16), height: .absolute(16))
-
-        let duplicateKind = ListSection(2) {
-            Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .supplementary("badge", HeaderView.self, id: "first") { _, _ in }
-        .supplementary("badge", BadgeView.self, id: "second") { _, _ in }
-
-        let viewOnly = ListSection(3) {
-            Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-        }
-        .supplementary("plain", HeaderView.self, id: "plain") { _, _ in }
-
-        let issues = ListDiagnostics.validate([orphanBoundary, orphanItem, duplicateKind])
-
-        XCTAssertEqual(issues.filter { $0.kind == .orphanSupplementaryLayout }.count, 2)
-        XCTAssertTrue(issues.contains { $0.kind == .duplicateSupplementaryKind })
-        XCTAssertTrue(ListDiagnostics.validate([viewOnly]).isEmpty)
+        XCTAssertEqual(layout?.itemAnchor, .topTrailing)
+        XCTAssertEqual(layout?.anchorFractionalOffset, ListLayoutPoint(x: 0.2, y: -0.2))
+        XCTAssertEqual(layout?.size.width, .absolute(16))
+        XCTAssertEqual(layout?.size.height, .absolute(16))
+        XCTAssertEqual(layout?.layer, 8)
     }
 
     func testHorizontalSectionLayoutStoresConfigurationAndBuildsSection() {
         let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(20)).gridCrossAxisSize(.fixed(20)).orthogonalScrolling(.continuous)
+                .trackSpacing(8).lineSpacing(8).sectionInsets(.init(top: 0, leading: 14, bottom: 0, trailing: 14))
         }
-        .layout(.horizontal(
-            itemWidth: .estimated(20),
-            itemHeight: .absolute(20),
-            spacing: 8,
-            contentInsets: .init(top: 0, leading: 14, bottom: 0, trailing: 14)
-        ))
 
-        guard case let .horizontalConfiguration(horizontal)? = section.sectionLayout else {
+        guard case .gridConfiguration(let horizontal)? = section.declaredLayout else {
             return XCTFail("Expected horizontal layout")
         }
-        let layoutSection = section.makeCompositionalLayoutSection()
+        let layoutSection = section.resolvedForTesting()
 
-        XCTAssertEqual(horizontal.itemWidth, .estimated(20))
-        XCTAssertEqual(horizontal.itemHeight, .absolute(20))
-        XCTAssertEqual(horizontal.spacing, 8)
+        XCTAssertEqual(horizontal.itemMainAxisSize, .estimated(20))
+        XCTAssertEqual(horizontal.crossAxisSizing, .fixed(20))
+        XCTAssertEqual(horizontal.lineSpacing, 8)
         XCTAssertTrue(layoutSection.boundarySupplementaryItems.isEmpty)
     }
 
     func testHorizontalSectionPlacesBoundaryHeaderBeforeItems() {
-        let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 390, height: 300), collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 390, height: 300),
+            collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: "3333", cell: NormalUserCell.self) { _, _, _ in }
                 Row(2, model: "800003", cell: NormalUserCell.self) { _, _, _ in }
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(20)).gridCrossAxisSize(.fixed(20)).orthogonalScrolling(
+                    .continuous
+                ).trackSpacing(8).lineSpacing(8).sectionInsets(.init(top: 0, leading: 14, bottom: 0, trailing: 14))
+                .boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionHeader,
+                        size: .init(width: .fractionalWidth(1), height: .absolute(62)), alignment: .top
+                    ).whenContentExists()
+                }
+            } supplementaries: {
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                    ,
+                    id: "history") { _, _ in }
             }
-            .layout(.horizontal(
-                itemWidth: .estimated(20),
-                itemHeight: .absolute(20),
-                spacing: 8,
-                contentInsets: .init(top: 0, leading: 14, bottom: 0, trailing: 14)
-            ))
-            .header(HeaderView.self, id: "history") { _, _ in }
-            .boundarySupplementaryLayout(
-                kind: UICollectionView.elementKindSectionHeader,
-                height: .absolute(62)
-            )
         }
 
         collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
@@ -2742,268 +2817,434 @@ final class ListKitCoreTests: XCTestCase {
 
         XCTAssertNotNil(headerAttributes)
         XCTAssertNotNil(cellAttributes)
-        XCTAssertLessThanOrEqual(headerAttributes?.frame.maxY ?? .greatestFiniteMagnitude, cellAttributes?.frame.minY ?? -.greatestFiniteMagnitude)
+        XCTAssertLessThanOrEqual(
+            headerAttributes?.frame.maxY ?? .greatestFiniteMagnitude,
+            cellAttributes?.frame.minY ?? -.greatestFiniteMagnitude)
     }
 
     func testCustomSectionLayoutStoresTypedBuilder() {
         let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            CustomLayout(layoutKey: "manual") { context in
+                let section = context.section
+                XCTAssertEqual(section.id, 0)
+                return ListSectionLayout.gridConfiguration(
+                    GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                ).makeCompositionalSection(
+                    environment: context.environment, itemSupplementaries: context.itemSupplementaries)
+            }
         }
-        .layout(.custom(id: "manual") { section, _, _ in
-            XCTAssertEqual(section.id, 0)
-            return ListSectionLayout.list().makeCompositionalSection(itemSupplementaries: [])
-        })
 
-        XCTAssertEqual(section.customSectionLayout?.id.typed(String.self), "manual")
-        XCTAssertNil(section.sectionLayout)
+        guard case .custom(let custom) = section.layoutSource else { return XCTFail("Expected custom") }
+        XCTAssertEqual(custom.layoutKey.typed(String.self), "manual")
+        XCTAssertNil(section.declaredLayout)
     }
 
     func testCompositionalLayoutBuildsBoundaryAndItemSupplementaries() {
         let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 2).trackSpacing(12).lineSpacing(12)
+                .boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionHeader,
+                        size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                    ).pinToVisibleBounds(true).whenContentExists()
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionFooter,
+                        size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .bottom
+                    ).whenContentExists()
+                    BoundarySupplementaryLayout(
+                        kind: "badge",
+                        size: .init(width: .absolute(64), height: .absolute(28)), alignment: .topTrailing
+                    ).zIndex(5).whenContentExists()
+                }
+                .itemSupplementaries {
+                    ItemSupplementaryLayout(
+                        kind: "dot", size: .init(width: .absolute(16), height: .absolute(16)),
+                        itemAnchor: .topTrailing
+                    ).anchorFractionalOffset(CGPoint(x: 0.2, y: -0.2)).whenContentExists()
+                }
+        } supplementaries: {
+            SectionSupplementary(
+                HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                ,
+                id: "header") { _, _ in }
+
+            SectionSupplementary(
+                HeaderView.self, kind: UICollectionView.elementKindSectionFooter
+                ,
+                id: "footer") { _, _ in }
+
+            SectionSupplementary(
+                HeaderView.self, kind: "badge", id: "badge"
+            ) { _, _ in }
+
+            SectionSupplementary(HeaderView.self, kind: "dot", id: "dot") { _, _ in }
         }
-        .layout(.grid(columns: 2, spacing: 12))
-        .header(HeaderView.self, id: "header") { _, _ in }
-        .footer(HeaderView.self, id: "footer") { _, _ in }
-        .supplementary("badge", HeaderView.self, id: "badge") { _, _ in }
-        .boundarySupplementaryLayout(
-            kind: "badge",
-            alignment: .topTrailing,
-            width: .absolute(64),
-            height: .absolute(28),
-            zIndex: 5
-        )
-        .supplementary("dot", HeaderView.self, id: "dot") { _, _ in }
-        .itemSupplementaryLayout(
-            kind: "dot",
-            anchor: .topTrailing,
-            width: .absolute(16),
-            height: .absolute(16),
-            fractionalOffset: CGPoint(x: 0.2, y: -0.2)
-        )
-        .stickyHeader()
 
-        let layouts = section.resolvedSupplementaryLayouts()
-        let layoutSection = section.makeCompositionalLayoutSection()
+        let layouts = section.layoutSource.options!.items
+        let layoutSection = section.resolvedForTesting()
         let boundaryKinds = Set(layoutSection.boundarySupplementaryItems.map(\.elementKind))
-        let dotItem = layouts.first { $0.kind == "dot" }?.makeItemSupplementaryItem()
+        let dotItem = layouts.first { $0.kind == "dot" }?.makeItem()
 
-        XCTAssertEqual(boundaryKinds, Set([UICollectionView.elementKindSectionHeader, UICollectionView.elementKindSectionFooter, "badge"]))
-        XCTAssertEqual(layoutSection.boundarySupplementaryItems.first { $0.elementKind == UICollectionView.elementKindSectionHeader }?.pinToVisibleBounds, true)
-        XCTAssertEqual(layoutSection.boundarySupplementaryItems.first { $0.elementKind == "badge" }?.zIndex, 5)
+        XCTAssertEqual(
+            boundaryKinds,
+            Set([
+                UICollectionView.elementKindSectionHeader, UICollectionView.elementKindSectionFooter,
+                "badge",
+            ]))
+        XCTAssertEqual(
+            layoutSection.boundarySupplementaryItems.first {
+                $0.elementKind == UICollectionView.elementKindSectionHeader
+            }?.pinToVisibleBounds, true)
+        XCTAssertEqual(
+            layoutSection.boundarySupplementaryItems.first { $0.elementKind == "badge" }?.zIndex, 5)
         XCTAssertEqual(dotItem?.elementKind, "dot")
-        XCTAssertTrue(layouts.first { $0.kind == "dot" }?.placement.isItem == true)
+        XCTAssertEqual(layouts.count, 1)
     }
 
     func testSupplementaryBuilderAddsAndRemovesBoundaryItems() {
         let shownSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        } header: {
-            Header(HeaderView.self, id: "header") { _, _ in }
-        } footer: {
-            Footer(HeaderView.self, id: "footer") { _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                .boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionHeader,
+                        size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                    ).whenContentExists()
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionFooter,
+                        size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .bottom
+                    ).whenContentExists()
+                    BoundarySupplementaryLayout(
+                        kind: "badge",
+                        size: .init(width: .absolute(64), height: .absolute(28)), alignment: .topTrailing
+                    ).whenContentExists()
+                }
+
         } supplementaries: {
-            SectionSupplementary("badge", HeaderView.self, id: "badge") { _, _ in }
-                .layout(
-                    alignment: .topTrailing,
-                    width: .absolute(64),
-                    height: .absolute(28)
-                )
+            SectionSupplementary(
+                HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                ,
+                id: "header") { _, _ in }
+
+            SectionSupplementary(
+                HeaderView.self, kind: UICollectionView.elementKindSectionFooter
+                ,
+                id: "footer") { _, _ in }
+
+            SectionSupplementary(
+                HeaderView.self, kind: "badge", id: "badge"
+            ) { _, _ in }
         }
 
         let hiddenSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        } header: {
-            if false {
-                Header(HeaderView.self, id: "header") { _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
             }
-        } footer: {
-            if false {
-                Footer(HeaderView.self, id: "footer") { _, _ in }
-            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                .boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionHeader,
+                        size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                    ).whenContentExists()
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionFooter,
+                        size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .bottom
+                    ).whenContentExists()
+                    BoundarySupplementaryLayout(
+                        kind: "badge",
+                        size: .init(width: .absolute(64), height: .absolute(28)), alignment: .topTrailing
+                    ).whenContentExists()
+                }
+
         } supplementaries: {
             if false {
-                SectionSupplementary("badge", HeaderView.self, id: "badge") { _, _ in }
-                    .layout(
-                        alignment: .topTrailing,
-                        width: .absolute(64),
-                        height: .absolute(28)
-                    )
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                    ,
+                    id: "header") { _, _ in }
+            }
+
+            if false {
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionFooter
+                    ,
+                    id: "footer") { _, _ in }
+            }
+
+            if false {
+                SectionSupplementary(
+                    HeaderView.self, kind: "badge", id: "badge"
+                ) { _, _ in }
             }
         }
 
-        XCTAssertEqual(Set(shownSection.makeCompositionalLayoutSection().boundarySupplementaryItems.map(\.elementKind)), [
-            UICollectionView.elementKindSectionHeader,
-            UICollectionView.elementKindSectionFooter,
-            "badge"
-        ])
-        XCTAssertTrue(hiddenSection.makeCompositionalLayoutSection().boundarySupplementaryItems.isEmpty)
+        XCTAssertEqual(
+            Set(shownSection.resolvedForTesting().boundarySupplementaryItems.map(\.elementKind)),
+            [
+                UICollectionView.elementKindSectionHeader,
+                UICollectionView.elementKindSectionFooter,
+                "badge",
+            ])
+        XCTAssertTrue(hiddenSection.resolvedForTesting().boundarySupplementaryItems.isEmpty)
     }
 
     func testBackgroundDecorationBuildsDecorationItemAndCanBeCleared() {
         let decoratedSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                .decorationItems {
+                    DecorationItemLayout(
+                        kind: "section-decoration",
+                        backgroundInsets: .init(top: 1, leading: 2, bottom: 3, trailing: 4), zIndex: -2
+                    ).whenContentExists()
+                }
+
+        } decorations: {
+            SectionDecoration(HeaderView.self, kind: "section-decoration")
         }
-        .backgroundDecoration(
-            HeaderView.self,
-            contentInsets: .init(top: 1, leading: 2, bottom: 3, trailing: 4),
-            zIndex: -2
-        )
 
-        let clearedSection = decoratedSection.backgroundDecoration(nil as HeaderView.Type?)
-        let decorationItem = decoratedSection.makeCompositionalLayoutSection().decorationItems.first
+        let clearedSection = decoratedSection.layout {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0).decorationItems(.none)
+        }
+        let decorationItem = decoratedSection.resolvedForTesting().decorationItems.first
 
-        XCTAssertEqual(decorationItem?.elementKind, decoratedSection.backgroundDecorationItem?.kind)
-        XCTAssertNotEqual(decorationItem?.elementKind, UICollectionView.elementKindSectionBackgroundDecoration)
+        XCTAssertEqual(decorationItem?.elementKind, decoratedSection.decorations.first?.elementKind)
+        XCTAssertNotEqual(
+            decorationItem?.elementKind, UICollectionView.elementKindSectionBackgroundDecoration)
         XCTAssertEqual(decorationItem?.contentInsets.top, 1)
         XCTAssertEqual(decorationItem?.contentInsets.leading, 2)
         XCTAssertEqual(decorationItem?.contentInsets.bottom, 3)
         XCTAssertEqual(decorationItem?.contentInsets.trailing, 4)
         XCTAssertEqual(decorationItem?.zIndex, -2)
-        XCTAssertTrue(clearedSection.makeCompositionalLayoutSection().decorationItems.isEmpty)
+        XCTAssertTrue(clearedSection.resolvedForTesting().decorationItems.isEmpty)
     }
 
     func testBackgroundDecorationBuilderAddsAndRemovesDecorationItem() {
         let decoratedSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        } background: {
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                .decorationItems {
+                    DecorationItemLayout(
+                        kind: "section-decoration",
+                        backgroundInsets: .init(top: 4, leading: 5, bottom: 6, trailing: 7), zIndex: -3
+                    ).whenContentExists()
+                }
+
+        } decorations: {
             if true {
-                BackgroundDecoration(
-                    HeaderView.self,
-                    contentInsets: .init(top: 4, leading: 5, bottom: 6, trailing: 7),
-                    zIndex: -3
-                )
+                SectionDecoration(HeaderView.self, kind: "section-decoration")
             }
         }
 
         let hiddenSection = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
-        } background: {
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                .decorationItems {
+                    DecorationItemLayout(kind: "section-decoration", backgroundInsets: .zero, zIndex: -1)
+                        .whenContentExists()
+                }
+
+        } decorations: {
             if false {
-                BackgroundDecoration(HeaderView.self)
+                SectionDecoration(HeaderView.self, kind: "section-decoration")
             }
         }
 
-        let decorationItem = decoratedSection.makeCompositionalLayoutSection().decorationItems.first
-        XCTAssertEqual(decorationItem?.elementKind, decoratedSection.backgroundDecorationItem?.kind)
-        XCTAssertNotEqual(decorationItem?.elementKind, UICollectionView.elementKindSectionBackgroundDecoration)
+        let decorationItem = decoratedSection.resolvedForTesting().decorationItems.first
+        XCTAssertEqual(decorationItem?.elementKind, decoratedSection.decorations.first?.elementKind)
+        XCTAssertNotEqual(
+            decorationItem?.elementKind, UICollectionView.elementKindSectionBackgroundDecoration)
         XCTAssertEqual(decorationItem?.contentInsets.top, 4)
         XCTAssertEqual(decorationItem?.contentInsets.leading, 5)
         XCTAssertEqual(decorationItem?.contentInsets.bottom, 6)
         XCTAssertEqual(decorationItem?.contentInsets.trailing, 7)
         XCTAssertEqual(decorationItem?.zIndex, -3)
-        XCTAssertTrue(hiddenSection.makeCompositionalLayoutSection().decorationItems.isEmpty)
+        XCTAssertTrue(hiddenSection.resolvedForTesting().decorationItems.isEmpty)
     }
 
     func testTypedBackgroundDecorationsUseViewSpecificDefaultKinds() {
-        let headerBackground = ListBackgroundDecoration(view: HeaderView.self)
-        let badgeBackground = ListBackgroundDecoration(view: BadgeView.self)
+        let headerBackground = SectionDecoration(HeaderView.self, kind: "header")
+        let badgeBackground = SectionDecoration(BadgeView.self, kind: "badge")
 
         XCTAssertNotEqual(headerBackground.kind, badgeBackground.kind)
-        XCTAssertTrue(headerBackground.kind.hasPrefix(ListBackgroundDecoration.defaultKind))
-        XCTAssertTrue(badgeBackground.kind.hasPrefix(ListBackgroundDecoration.defaultKind))
+        XCTAssertTrue(headerBackground.kind.hasPrefix(""))
+        XCTAssertTrue(badgeBackground.kind.hasPrefix(""))
     }
 
     func testBackgroundDecorationAppendsToCustomLayoutDecorationItems() {
         let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            CustomLayout(layoutKey: "manual-background") { context in
+                let section = ListSectionLayout.gridConfiguration(
+                    GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                ).makeCompositionalSection(
+                    environment: context.environment, itemSupplementaries: context.itemSupplementaries)
+                section.decorationItems = [.background(elementKind: "manual-background")]
+                return section
+            }
+            .decorationItems {
+                DecorationItemLayout(kind: "section-decoration", backgroundInsets: .zero, zIndex: -1)
+                    .whenContentExists()
+            }
+        } decorations: {
+            SectionDecoration(kind: "section-decoration", elementKind: "listkit-background")
         }
-        .layout(.custom(id: "manual-background") { _, _, _ in
-            let section = ListSectionLayout.list().makeCompositionalSection(itemSupplementaries: [])
-            section.decorationItems = [.background(elementKind: "manual-background")]
-            return section
-        })
-        .backgroundDecoration(kind: "listkit-background")
 
-        let fallbackSection = ListSectionLayout.list().makeCompositionalSection(itemSupplementaries: [])
-        fallbackSection.decorationItems = [.background(elementKind: "manual-background")]
-        let layoutSection = section.makeCompositionalLayoutSection(fallback: fallbackSection)
+        let layoutSection = section.resolvedForTesting()
 
-        XCTAssertEqual(layoutSection.decorationItems.map(\.elementKind), ["manual-background", "listkit-background"])
+        XCTAssertEqual(
+            layoutSection.decorationItems.map(\.elementKind), ["manual-background", "listkit-background"])
     }
 
     func testAdapterInvalidatesLayoutWhenSectionLayoutMetadataChangesOnly() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let layout = InvalidationTrackingCompositionalLayout()
         collectionView.collectionViewLayout = layout
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         let initialApply = expectation(description: "initial apply")
-        adapter.apply(transaction: .disabled, completion: { _ in
-            initialApply.fulfill()
-        }) {
+        adapter.apply(
+            transaction: .disabled,
+            completion: { _ in
+                initialApply.fulfill()
+            }
+        ) {
             ListSection(0) {
                 Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(8).lineSpacing(8)
             }
-            .layout(.list(spacing: 8))
         }
         wait(for: [initialApply], timeout: 1)
         let baselineGeneration = adapter.layoutInvalidationGeneration
 
         let dataOnlyApply = expectation(description: "data only apply")
-        adapter.apply(transaction: .disabled, completion: { _ in
-            dataOnlyApply.fulfill()
-        }) {
+        adapter.apply(
+            transaction: .disabled,
+            completion: { _ in
+                dataOnlyApply.fulfill()
+            }
+        ) {
             ListSection(0) {
                 Row(1, model: "B", cell: NormalUserCell.self) { _, _, _ in }
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(8).lineSpacing(8)
             }
-            .layout(.list(spacing: 8))
         }
         wait(for: [dataOnlyApply], timeout: 1)
         XCTAssertEqual(adapter.layoutInvalidationGeneration, baselineGeneration)
 
         let layoutApply = expectation(description: "layout apply")
-        adapter.apply(transaction: .disabled, completion: { _ in
-            layoutApply.fulfill()
-        }) {
+        adapter.apply(
+            transaction: .disabled,
+            completion: { _ in
+                layoutApply.fulfill()
+            }
+        ) {
             ListSection(0) {
                 Row(1, model: "C", cell: NormalUserCell.self) { _, _, _ in }
+            } layout: {
+                GridLayout(tracks: 2).trackSpacing(12).lineSpacing(12)
             }
-            .layout(.grid(columns: 2, spacing: 12))
         }
         wait(for: [layoutApply], timeout: 1)
         XCTAssertEqual(adapter.layoutInvalidationGeneration, baselineGeneration + 1)
     }
 
     func testAdapterInvalidatesLayoutWhenSupplementaryOrBackgroundMetadataChanges() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let layout = InvalidationTrackingCompositionalLayout()
         collectionView.collectionViewLayout = layout
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         let initialApply = expectation(description: "initial supplementary apply")
-        adapter.apply(transaction: .disabled, completion: { _ in
-            initialApply.fulfill()
-        }) {
+        adapter.apply(
+            transaction: .disabled,
+            completion: { _ in
+                initialApply.fulfill()
+            }
+        ) {
             ListSection(0) {
                 Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-            } header: {
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                    .boundarySupplementaries {
+                        BoundarySupplementaryLayout(
+                            kind: UICollectionView.elementKindSectionHeader,
+                            size: .init(width: .fractionalWidth(1), height: .estimated(44)), alignment: .top
+                        ).whenContentExists()
+                    }
+
+            } supplementaries: {
                 if false {
-                    Header(HeaderView.self, id: "header") { _, _ in }
+                    SectionSupplementary(
+                        HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                        ,
+                        id: "header") { _, _ in }
                 }
             }
-            .backgroundDecoration(nil as HeaderView.Type?)
         }
         wait(for: [initialApply], timeout: 1)
         let baselineGeneration = adapter.layoutInvalidationGeneration
 
         let metadataApply = expectation(description: "metadata apply")
-        adapter.apply(transaction: .disabled, completion: { _ in
-            metadataApply.fulfill()
-        }) {
+        adapter.apply(
+            transaction: .disabled,
+            completion: { _ in
+                metadataApply.fulfill()
+            }
+        ) {
             ListSection(0) {
                 Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-            } header: {
-                Header(HeaderView.self, id: "header") { _, _ in }
-                    .layout(
-                        height: .absolute(36),
-                        pinned: true
-                    )
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                    .boundarySupplementaries {
+                        BoundarySupplementaryLayout(
+                            kind: UICollectionView.elementKindSectionHeader,
+                            size: .init(width: .fractionalWidth(1), height: .absolute(36)), alignment: .top
+                        ).pinToVisibleBounds(true).whenContentExists()
+                    }
+                    .decorationItems {
+                        DecorationItemLayout(
+                            kind: "section-decoration",
+                            backgroundInsets: .init(top: 8, leading: 16, bottom: 8, trailing: 16), zIndex: -1
+                        ).whenContentExists()
+                    }
+
+            } supplementaries: {
+                SectionSupplementary(
+                    HeaderView.self, kind: UICollectionView.elementKindSectionHeader
+                    ,
+                    id: "header") { _, _ in }
+            } decorations: {
+                SectionDecoration(HeaderView.self, kind: "section-decoration")
             }
-            .backgroundDecoration(
-                HeaderView.self,
-                contentInsets: .init(top: 8, leading: 16, bottom: 8, trailing: 16)
-            )
         }
         wait(for: [metadataApply], timeout: 1)
 
@@ -3011,20 +3252,24 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testAdapterCreatesCompositionalLayoutFromCurrentSections() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(8).lineSpacing(8)
             }
-            .layout(.list(spacing: 8))
         }
 
         let layout = adapter.makeCompositionalLayout()
 
-        XCTAssertEqual(ObjectIdentifier(type(of: layout)), ObjectIdentifier(UICollectionViewCompositionalLayout.self))
-        XCTAssertNotNil(adapter.makeCompositionalSection(for: 0))
+        XCTAssertTrue(layout is ListCollectionLayout)
+        XCTAssertNotNil(adapter.makeCompositionalSection(for: 0, environment: TestLayoutEnvironment()))
     }
 
     func testCompositionalLayoutConfigurationPreservesUIKitDefaultInsetsUnlessOverridden() {
@@ -3073,7 +3318,9 @@ final class ListKitCoreTests: XCTestCase {
     }
 
     func testMakeCompositionalLayoutCanBeCreatedBeforeApplyWithoutDiagnostics() {
-        let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 240, height: 120), collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 120),
+            collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
             diagnostics: ListDiagnosticsOptions(mode: .warning, logsApplySummary: false)
@@ -3082,8 +3329,9 @@ final class ListKitCoreTests: XCTestCase {
         adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
+            } layout: {
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(8).lineSpacing(8)
             }
-            .layout(.list(spacing: 8))
         }
         collectionView.reloadData()
         collectionView.layoutIfNeeded()
@@ -3091,64 +3339,10 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertTrue(adapter.lastLayoutDiagnostics.isEmpty)
     }
 
-    func testMakeCompositionalLayoutReportsUnresolvedLegacyLayoutID() {
-        let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 240, height: 120), collectionViewLayout: UICollectionViewFlowLayout())
-        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
-        adapter.apply(options: ListApplyOptions(
-            transaction: .disabled,
-            diagnostics: .disabled
-        )) {
-            ListSection(0) {
-                Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-            }
-            .layout("legacy")
-        }
-
-        collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
-            diagnostics: ListDiagnosticsOptions(mode: .warning, logsApplySummary: false)
-        )
-        collectionView.reloadData()
-        collectionView.layoutIfNeeded()
-
-        XCTAssertTrue(adapter.lastLayoutDiagnostics.contains { $0.kind == .unresolvedLayoutID })
-
-        collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
-            fallback: { _, _, _ in nil },
-            diagnostics: ListDiagnosticsOptions(mode: .warning, logsApplySummary: false)
-        )
-        collectionView.layoutIfNeeded()
-
-        XCTAssertTrue(adapter.lastLayoutDiagnostics.contains { $0.kind == .unresolvedLayoutID })
-    }
-
-    func testMakeCompositionalSectionForOnlySupportsBuiltInSectionLayouts() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
-        let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
-        let diagnostics = ListDiagnosticsOptions(mode: .warning, logsApplySummary: false)
-
-        adapter.apply(options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled)) {
-            ListSection(0) {
-                Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-            }
-            .layout("legacy")
-        }
-        XCTAssertNil(adapter.makeCompositionalSection(for: 0, diagnostics: diagnostics))
-        XCTAssertTrue(adapter.lastLayoutDiagnostics.contains { $0.kind == .unresolvedLayoutID })
-
-        adapter.apply(options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled)) {
-            ListSection(0) {
-                Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
-            }
-            .layout(.custom(id: "manual") { _, _, _ in
-                ListSectionLayout.list().makeCompositionalSection(itemSupplementaries: [])
-            })
-        }
-        XCTAssertNil(adapter.makeCompositionalSection(for: 0, diagnostics: diagnostics))
-        XCTAssertTrue(adapter.lastLayoutDiagnostics.contains { $0.message.contains("makeCompositionalLayout(fallback:)") })
-    }
-
     func testAdapterFindsIndexPathsAndScrollsToLastItemByRowID() {
-        let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 200, height: 200), collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 200, height: 200),
+            collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         adapter.apply(transaction: .disabled) {
@@ -3170,17 +3364,22 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(adapter.itemCount(in: 10), 2)
         XCTAssertEqual(adapter.itemCount(in: 20), 1)
         XCTAssertEqual(adapter.indexPaths(forRowID: "second", in: 10), [IndexPath(item: 1, section: 0)])
-        XCTAssertEqual(adapter.indexPaths(forRowID: "second"), [IndexPath(item: 1, section: 0), IndexPath(item: 0, section: 1)])
+        XCTAssertEqual(
+            adapter.indexPaths(forRowID: "second"),
+            [IndexPath(item: 1, section: 0), IndexPath(item: 0, section: 1)])
         XCTAssertTrue(adapter.scrollToLastItem(in: 10, animated: false))
         XCTAssertFalse(adapter.scrollToLastItem(in: 999, animated: false))
     }
 
     func testAdapterAppliesPrebuiltListSections() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         let sections = ListSectionsBuilder<Int>.build {
             ListSection(0) {
-                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+                Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                    _, _, _ in
+                }
             }
         }
 
@@ -3192,7 +3391,8 @@ final class ListKitCoreTests: XCTestCase {
     func testAdapterVisibleRefreshAPIsTargetOnlyMatchingVisibleRows() {
         let layout = UICollectionViewFlowLayout()
         layout.itemSize = CGSize(width: 100, height: 44)
-        let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 120, height: 120), collectionViewLayout: layout)
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 120, height: 120), collectionViewLayout: layout)
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var displayCount = 0
 
@@ -3248,16 +3448,21 @@ final class ListKitCoreTests: XCTestCase {
 
     func testAdapterRefreshesVisibleItemSupplementaryWhenRefreshIDChanges() {
         let kind = "badge"
-        let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 240, height: 160), collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 160),
+            collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var configuredCount = 0
         var badgePrefix = "one"
 
         func applyBadge(refreshID: Int) -> ListApplySummary {
             let applyCompleted = expectation(description: "badge apply \(refreshID)")
-            let result = adapter.apply(transaction: .disabled, completion: { _ in
-                applyCompleted.fulfill()
-            }) {
+            let result = adapter.apply(
+                transaction: .disabled,
+                completion: { _ in
+                    applyCompleted.fulfill()
+                }
+            ) {
                 ListSection(0) {
                     Row("first", model: "First", cell: NormalUserCell.self) { cell, model, _ in
                         cell.name = model
@@ -3266,20 +3471,24 @@ final class ListKitCoreTests: XCTestCase {
                         cell.name = model
                     }
                 } layout: {
-                    GridLayout(columns: 2, itemHeight: .absolute(80))
+                    GridLayout(tracks: 2).itemMainAxisSize(.fixed(80))
+                        .itemSupplementaries {
+                            ItemSupplementaryLayout(
+                                kind: kind,
+                                size: .init(width: .absolute(20), height: .absolute(20)), itemAnchor: .topTrailing
+                            ).whenContentExists()
+                        }
+
                 } supplementaries: {
-                    SectionSupplementary(kind, BadgeView.self, id: "badge") { view, context in
+                    SectionSupplementary(
+                        BadgeView.self, kind: kind, id: "badge"
+                    ) { view, context in
                         configuredCount += 1
                         view.value = "\(badgePrefix)-\(context.indexPath.item)"
                         view.configuredIndexPath = context.indexPath
                     }
                     .refreshID(refreshID)
                     .refresh(when: .refreshIDChanges)
-                    .itemSupplementaryLayout(
-                        anchor: .topTrailing,
-                        width: .absolute(20),
-                        height: .absolute(20)
-                    )
                 }
             }
             wait(for: [applyCompleted], timeout: 1)
@@ -3300,23 +3509,30 @@ final class ListKitCoreTests: XCTestCase {
         let refreshedBadges = visibleBadgeViews(in: collectionView, kind: kind)
 
         XCTAssertEqual(result.supplementaryRefreshIDChangedCount, 1)
-        XCTAssertEqual(adapter.lastApplySummary.refreshMetrics.visibleReconfiguredSupplementaryCount, initialBadgeCount)
+        XCTAssertEqual(
+            adapter.lastApplySummary.refreshMetrics.visibleReconfiguredSupplementaryCount,
+            initialBadgeCount)
         XCTAssertEqual(configuredCount, countBeforeRefresh + initialBadgeCount)
         XCTAssertEqual(Set(refreshedBadges.map(\.value)), ["two-0", "two-1"])
     }
 
     func testAdapterDoesNotRefreshVisibleSupplementaryWhenPolicyIsNever() {
         let kind = "badge"
-        let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 240, height: 160), collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 160),
+            collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var configuredCount = 0
         var badgePrefix = "one"
 
         func applyBadge(refreshID: Int) -> ListApplySummary {
             let applyCompleted = expectation(description: "never badge apply \(refreshID)")
-            let result = adapter.apply(transaction: .disabled, completion: { _ in
-                applyCompleted.fulfill()
-            }) {
+            let result = adapter.apply(
+                transaction: .disabled,
+                completion: { _ in
+                    applyCompleted.fulfill()
+                }
+            ) {
                 ListSection(0) {
                     Row("first", model: "First", cell: NormalUserCell.self) { cell, model, _ in
                         cell.name = model
@@ -3325,20 +3541,24 @@ final class ListKitCoreTests: XCTestCase {
                         cell.name = model
                     }
                 } layout: {
-                    GridLayout(columns: 2, itemHeight: .absolute(80))
+                    GridLayout(tracks: 2).itemMainAxisSize(.fixed(80))
+                        .itemSupplementaries {
+                            ItemSupplementaryLayout(
+                                kind: kind,
+                                size: .init(width: .absolute(20), height: .absolute(20)), itemAnchor: .topTrailing
+                            ).whenContentExists()
+                        }
+
                 } supplementaries: {
-                    SectionSupplementary(kind, BadgeView.self, id: "badge") { view, context in
+                    SectionSupplementary(
+                        BadgeView.self, kind: kind, id: "badge"
+                    ) { view, context in
                         configuredCount += 1
                         view.value = "\(badgePrefix)-\(context.indexPath.item)"
                         view.configuredIndexPath = context.indexPath
                     }
                     .refreshID(refreshID)
                     .refresh(when: .never)
-                    .itemSupplementaryLayout(
-                        anchor: .topTrailing,
-                        width: .absolute(20),
-                        height: .absolute(20)
-                    )
                 }
             }
             wait(for: [applyCompleted], timeout: 1)
@@ -3374,28 +3594,27 @@ final class ListKitCoreTests: XCTestCase {
 
         func applyBadge(hasTapHandler: Bool) {
             var supplementary: ListSectionSupplementary<Int> = SectionSupplementary(
-                kind,
-                BadgeView.self,
-                id: "badge"
-            ) { _, _ in }
-                .refresh(when: .never)
-                .itemSupplementaryLayout(
-                    anchor: .topTrailing,
-                    width: .absolute(20),
-                    height: .absolute(20)
-                )
+                BadgeView.self, kind: kind, id: "badge"
+            ) { _, _ in }.refresh(when: .never)
             if hasTapHandler {
                 supplementary = supplementary.onTap { _ in }
             }
 
             let applyCompleted = expectation(description: "tap handler apply \(hasTapHandler)")
-            adapter.apply(transaction: .disabled, completion: { _ in
-                applyCompleted.fulfill()
-            }) {
+            adapter.apply(
+                transaction: .disabled,
+                completion: { _ in
+                    applyCompleted.fulfill()
+                }
+            ) {
                 ListSection(0) {
                     Row("first", model: "First", cell: NormalUserCell.self) { _, _, _ in }
                 } layout: {
-                    GridLayout(columns: 1, itemHeight: .absolute(80))
+                    GridLayout(tracks: 1).itemMainAxisSize(.fixed(80)).itemSupplementaries {
+                        ItemSupplementaryLayout(
+                            kind: kind,
+                            size: .init(width: .absolute(20), height: .absolute(20)), itemAnchor: .topTrailing)
+                    }
                 } supplementaries: {
                     supplementary
                 }
@@ -3419,17 +3638,22 @@ final class ListKitCoreTests: XCTestCase {
 
     func testReconfigureVisibleSupplementariesTargetsKindSectionAndRowID() {
         let kind = "badge"
-        let collectionView = UICollectionView(frame: CGRect(x: 0, y: 0, width: 240, height: 160), collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 160),
+            collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
         var badgeValues = [
             "first": "A",
-            "second": "B"
+            "second": "B",
         ]
 
         let applyCompleted = expectation(description: "manual badge apply")
-        adapter.apply(transaction: .disabled, completion: { _ in
-            applyCompleted.fulfill()
-        }) {
+        adapter.apply(
+            transaction: .disabled,
+            completion: { _ in
+                applyCompleted.fulfill()
+            }
+        ) {
             ListSection(0) {
                 Row("first", model: "First", cell: NormalUserCell.self) { cell, model, _ in
                     cell.name = model
@@ -3438,19 +3662,22 @@ final class ListKitCoreTests: XCTestCase {
                     cell.name = model
                 }
             } layout: {
-                GridLayout(columns: 2, itemHeight: .absolute(80))
+                GridLayout(tracks: 2).itemMainAxisSize(.fixed(80))
+                    .itemSupplementaries {
+                        ItemSupplementaryLayout(
+                            kind: kind,
+                            size: .init(width: .absolute(20), height: .absolute(20)), itemAnchor: .topTrailing
+                        ).whenContentExists()
+                    }
+
             } supplementaries: {
-                SectionSupplementary(kind, BadgeView.self, id: "badge") { view, context in
+                SectionSupplementary(BadgeView.self, kind: kind, id: "badge") {
+                    view, context in
                     let rowID = context.indexPath.item == 0 ? "first" : "second"
                     view.value = badgeValues[rowID]
                     view.configuredIndexPath = context.indexPath
                 }
                 .refresh(when: .never)
-                .itemSupplementaryLayout(
-                    anchor: .topTrailing,
-                    width: .absolute(20),
-                    height: .absolute(20)
-                )
             }
         }
         wait(for: [applyCompleted], timeout: 1)
@@ -3461,7 +3688,8 @@ final class ListKitCoreTests: XCTestCase {
 
         badgeValues["first"] = "A2"
         badgeValues["second"] = "B2"
-        let refreshedCount = adapter.reconfigureVisibleSupplementaries(ofKind: kind, forRowID: "first", in: 0)
+        let refreshedCount = adapter.reconfigureVisibleSupplementaries(
+            ofKind: kind, forRowID: "first", in: 0)
         collectionView.layoutIfNeeded()
         let badgesAfterRefresh = visibleBadgeViews(in: collectionView, kind: kind)
 
@@ -3469,28 +3697,39 @@ final class ListKitCoreTests: XCTestCase {
         XCTAssertEqual(badgesAfterRefresh.first { $0.configuredIndexPath?.item == 0 }?.value, "A2")
         XCTAssertEqual(badgesAfterRefresh.first { $0.configuredIndexPath?.item == 1 }?.value, "B")
         XCTAssertEqual(adapter.reconfigureVisibleSupplementaries(ofKind: "missing", in: 0), 0)
-        XCTAssertEqual(adapter.reconfigureVisibleSupplementaries(ofKind: kind, forRowID: "missing", in: 0), 0)
+        XCTAssertEqual(
+            adapter.reconfigureVisibleSupplementaries(ofKind: kind, forRowID: "missing", in: 0), 0)
     }
 
     func testAdapterInvalidatesLayoutWhenItemSupplementaryLayoutChanges() {
-        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let collectionView = UICollectionView(
+            frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         collectionView.collectionViewLayout = InvalidationTrackingCompositionalLayout()
         let adapter = CollectionListAdapter<Int>(collectionView: collectionView)
 
         func applyBadgeLayout(width: CGFloat) {
             let applyCompleted = expectation(description: "badge layout \(width)")
-            adapter.apply(transaction: .disabled, completion: { _ in
-                applyCompleted.fulfill()
-            }) {
+            adapter.apply(
+                transaction: .disabled,
+                completion: { _ in
+                    applyCompleted.fulfill()
+                }
+            ) {
                 ListSection(0) {
                     Row(1, model: "A", cell: NormalUserCell.self) { _, _, _ in }
+                } layout: {
+                    GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)
+                        .itemSupplementaries {
+                            ItemSupplementaryLayout(
+                                kind: "badge",
+                                size: .init(width: .absolute(width), height: .absolute(20)), itemAnchor: .topTrailing
+                            ).whenContentExists()
+                        }
+
                 } supplementaries: {
-                    SectionSupplementary("badge", BadgeView.self, id: "badge") { _, _ in }
-                        .itemSupplementaryLayout(
-                            anchor: .topTrailing,
-                            width: .absolute(width),
-                            height: .absolute(20)
-                        )
+                    SectionSupplementary(
+                        BadgeView.self, kind: "badge", id: "badge"
+                    ) { _, _ in }
                 }
             }
             wait(for: [applyCompleted], timeout: 1)
@@ -3506,17 +3745,27 @@ final class ListKitCoreTests: XCTestCase {
 
     func testLayoutDiagnosticsReportsInvalidColumnsDimensionsSpacingAndPlacementConflict() {
         let section = ListSection(0) {
-            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) { _, _, _ in }
+            Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
+                _, _, _ in
+            }
+        } layout: {
+            GridLayout(tracks: 0).trackSpacing(-12).lineSpacing(-12).itemMainAxisSize(.fixed(0))
+                .itemSupplementaries {
+                    ItemSupplementaryLayout(
+                        kind: "badge",
+                        size: .init(width: .absolute(0), height: .fractionalHeight(-0.5)), itemAnchor: .topTrailing
+                    ).whenContentExists()
+                }
+        } supplementaries: {
+            SectionSupplementary(
+                HeaderView.self, kind: "badge", id: "badge"
+            ) { _, _ in }
         }
-        .layout(.grid(columns: 0, spacing: -12, itemHeight: .absolute(0)))
-        .supplementary("badge", HeaderView.self, id: "badge") { _, _ in }
-        .boundarySupplementaryLayout(kind: "badge", width: .absolute(64), height: .absolute(28))
-        .itemSupplementaryLayout(kind: "badge", anchor: .topTrailing, width: .absolute(0), height: .fractionalHeight(-0.5))
 
         let issues = ListDiagnostics.validate([section])
 
         XCTAssertTrue(issues.contains { $0.kind == .invalidLayout })
-        XCTAssertTrue(issues.contains { $0.kind == .conflictingSupplementaryLayout })
+        XCTAssertGreaterThanOrEqual(issues.filter { $0.kind == .invalidLayout }.count, 4)
     }
 
     func testApplyPlannerBuildsSharedSummaryAndRefreshPlan() {
@@ -3530,14 +3779,17 @@ final class ListKitCoreTests: XCTestCase {
         )
         let insertedNew = makeTestListNode("inserted", refreshID: 1)
         let headerOld = makeTestListNode("header", refreshID: 1, role: .supplementary)
-        let headerNew = makeTestListNode("header", refreshID: 2, policy: .refreshIDChanges, role: .supplementary)
+        let headerNew = makeTestListNode(
+            "header", refreshID: 2, policy: .refreshIDChanges, role: .supplementary)
 
         let plan = ListApplyPlanner.makePlan(
             old: [
-                ListSectionSnapshot(sectionID: AnyListID(0), rows: [keptOld, deletedOld], supplementaries: [headerOld])
+                ListSectionSnapshot(
+                    sectionID: AnyListID(0), rows: [keptOld, deletedOld], supplementaries: [headerOld])
             ],
             new: [
-                ListSectionSnapshot(sectionID: AnyListID(0), rows: [keptNew, insertedNew], supplementaries: [headerNew])
+                ListSectionSnapshot(
+                    sectionID: AnyListID(0), rows: [keptNew, insertedNew], supplementaries: [headerNew])
             ],
             options: ListApplyOptions(
                 transaction: .disabled,
@@ -3580,13 +3832,13 @@ final class ListKitCoreTests: XCTestCase {
             .automatic,
             .refreshIDChanges,
             .everyApply,
-            .never
+            .never,
         ]
         let scopes: [ListRefreshScope] = [.visible, .allMatching]
         let actions: [ListRowRefreshAction] = [
             .reconfigure(layout: .none),
             .reconfigure(layout: .invalidate),
-            .reload
+            .reload,
         ]
 
         for trigger in triggers {
@@ -3617,12 +3869,14 @@ final class ListKitCoreTests: XCTestCase {
                     let shouldSnapshot = shouldRefresh && scope == .allMatching
                     let shouldReload = shouldSnapshot && action == .reload
                     let shouldReconfigure = shouldSnapshot && action != .reload
-                    let shouldInvalidate = shouldReconfigure
-                        && action == .reconfigure(layout: .invalidate)
+                    let shouldInvalidate =
+                    shouldReconfigure
+                    && action == .reconfigure(layout: .invalidate)
 
                     XCTAssertEqual(plan.snapshotReloadItems, shouldReload ? [new.identity] : [])
                     XCTAssertEqual(plan.snapshotReconfigureItems, shouldReconfigure ? [new.identity] : [])
-                    XCTAssertEqual(plan.snapshotLayoutInvalidationItems, shouldInvalidate ? [new.identity] : [])
+                    XCTAssertEqual(
+                        plan.snapshotLayoutInvalidationItems, shouldInvalidate ? [new.identity] : [])
                     XCTAssertEqual(
                         plan.initialSummary.refreshMetrics.snapshotReconfiguredRowCount,
                         shouldReconfigure ? 1 : 0
@@ -3668,11 +3922,13 @@ final class ListKitCoreTests: XCTestCase {
 
         let plan = ListApplyPlanner.makePlan(
             old: [ListSectionSnapshot(sectionID: AnyListID(0), rows: [old], supplementaries: [])],
-            new: [ListSectionSnapshot(
-                sectionID: AnyListID(0),
-                rows: [reconfigure, invalidate, reload],
-                supplementaries: []
-            )],
+            new: [
+                ListSectionSnapshot(
+                    sectionID: AnyListID(0),
+                    rows: [reconfigure, invalidate, reload],
+                    supplementaries: []
+                )
+            ],
             options: ListApplyOptions(transaction: .disabled, diagnostics: .disabled),
             diagnosticsIssues: []
         )
@@ -3763,7 +4019,7 @@ final class ListKitCoreTests: XCTestCase {
     func testApplyPlannerReloadActionOnlyTargetsKeptRows() {
         let oldRows = [
             makeTestListNode("kept", refreshID: 1),
-            makeTestListNode("deleted", refreshID: 1)
+            makeTestListNode("deleted", refreshID: 1),
         ]
         let newRows = [
             makeTestListNode(
@@ -3779,7 +4035,7 @@ final class ListKitCoreTests: XCTestCase {
                 policy: .everyApply,
                 scope: .allMatching,
                 action: .reload
-            )
+            ),
         ]
 
         let plan = ListApplyPlanner.makePlan(
@@ -3801,12 +4057,14 @@ final class ListKitCoreTests: XCTestCase {
 
     func testApplyPlannerStopsBeforeDiffableForDiagnosticsWarning() {
         let oldRows = [makeTestListNode("kept", refreshID: 1)]
-        let newRows = [makeTestListNode(
-            "kept",
-            refreshID: 2,
-            policy: .refreshIDChanges,
-            scope: .allMatching
-        )]
+        let newRows = [
+            makeTestListNode(
+                "kept",
+                refreshID: 2,
+                policy: .refreshIDChanges,
+                scope: .allMatching
+            )
+        ]
         let issue = ListDiagnosticsIssue(
             kind: .duplicateRow,
             message: "ListKit: duplicate row identity"
@@ -4009,13 +4267,15 @@ private func makeTestListNode(
         identity: AnyListIdentity(
             sectionID: AnyListID(sectionID),
             rowID: AnyListID(id),
-            presentationID: role == .row ? ObjectIdentifier(NormalUserCell.self) : ObjectIdentifier(HeaderView.self),
+            presentationID: role == .row
+            ? ObjectIdentifier(NormalUserCell.self) : ObjectIdentifier(HeaderView.self),
             variant: role == .row ? nil : AnyListID("supplementary")
         ),
         refreshID: refreshID.map(AnyListID.init),
         refreshRule: role == .row
-            ? .row(ListRowRefreshRule(trigger: policy, scope: scope, action: action))
-            : .supplementary(ListSupplementaryRefreshRule(
+        ? .row(ListRowRefreshRule(trigger: policy, scope: scope, action: action))
+        : .supplementary(
+            ListSupplementaryRefreshRule(
                 trigger: policy,
                 action: supplementaryAction
             )),

@@ -16,7 +16,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         let window = UIWindow(windowScene: windowScene)
-        window.rootViewController = LiveRoomDemoViewController()
+        if ProcessInfo.processInfo.arguments.contains("-StablePagingProbe") {
+            window.rootViewController = UINavigationController(rootViewController: StablePagingProbeViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-NativePagingProbe") {
+            window.rootViewController = UINavigationController(rootViewController: NativePagingProbeViewController())
+        } else {
+            window.rootViewController = ProcessInfo.processInfo.arguments.contains("-LayoutLab")
+                ? UINavigationController(rootViewController: LayoutLabViewController())
+                : LiveRoomDemoViewController()
+        }
         window.makeKeyAndVisible()
         self.window = window
     }

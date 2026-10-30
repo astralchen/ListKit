@@ -29,6 +29,9 @@ where SectionID: Hashable & Sendable {
     public weak var scrollDelegate: UIScrollViewDelegate?
 
     /// table delegate 转发对象；选择或高亮回调会参与 `.automatic` 交互能力推断。
+    ///
+    /// 选择交互启用时，`willSelectRowAt` 和 `willDeselectRowAt` 的返回值原样传递给 UIKit；
+    /// 返回 `nil` 可分别阻止选择或取消选择。
     public weak var tableDelegate: UITableViewDelegate? {
         didSet { configureSelectionBehavior() }
     }
@@ -139,7 +142,8 @@ where SectionID: Hashable & Sendable {
         [tableDelegate, tableDataSource, scrollDelegate].compactMap { $0 as AnyObject? }
     }
 
-    /// 提交一次 table 更新。需要等待动画完成时使用 async 重载。
+    /// 提交一次表格更新；需要等待快照、布局和内容过渡处理时使用完成回调或异步重载。
+    /// 滚动动画发起后不等待其停止。
     @discardableResult
     public func apply(
         options: ListApplyOptions,
@@ -205,11 +209,11 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用当前已提交的描述树和 snapshot 强制重新加载整个列表。
+    /// 将全量重载请求加入更新队列，执行时使用最新已提交的描述树和快照。
     ///
     /// 此方法不依赖 Row、header 或 footer 的 `identity`、`refreshID` 和刷新策略，
-    /// 并始终同步重新计算布局。适用于语言、LTR/RTL、Dynamic Type、主题等未进入
-    /// 刷新标识的全局环境变化。
+    /// 实际执行重载时会重新计算布局。请求可能等待前一个更新或 UIKit 未提交的更新完成，
+    /// 因此同步返回不代表重载已经执行。可用于未纳入刷新标识的语言、布局方向或主题变化。
     ///
     /// - Important: 此方法不会重建描述树。配置闭包应在执行时读取最新环境；
     ///   如果本地化文案已作为值保存在旧 model 中，请先更新数据并使用 `apply`。
@@ -226,7 +230,8 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用当前已提交状态强刷整个列表，并在过渡和布局完成后回调。
+    /// 提交全量重载请求，同步返回初始摘要，并通过完成回调交付最终状态。
+    /// 请求执行完成、被替代或在提交前取消时均调用完成回调。
     @discardableResult
     public func reloadAll(
         transaction: ListTransaction = .automatic,
@@ -269,7 +274,9 @@ where SectionID: Hashable & Sendable {
         return summary
     }
 
-    /// 强制刷新当前已提交列表，并等待内容过渡和布局完成。
+    /// 提交全量重载请求，等待队列处理并返回最终摘要。
+    ///
+    /// 正常完成时等待内容过渡与布局处理；提交前取消或被替代时返回对应状态。
     @discardableResult
     public func reloadAll(
         transaction: ListTransaction = .automatic,
@@ -1064,7 +1071,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 定向 `.visible` 刷新直接操作当前 Cell，不构造 diffable item mutation。
+    /// 可见范围的重配直接配置现有单元格；重载仍通过差异快照提交。
     private func refreshVisibleRows(
         _ subscribers: [ListRowRefreshSubscriber],
         matchedBySubscriber: [Set<AnyListIdentity>],
@@ -1654,15 +1661,18 @@ where SectionID: Hashable & Sendable {
         sections.count
     }
 
+    /// 返回当前分区的条目数量；分区索引无效时返回 0。
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         sections[safe: section]?.rows.count ?? 0
     }
 
+    /// 通过条目提供者创建并配置单元格，配置上下文包含条目的稳定身份。
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         guard let row = row(at: indexPath) else { return UITableViewCell() }
         return row.cellProvider(tableView, indexPath, context(for: indexPath, identity: row.identity))
     }
 
+    /// 处理条目选择，协调分区内单选状态，并分发条目事件与代理通知。
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         guard let row = row(at: indexPath) else { return }
         if selectionMode(at: indexPath) == .single {
@@ -1674,6 +1684,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didSelectRowAt: indexPath)
     }
 
+    /// 通知条目取消选择并更新选择状态回调，然后转发代理通知。
     public func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
         guard let row = row(at: indexPath) else { return }
         let context = context(for: indexPath, identity: row.identity)
@@ -1682,20 +1693,33 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didDeselectRowAt: indexPath)
     }
 
+    /// 返回将要选择的位置；选择被禁用时返回 `nil`。
+    ///
+    /// 外部代理未实现此回调时返回原位置；已实现时返回代理指定的位置，或返回 `nil` 阻止选择。
     public func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
         guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true else {
             return nil
         }
-        return tableDelegate?.tableView?(tableView, willSelectRowAt: indexPath) ?? indexPath
+        guard let willSelect = tableDelegate?.tableView(_:willSelectRowAt:) else {
+            return indexPath
+        }
+        return willSelect(tableView, indexPath)
     }
 
+    /// 返回将要取消选择的位置；选择被禁用时返回 `nil`。
+    ///
+    /// 外部代理未实现此回调时返回原位置；已实现时返回代理指定的位置，或返回 `nil` 阻止取消选择。
     public func tableView(_ tableView: UITableView, willDeselectRowAt indexPath: IndexPath) -> IndexPath? {
         guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true else {
             return nil
         }
-        return tableDelegate?.tableView?(tableView, willDeselectRowAt: indexPath) ?? indexPath
+        guard let willDeselect = tableDelegate?.tableView(_:willDeselectRowAt:) else {
+            return indexPath
+        }
+        return willDeselect(tableView, indexPath)
     }
 
+    /// 根据条目的交互配置与外部代理判断是否允许高亮。
     public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
         guard let row = row(at: indexPath) else { return false }
         let allowsListKitHighlight = row.hasAutomaticHighlightIntent
@@ -1704,6 +1728,7 @@ where SectionID: Hashable & Sendable {
         return tableDelegate?.tableView?(tableView, shouldHighlightRowAt: indexPath) ?? true
     }
 
+    /// 将高亮状态通知条目，并转发外部代理。
     public func tableView(_ tableView: UITableView, didHighlightRowAt indexPath: IndexPath) {
         if let row = row(at: indexPath) {
             row.highlightChangeHandler?(true, context(for: indexPath, identity: row.identity))
@@ -1711,6 +1736,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didHighlightRowAt: indexPath)
     }
 
+    /// 将取消高亮状态通知条目，并转发外部代理。
     public func tableView(_ tableView: UITableView, didUnhighlightRowAt indexPath: IndexPath) {
         if let row = row(at: indexPath) {
             row.highlightChangeHandler?(false, context(for: indexPath, identity: row.identity))
@@ -1718,6 +1744,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didUnhighlightRowAt: indexPath)
     }
 
+    /// 执行条目的主要操作处理器，并转发外部代理。
     @available(iOS 16.0, tvOS 16.0, *)
     public func tableView(_ tableView: UITableView, performPrimaryActionForRowAt indexPath: IndexPath) {
         if let row = row(at: indexPath) {
@@ -1726,12 +1753,14 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, performPrimaryActionForRowAt: indexPath)
     }
 
+    /// 优先使用条目的焦点配置，再查询外部代理；未指定时允许获取焦点。
     public func tableView(_ tableView: UITableView, canFocusRowAt indexPath: IndexPath) -> Bool {
         row(at: indexPath)?.isFocusable
             ?? tableDelegate?.tableView?(tableView, canFocusRowAt: indexPath)
             ?? true
     }
 
+    /// 按条目配置、外部代理和表格视图设置的顺序解析焦点是否带动选择。
     @available(iOS 15.0, tvOS 15.0, *)
     public func tableView(_ tableView: UITableView, selectionFollowsFocusForRowAt indexPath: IndexPath) -> Bool {
         row(at: indexPath)?.selectionFollowsFocus
@@ -1739,6 +1768,7 @@ where SectionID: Hashable & Sendable {
             ?? tableView.selectionFollowsFocus
     }
 
+    /// 优先使用条目的弹簧加载配置，再查询外部代理；未指定时返回 `true`。
     public func tableView(
         _ tableView: UITableView,
         shouldSpringLoadRowAt indexPath: IndexPath,
@@ -1749,6 +1779,7 @@ where SectionID: Hashable & Sendable {
             ?? true
     }
 
+    /// 检查分区是否启用多选交互、处于多选模式且条目可选，再查询外部代理。
     public func tableView(
         _ tableView: UITableView,
         shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath
@@ -1764,6 +1795,7 @@ where SectionID: Hashable & Sendable {
         ) ?? true
     }
 
+    /// 向外部代理转发多选交互开始通知。
     public func tableView(
         _ tableView: UITableView,
         didBeginMultipleSelectionInteractionAt indexPath: IndexPath
@@ -1771,10 +1803,12 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didBeginMultipleSelectionInteractionAt: indexPath)
     }
 
+    /// 向外部代理转发多选交互结束通知。
     public func tableViewDidEndMultipleSelectionInteraction(_ tableView: UITableView) {
         tableDelegate?.tableViewDidEndMultipleSelectionInteraction?(tableView)
     }
 
+    /// 保存正在显示的条目描述，并分发显示事件。
     public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         if let row = row(at: indexPath) {
             displayedRowsByCell[ObjectIdentifier(cell)] = row
@@ -1783,6 +1817,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, willDisplay: cell, forRowAt: indexPath)
     }
 
+    /// 优先使用显示时保存的条目描述分发结束显示事件，避免位置变化后关联到其他条目。
     public func tableView(_ tableView: UITableView, didEndDisplaying cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         let row = displayedRowsByCell.removeValue(forKey: ObjectIdentifier(cell)) ?? row(at: indexPath)
         if let row {
@@ -1791,6 +1826,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didEndDisplaying: cell, forRowAt: indexPath)
     }
 
+    /// 保存正在显示的分区页眉描述，并分发显示事件。
     public func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
         guard let header = sections[safe: section]?.header, let headerView = view as? UITableViewHeaderFooterView else {
             tableDelegate?.tableView?(tableView, willDisplayHeaderView: view, forSection: section)
@@ -1807,6 +1843,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, willDisplayHeaderView: view, forSection: section)
     }
 
+    /// 保存正在显示的分区页脚描述，并分发显示事件。
     public func tableView(_ tableView: UITableView, willDisplayFooterView view: UIView, forSection section: Int) {
         guard let footer = sections[safe: section]?.footer, let footerView = view as? UITableViewHeaderFooterView else {
             tableDelegate?.tableView?(tableView, willDisplayFooterView: view, forSection: section)
@@ -1823,6 +1860,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, willDisplayFooterView: view, forSection: section)
     }
 
+    /// 使用显示时保存的分区页眉描述分发结束显示事件，并清理记录。
     public func tableView(_ tableView: UITableView, didEndDisplayingHeaderView view: UIView, forSection section: Int) {
         let displayed = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
         let header = displayed?.role == .header
@@ -1839,6 +1877,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didEndDisplayingHeaderView: view, forSection: section)
     }
 
+    /// 使用显示时保存的分区页脚描述分发结束显示事件，并清理记录。
     public func tableView(_ tableView: UITableView, didEndDisplayingFooterView view: UIView, forSection section: Int) {
         let displayed = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
         let footer = displayed?.role == .footer
@@ -1855,6 +1894,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didEndDisplayingFooterView: view, forSection: section)
     }
 
+    /// 保存预取条目的描述，并依次调用条目级与批量预取处理器。
     public func tableView(_ tableView: UITableView, prefetchRowsAt indexPaths: [IndexPath]) {
         var contexts: [TableListContext] = []
         for indexPath in indexPaths {
@@ -1867,6 +1907,7 @@ where SectionID: Hashable & Sendable {
         if !contexts.isEmpty { prefetchRowsHandler?(contexts) }
     }
 
+    /// 使用预取时保存的条目描述分发取消事件，并清理对应记录。
     public func tableView(_ tableView: UITableView, cancelPrefetchingForRowsAt indexPaths: [IndexPath]) {
         var contexts: [TableListContext] = []
         for indexPath in indexPaths {
@@ -1880,6 +1921,7 @@ where SectionID: Hashable & Sendable {
         if !contexts.isEmpty { cancelPrefetchingRowsHandler?(contexts) }
     }
 
+    /// 返回分区声明的页眉视图；未声明时查询外部代理。
     public func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
         guard let header = sections[safe: section]?.header else {
             return tableDelegate?.tableView?(tableView, viewForHeaderInSection: section)
@@ -1890,6 +1932,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
+    /// 返回分区声明的页脚视图；未声明时查询外部代理。
     public func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
         guard let footer = sections[safe: section]?.footer else {
             return tableDelegate?.tableView?(tableView, viewForFooterInSection: section)
@@ -1900,23 +1943,27 @@ where SectionID: Hashable & Sendable {
         )
     }
 
+    /// 返回分区页眉标题，未声明时查询外部数据源；存在自定义页眉时返回 `nil`。
     public func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         guard sections[safe: section]?.header == nil else { return nil }
         return sections[safe: section]?.headerTitle
             ?? tableDataSource?.tableView?(tableView, titleForHeaderInSection: section)
     }
 
+    /// 返回分区页脚标题，未声明时查询外部数据源；存在自定义页脚时返回 `nil`。
     public func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         guard sections[safe: section]?.footer == nil else { return nil }
         return sections[safe: section]?.footerTitle
             ?? tableDataSource?.tableView?(tableView, titleForFooterInSection: section)
     }
 
+    /// 返回分区声明的索引标题；没有声明时查询外部数据源。
     public func sectionIndexTitles(for tableView: UITableView) -> [String]? {
         let titles = sections.compactMap(\.indexTitle)
         return titles.isEmpty ? tableDataSource?.sectionIndexTitles?(for: tableView) : titles
     }
 
+    /// 将索引标题的位置映射到分区；无匹配时查询外部数据源，最终回退到分区 0。
     public func tableView(_ tableView: UITableView, sectionForSectionIndexTitle title: String, at index: Int) -> Int {
         let titledSections = sections.indices.filter { sections[$0].indexTitle != nil }
         return titledSections[safe: index]
@@ -1924,12 +1971,16 @@ where SectionID: Hashable & Sendable {
             ?? 0
     }
 
+    /// 按条目高度、外部代理和表格默认行高的顺序返回行高。
     public func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         row(at: indexPath)?.height?.resolvedHeight
             ?? tableDelegate?.tableView?(tableView, heightForRowAt: indexPath)
             ?? tableView.rowHeight
     }
 
+    /// 返回条目估算高度或高度规则的估算值；未设置时使用表格估算行高。
+    ///
+    /// 条目不存在时查询外部代理，再回退到表格估算行高。
     public func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
         if let row = row(at: indexPath) {
             return row.estimatedHeight ?? row.height?.resolvedEstimatedHeight ?? tableView.estimatedRowHeight
@@ -1938,30 +1989,35 @@ where SectionID: Hashable & Sendable {
             ?? tableView.estimatedRowHeight
     }
 
+    /// 按页眉高度规则、外部代理和表格默认页眉高度的顺序返回高度。
     public func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         sections[safe: section]?.header?.height?.resolvedHeight
             ?? tableDelegate?.tableView?(tableView, heightForHeaderInSection: section)
             ?? tableView.sectionHeaderHeight
     }
 
+    /// 按页眉估算规则、外部代理和表格默认估算页眉高度的顺序返回高度。
     public func tableView(_ tableView: UITableView, estimatedHeightForHeaderInSection section: Int) -> CGFloat {
         sections[safe: section]?.header?.height?.resolvedEstimatedHeight
             ?? tableDelegate?.tableView?(tableView, estimatedHeightForHeaderInSection: section)
             ?? tableView.estimatedSectionHeaderHeight
     }
 
+    /// 按页脚高度规则、外部代理和表格默认页脚高度的顺序返回高度。
     public func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
         sections[safe: section]?.footer?.height?.resolvedHeight
             ?? tableDelegate?.tableView?(tableView, heightForFooterInSection: section)
             ?? tableView.sectionFooterHeight
     }
 
+    /// 按页脚估算规则、外部代理和表格默认估算页脚高度的顺序返回高度。
     public func tableView(_ tableView: UITableView, estimatedHeightForFooterInSection section: Int) -> CGFloat {
         sections[safe: section]?.footer?.height?.resolvedEstimatedHeight
             ?? tableDelegate?.tableView?(tableView, estimatedHeightForFooterInSection: section)
             ?? tableView.estimatedSectionFooterHeight
     }
 
+    /// 返回条目或外部代理提供的菜单配置，并保存当前菜单的条目上下文。
     public func tableView(
         _ tableView: UITableView,
         contextMenuConfigurationForRowAt indexPath: IndexPath,
@@ -1974,6 +2030,7 @@ where SectionID: Hashable & Sendable {
         return configuration
     }
 
+    /// 返回当前菜单关联条目的高亮预览，未提供时查询外部代理。
     public func tableView(
         _ tableView: UITableView,
         previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
@@ -1992,6 +2049,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
+    /// 返回当前菜单关联条目的收起预览，未提供时查询外部代理。
     public func tableView(
         _ tableView: UITableView,
         previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration
@@ -2010,6 +2068,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
+    /// 分发菜单预览提交事件，并将系统动画协调器传给处理器与外部代理。
     public func tableView(
         _ tableView: UITableView,
         willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
@@ -2028,6 +2087,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
+    /// 根据条目的编辑处理器、滑动操作或外部数据源判断是否支持编辑。
     public func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
         guard let row = row(at: indexPath) else { return false }
         return row.commitEditingHandler != nil
@@ -2036,6 +2096,7 @@ where SectionID: Hashable & Sendable {
             || tableDataSource?.tableView?(tableView, canEditRowAt: indexPath) == true
     }
 
+    /// 优先使用条目的编辑样式，再查询外部代理；未指定时返回 `none`。
     public func tableView(
         _ tableView: UITableView,
         editingStyleForRowAt indexPath: IndexPath
@@ -2045,6 +2106,7 @@ where SectionID: Hashable & Sendable {
             ?? .none
     }
 
+    /// 将系统提交的编辑操作通知条目处理器和外部数据源。
     public func tableView(
         _ tableView: UITableView,
         commit editingStyle: UITableViewCell.EditingStyle,
@@ -2055,11 +2117,13 @@ where SectionID: Hashable & Sendable {
         tableDataSource?.tableView?(tableView, commit: editingStyle, forRowAt: indexPath)
     }
 
+    /// 根据条目的移动处理器或外部数据源判断是否支持交互式重排。
     public func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
         guard let row = row(at: indexPath) else { return false }
         return row.moveHandler != nil || tableDataSource?.tableView?(tableView, canMoveRowAt: indexPath) == true
     }
 
+    /// 更新内部条目顺序，并将移动前后的位置通知条目处理器和外部数据源。
     public func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
         guard let movedRow = row(at: sourceIndexPath) else { return }
         moveRowDescription(from: sourceIndexPath, to: destinationIndexPath)
@@ -2067,6 +2131,7 @@ where SectionID: Hashable & Sendable {
         tableDataSource?.tableView?(tableView, moveRowAt: sourceIndexPath, to: destinationIndexPath)
     }
 
+    /// 按条目处理器、外部代理和系统建议位置的顺序确定移动目标。
     public func tableView(
         _ tableView: UITableView,
         targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
@@ -2081,6 +2146,7 @@ where SectionID: Hashable & Sendable {
             ?? proposedDestinationIndexPath
     }
 
+    /// 分发条目附件按钮的点击事件，并转发外部代理。
     public func tableView(_ tableView: UITableView, accessoryButtonTappedForRowWith indexPath: IndexPath) {
         if let row = row(at: indexPath) {
             row.accessoryButtonHandler?(context(for: indexPath, identity: row.identity))
@@ -2088,6 +2154,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, accessoryButtonTappedForRowWith: indexPath)
     }
 
+    /// 通知条目进入编辑状态，并转发外部代理。
     public func tableView(_ tableView: UITableView, willBeginEditingRowAt indexPath: IndexPath) {
         if let row = row(at: indexPath) {
             row.editingChangeHandler?(true, context(for: indexPath, identity: row.identity))
@@ -2095,6 +2162,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, willBeginEditingRowAt: indexPath)
     }
 
+    /// 通知对应条目结束编辑，并转发外部代理；位置为空时仅转发代理。
     public func tableView(_ tableView: UITableView, didEndEditingRowAt indexPath: IndexPath?) {
         if let indexPath, let row = row(at: indexPath) {
             row.editingChangeHandler?(false, context(for: indexPath, identity: row.identity))
@@ -2102,6 +2170,7 @@ where SectionID: Hashable & Sendable {
         tableDelegate?.tableView?(tableView, didEndEditingRowAt: indexPath)
     }
 
+    /// 返回条目逻辑起始侧的滑动操作配置，未提供时查询外部代理。
     public func tableView(
         _ tableView: UITableView,
         leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath
@@ -2111,6 +2180,7 @@ where SectionID: Hashable & Sendable {
             ?? tableDelegate?.tableView?(tableView, leadingSwipeActionsConfigurationForRowAt: indexPath)
     }
 
+    /// 返回条目逻辑结束侧的滑动操作配置，未提供时查询外部代理。
     public func tableView(
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
@@ -2120,16 +2190,19 @@ where SectionID: Hashable & Sendable {
             ?? tableDelegate?.tableView?(tableView, trailingSwipeActionsConfigurationForRowAt: indexPath)
     }
 
+    /// 转发滚动位置变化通知；滚动代理与列表代理为同一对象时仅通知一次。
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewDidScroll?(scrollView)
         if !sameObject(scrollDelegate, tableDelegate) { tableDelegate?.scrollViewDidScroll?(scrollView) }
     }
 
+    /// 转发即将开始拖动通知；滚动代理与列表代理为同一对象时仅通知一次。
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewWillBeginDragging?(scrollView)
         if !sameObject(scrollDelegate, tableDelegate) { tableDelegate?.scrollViewWillBeginDragging?(scrollView) }
     }
 
+    /// 转发拖动结束及是否继续减速通知；滚动代理与列表代理为同一对象时仅通知一次。
     public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         scrollDelegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
         if !sameObject(scrollDelegate, tableDelegate) {
@@ -2137,6 +2210,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 转发减速结束通知；滚动代理与列表代理为同一对象时仅通知一次。
     public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewDidEndDecelerating?(scrollView)
         if !sameObject(scrollDelegate, tableDelegate) { tableDelegate?.scrollViewDidEndDecelerating?(scrollView) }

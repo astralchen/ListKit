@@ -160,19 +160,7 @@ ListSection(.users) {
 
 ## Section Metadata
 
-Section 新增可选元数据：
-
-```swift
-ListSection(.users) {
-    ...
-}
-.layout("two-column-grid")
-.selectionMode(.multiple)
-.stickyHeader()
-.backgroundDecoration("user-background")
-```
-
-`layout`、`stickyHeader`、`backgroundDecoration` 首版只存 metadata。页面可以在 compositional layout provider 中读取 adapter/section 的 metadata 来生成真实 layout；后续再评估是否提供更完整的 layout provider 封装。
+- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTap；具体契约见 Documentation/Layout-API.md。
 
 ## Selection
 

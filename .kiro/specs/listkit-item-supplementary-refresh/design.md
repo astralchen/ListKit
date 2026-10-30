@@ -1,41 +1,11 @@
-# ListKit Item Supplementary Refresh Design
+# Section 整体布局与补充视图
 
-## API Shape
+当前实现契约见 [Layout API](../../../Documentation/Layout-API.md)。
 
-`ListSectionSupplementary` 的旧短名 item layout modifier 改名为 `itemSupplementaryLayout(...)`：
-
-```swift
-SectionSupplementary("vip-dot", BadgeView.self, id: "vip-dot") { view, context in
-    view.configure()
-}
-.itemSupplementaryLayout(
-    anchor: .topTrailing,
-    width: .absolute(18),
-    height: .absolute(18),
-    fractionalOffset: CGPoint(x: 0.25, y: -0.25),
-    zIndex: 10
-)
-```
-
-Section 级 `.itemSupplementaryLayout(kind:...)` 保持不变。两者命名对齐，调用点能看出配置的是 item-level supplementary layout。
-
-## Adapter Refresh Flow
-
-`AnySupplementary` 增加内部 `configureVisibleView` 闭包。普通 dequeue 仍走 `viewProvider`；可见刷新只对已存在的 supplementary view 调用 configure，不触发新的 dequeue。
-
-`CollectionListAdapter.apply` 在 rebuild 前保存旧 supplementary lookup。snapshot apply completion 后，adapter 遍历 layout 当前可见 supplementary attributes，按 kind + section 找到新旧 supplementary：
-
-- `.automatic + .visible` 和 `.everyApply + .visible`：只要 identity 在旧 lookup 中存在，就重配可见 view。
-- `.refreshIDChanges`：旧 identity 存在且 refreshID 变化时重配可见 view。
-- `.never`：跳过。
-
-手动刷新 API 不依赖 apply trigger，直接重配匹配 kind、section 和可选 rowID 的当前可见 supplementary view。
-
-## Summary
-
-`ListApplySummary` 保留 row 统计字段，并新增 supplementary 专用字段：
-
-- `supplementaryRefreshIDChangedCount`
-- `refreshMetrics.visibleReconfiguredSupplementaryCount`
-
-现有 `rowRefreshIDChangedCount`、`refreshMetrics.snapshotReconfiguredRowCount` 和 `refreshMetrics.visibleReconfiguredRowCount` 继续表示 row 行为，避免破坏已有测试和调用方理解。
+- layout 返回完整值，公共修饰保持主体类型；Section inset 只有一个来源。
+- boundarySupplementaries 与 itemSupplementaries 分开建模，通过实际 kind 关联 SectionSupplementary 内容与 UIKit 注册；decoration 通过逻辑 kind 关联注册，并解析实际 elementKind。
+- decorationItems 为布局集合，decorations 为 SectionDecoration 注册集合；重复修饰替换集合，显式空集合清除几何。
+- Supplementary 内容不携带尺寸/位置；事件使用内容 onTap，刷新继续支持可见视图重配及 reloadSection。
+- 环境选择返回完整值，自定义 provider 明确边界和 inset 所有权；布局签名覆盖几何与关联变化。
+- 不保留通用 Header/Footer、旧背景 DSL 或迁移包装层；UITableView 的 TableHeader/TableFooter 保留。
+- 测试覆盖编译正反例、状态更新、真实 UIKit 几何与 LayoutLab 交互；验证状态见 Documentation/Layout-Validation.md。

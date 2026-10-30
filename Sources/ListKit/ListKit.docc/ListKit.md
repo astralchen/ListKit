@@ -28,6 +28,20 @@ diffable snapshot、可见内容配置、布局重测量、滚动、动画、取
 
 ### Collection 布局
 
+- ``ListSectionLayoutSource``
+- ``ListGridTrack``
+- ``ListBoundaryMainAxisSize``
+- ``ListGridItemMainAxisSize``
+- ``ListGridLineGrouping``
+- ``ListGridGroupMainAxisSize``
+- ``ListGridTrackGroupAlignment``
+- ``ListGridCrossAxisSize``
+- ``CustomLayoutBoundary``
+- ``ListBoundaryLayout``
+- ``ListBoundaryAlignment``
+- ``ListItemSupplementaryAnchor``
+- ``ListDecorationLayoutPolicy``
+- <doc:Declarative-Layouts>
 - ``ListCompositionalLayoutConfiguration``
 - ``ListContentInsetsReference``
 - ``ListLayoutScrollDirection``

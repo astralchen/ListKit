@@ -92,9 +92,9 @@
 ### Acceptance Criteria
 
 - WHEN supplementary 数据变化 THE SYSTEM SHALL 支持 `.refreshID(...)` 和 `.refresh(...)`。
-- WHEN section header 需要吸顶 THE SYSTEM SHALL 支持 `.stickyHeader()` 元数据。
-- WHEN section 需要 background decoration THE SYSTEM SHALL 支持 `.backgroundDecoration(...)` 元数据。
-- WHEN section 需要多个 custom kind THE SYSTEM SHALL 支持多次 `.supplementary(kind, ...)`。
+- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTap；具体契约见 Documentation/Layout-API.md。
+- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTap；具体契约见 Documentation/Layout-API.md。
+- WHEN section 需要多个 custom kind THE SYSTEM SHALL 支持`supplementaries:` builder 中多个 `SectionSupplementary(kind, ...)`。
 
 ## Requirement 9: Delegate Forwarding
 

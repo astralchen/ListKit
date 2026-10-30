@@ -2,7 +2,7 @@ import UIKit
 
 // MARK: - Layout Model
 
-/// Compositional layout 的主滚动方向。
+/// 组合布局的主滚动方向。
 public enum ListLayoutScrollDirection: Hashable, Sendable {
     /// Section 沿垂直方向排列。
     case vertical
@@ -17,7 +17,7 @@ public enum ListLayoutScrollDirection: Hashable, Sendable {
     }
 }
 
-/// Compositional layout 计算全局内容区域时采用的系统 inset 来源。
+/// 组合布局计算全局内容区域时使用的系统内边距参考。
 public enum ListContentInsetsReference: Hashable, Sendable {
     /// 保留 UIKit 创建 `UICollectionViewCompositionalLayoutConfiguration` 时的系统默认值。
     ///
@@ -47,11 +47,11 @@ public enum ListContentInsetsReference: Hashable, Sendable {
     }
 }
 
-/// Compositional layout 全局配置。
+/// 组合布局的全局滚动方向、分区间距与内边距参考配置。
 public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
     /// compositional layout 的主滚动方向；`nil` 保留 UIKit 默认值。
     public var scrollDirection: ListLayoutScrollDirection?
-    /// 相邻 Section 之间的间距；`nil` 保留 UIKit 默认值。
+    /// 相邻 Section 之间的间距，须为有限非负数；`nil` 保留 UIKit 默认值。
     public var interSectionSpacing: CGFloat?
     /// 全局内容区域采用的系统 inset 参考；默认保留 UIKit 的系统设置。
     public var contentInsetsReference: ListContentInsetsReference
@@ -74,6 +74,9 @@ public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
     }
 
     @MainActor func makeConfiguration() -> UICollectionViewCompositionalLayoutConfiguration {
+        precondition(
+            interSectionSpacing.map { $0.isFinite && $0 >= 0 } ?? true,
+            "ListKit: interSectionSpacing must be finite and nonnegative")
         let configuration = UICollectionViewCompositionalLayoutConfiguration()
         if let scrollDirection {
             configuration.scrollDirection = scrollDirection.uiKitValue
@@ -88,18 +91,19 @@ public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
     }
 }
 
-/// Compositional layout 的尺寸描述。
+/// 组合布局中单个维度的尺寸规则。
 ///
 /// - Note: 这里不用直接保存 `NSCollectionLayoutDimension`，因为 UIKit 类型不是 DSL
 /// `Hashable & Sendable` 模型。真正生成 layout 时再转换成 UIKit 类型。
 public enum ListLayoutDimension: Hashable, Sendable {
     /// 固定点数尺寸。
     case absolute(CGFloat)
-    /// 自适应估算尺寸。
+    /// 内容测量的初始估算尺寸；最终尺寸取决于 UIKit 与视图的 self-sizing 实现。
+    /// 仅作用于使用此 dimension 的 item、group 或 supplementary，不会自动向父子层级传播。
     case estimated(CGFloat)
-    /// 相对容器宽度的比例尺寸。
+    /// 相对 UIKit 所在布局层级的容器宽度的比例，不是固定相对屏幕或 collection view 宽度。
     case fractionalWidth(CGFloat)
-    /// 相对容器高度的比例尺寸。
+    /// 相对 UIKit 所在布局层级的容器高度的比例，不是固定相对屏幕或 collection view 高度。
     case fractionalHeight(CGFloat)
 
     @MainActor func makeDimension() -> NSCollectionLayoutDimension {
@@ -115,29 +119,10 @@ public enum ListLayoutDimension: Hashable, Sendable {
         }
     }
 
-    /// 用于在 boundary supplementary 前后预留空间。
-    ///
-    /// - Important: 仅用于 `extendsBoundary == false` 的全宽 `.top` / `.bottom` 补充视图。
-    /// 开启 `extendsBoundary` 时，UIKit 根据补充视图的实际尺寸扩展 section，
-    /// ListKit 不再额外补齐 content inset，避免把 absolute 或 estimated 高度重复计入间距。
-    var estimatedContentInsetValue: CGFloat? {
-        switch self {
-        case .absolute(let value), .estimated(let value):
-            return value
-        case .fractionalWidth, .fractionalHeight:
-            return nil
-        }
-    }
 
-    var isFullWidth: Bool {
-        if case .fractionalWidth(let value) = self {
-            return value == 1
-        }
-        return false
-    }
 }
 
-/// Layout DSL 使用的方向性 inset。
+/// 使用逻辑起止方向的布局内边距。
 public struct ListLayoutInsets: Hashable, Sendable {
     /// 顶部 inset。
     public var top: CGFloat
@@ -152,9 +137,9 @@ public struct ListLayoutInsets: Hashable, Sendable {
     ///
     /// - Parameters:
     ///   - top: 顶部 inset。
-    ///   - leading: leading inset。
+    ///   - leading: 逻辑起始侧的内边距。
     ///   - bottom: 底部 inset。
-    ///   - trailing: trailing inset。
+    ///   - trailing: 逻辑结束侧的内边距。
     public init(top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0) {
         self.top = top
         self.leading = leading
@@ -172,12 +157,13 @@ public struct ListLayoutInsets: Hashable, Sendable {
     /// 零 inset。
     public static let zero = ListLayoutInsets()
 
-    var directionalEdgeInsets: NSDirectionalEdgeInsets {
+    /// 与当前值对应的 UIKit 方向性内边距。
+    public var directionalEdgeInsets: NSDirectionalEdgeInsets {
         NSDirectionalEdgeInsets(top: top, leading: leading, bottom: bottom, trailing: trailing)
     }
 }
 
-/// Layout DSL 使用的二维偏移。
+/// 布局中的二维偏移量。
 public struct ListLayoutPoint: Hashable, Sendable {
     /// 水平方向偏移。
     public var x: CGFloat
@@ -209,213 +195,24 @@ public struct ListLayoutPoint: Hashable, Sendable {
     }
 }
 
-/// Section 背景装饰描述。
+/// Section 相对于外层 collection 主轴的正交滚动行为，直接映射到 UIKit 对应枚举。
 ///
-/// - Important: raw kind 入口不会注册 view；typed view 入口会由 adapter 注册到当前 layout。
-public struct ListBackgroundDecoration: Hashable {
-    /// 默认 section 背景 decoration kind。
-    public static let defaultKind = "UICollectionView.ElementKindSectionBackgroundDecoration"
-
-    /// 注册和创建 decoration view 使用的 element kind。
-    public let kind: String
-    /// 背景相对 Section 内容边界的方向性 inset。
-    public var contentInsets: ListLayoutInsets
-    /// decoration item 的布局层级，默认位于 Section 内容之后。
-    public var zIndex: Int
-    let registrationKey: ObjectIdentifier?
-    private let registerProvider: (@MainActor (UICollectionViewLayout) -> Void)?
-
-    /// 创建 raw section 背景装饰。
-    ///
-    /// - Parameters:
-    ///   - kind: 已注册的 decoration view kind。
-    ///   - contentInsets: 背景相对 section 内容的 inset。
-    ///   - zIndex: 背景层级。
-    public init(
-        kind: String = Self.defaultKind,
-        contentInsets: ListLayoutInsets = .zero,
-        zIndex: Int = -1
-    ) {
-        self.kind = kind
-        self.contentInsets = contentInsets
-        self.zIndex = zIndex
-        self.registrationKey = nil
-        self.registerProvider = nil
-    }
-
-    /// 创建 typed section 背景装饰。
-    ///
-    /// - Parameters:
-    ///   - viewType: 背景 decoration view 类型。
-    ///   - kind: decoration view kind。使用默认值时会自动加入模块限定 view 类型，避免注册冲突。
-    ///   - contentInsets: 背景相对 section 内容的 inset。
-    ///   - zIndex: 背景层级。
-    /// - Note: typed 入口会记录 view 类型，adapter 在 `apply` 或 `makeCompositionalLayout()` 时自动注册。
-    public init<View>(
-        view viewType: View.Type,
-        kind: String = Self.defaultKind,
-        contentInsets: ListLayoutInsets = .zero,
-        zIndex: Int = -1
-    ) where View: UICollectionReusableView {
-        let resolvedKind = kind == Self.defaultKind
-            ? "\(Self.defaultKind).\(String(reflecting: viewType))"
-            : kind
-        self.kind = resolvedKind
-        self.contentInsets = contentInsets
-        self.zIndex = zIndex
-        self.registrationKey = ObjectIdentifier(viewType)
-        self.registerProvider = { layout in
-            layout.registerDecorationView(viewType, forKind: resolvedKind)
-        }
-    }
-
-    @MainActor func register(on layout: UICollectionViewLayout) {
-        registerProvider?(layout)
-    }
-
-    @MainActor func makeDecorationItem() -> NSCollectionLayoutDecorationItem {
-        let item = NSCollectionLayoutDecorationItem.background(elementKind: kind)
-        item.contentInsets = contentInsets.directionalEdgeInsets
-        item.zIndex = zIndex
-        return item
-    }
-
-    /// 按 decoration kind、insets 和 zIndex 判断两个背景描述是否等价。
-    public static func == (lhs: ListBackgroundDecoration, rhs: ListBackgroundDecoration) -> Bool {
-        lhs.kind == rhs.kind
-            && lhs.contentInsets == rhs.contentInsets
-            && lhs.zIndex == rhs.zIndex
-            && lhs.registrationKey == rhs.registrationKey
-    }
-
-    /// 将参与相等性判断的背景布局字段写入 hasher。
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(kind)
-        hasher.combine(contentInsets)
-        hasher.combine(zIndex)
-        hasher.combine(registrationKey)
-    }
-}
-
-/// 类型擦除前保存标准、custom 或 legacy Section layout 选择的内部桥接值。
-public struct ListSectionLayoutConfiguration<SectionID>: Hashable where SectionID: Hashable & Sendable {
-    var layoutID: AnyListID?
-    var sectionLayout: ListSectionLayout?
-    var customSectionLayout: ListCustomSectionLayout<SectionID>?
-
-    init(
-        layoutID: AnyListID? = nil,
-        sectionLayout: ListSectionLayout? = nil,
-        customSectionLayout: ListCustomSectionLayout<SectionID>? = nil
-    ) {
-        self.layoutID = layoutID
-        self.sectionLayout = sectionLayout
-        self.customSectionLayout = customSectionLayout
-    }
-}
-
-/// 创建 raw section 背景装饰描述。
-///
-/// - Parameters:
-///   - kind: 已注册的 decoration view kind。
-///   - contentInsets: 背景相对 section 内容的 inset。
-///   - zIndex: 背景层级。
-/// - Returns: 可放入 section background builder 的背景装饰描述。
-/// - Important: raw kind 需要调用方提前注册 decoration view。
-public func BackgroundDecoration(
-    kind: String,
-    contentInsets: ListLayoutInsets = .zero,
-    zIndex: Int = -1
-) -> ListBackgroundDecoration {
-    ListBackgroundDecoration(kind: kind, contentInsets: contentInsets, zIndex: zIndex)
-}
-
-/// 创建 typed section 背景装饰描述。
-///
-/// - Parameters:
-///   - viewType: 背景 decoration view 类型。
-///   - kind: decoration view kind。
-///   - contentInsets: 背景相对 section 内容的 inset。
-///   - zIndex: 背景层级。
-/// - Returns: 可放入 section background builder 的背景装饰描述。
-public func BackgroundDecoration<View>(
-    _ viewType: View.Type,
-    kind: String = ListBackgroundDecoration.defaultKind,
-    contentInsets: ListLayoutInsets = .zero,
-    zIndex: Int = -1
-) -> ListBackgroundDecoration where View: UICollectionReusableView {
-    ListBackgroundDecoration(view: viewType, kind: kind, contentInsets: contentInsets, zIndex: zIndex)
-}
-
-/// 创建 list section layout。
-///
-/// - Parameters:
-///   - itemHeight: item 高度。
-///   - spacing: 行间距。
-///   - contentInsets: section 内容 inset。
-/// - Returns: list section layout 描述。
-public func ListLayout(
-    itemHeight: ListLayoutDimension = .estimated(44),
-    spacing: CGFloat = 0,
-    contentInsets: ListLayoutInsets = .zero
-) -> ListSectionLayout {
-    .list(itemHeight: itemHeight, spacing: spacing, contentInsets: contentInsets)
-}
-
-/// 创建 grid section layout。
-///
-/// - Parameters:
-///   - columns: 列数。
-///   - spacing: item 间距和行间距。
-///   - itemHeight: item 高度；为 `nil` 时使用与列宽一致的比例高度。
-///   - contentInsets: section 内容 inset。
-/// - Returns: grid section layout 描述。
-public func GridLayout(
-    columns: Int,
-    spacing: CGFloat = 0,
-    itemHeight: ListLayoutDimension? = nil,
-    contentInsets: ListLayoutInsets = .zero
-) -> ListSectionLayout {
-    .grid(columns: columns, spacing: spacing, itemHeight: itemHeight, contentInsets: contentInsets)
-}
-
-/// 创建横向 section layout。
-///
-/// - Parameters:
-///   - itemWidth: item 宽度。
-///   - itemHeight: 横向 group 高度。
-///   - spacing: item 间距。
-///   - contentInsets: section 内容 inset。
-///   - scrollingBehavior: Section 的横向滚动行为。
-/// - Returns: 横向 section layout 描述。
-public func HorizontalLayout(
-    itemWidth: ListLayoutDimension = .estimated(44),
-    itemHeight: ListLayoutDimension = .estimated(44),
-    spacing: CGFloat = 0,
-    contentInsets: ListLayoutInsets = .zero,
-    scrollingBehavior: ListOrthogonalScrollingBehavior = .continuous
-) -> ListSectionLayout {
-    .horizontal(
-        itemWidth: itemWidth,
-        itemHeight: itemHeight,
-        spacing: spacing,
-        contentInsets: contentInsets,
-        scrollingBehavior: scrollingBehavior
-    )
-}
-
-/// 横向 section 的滚动行为，避免调用方直接依赖 UIKit 枚举。
+/// 外层为纵向时，正交滚动为横向；外层为横向时，正交滚动为纵向。
+/// 停靠和分页所指的 group 是创建 Section 时传入的顶层 group，不是单个 item。
 public enum ListOrthogonalScrollingBehavior: Hashable, Sendable {
-    case none
+    /// 连续滚动，不按 group 边界停靠。
     case continuous
+    /// 连续滚动，在可见 group 的 leading 边界自然停靠，不是逐 item 对齐。
     case continuousGroupLeadingBoundary
+    /// 使用 UIKit 的正交分页行为；不指定以 group 为分页单位。
     case paging
+    /// 以顶层 group 为单位分页；页的几何由 group 尺寸决定。
     case groupPaging
+    /// 以顶层 group 为单位分页，并将 group 居中；不保证单个 item 居中。
     case groupPagingCentered
 
     var uiKitValue: UICollectionLayoutSectionOrthogonalScrollingBehavior {
         switch self {
-        case .none: return .none
         case .continuous: return .continuous
         case .continuousGroupLeadingBoundary: return .continuousGroupLeadingBoundary
         case .paging: return .paging
@@ -425,12 +222,17 @@ public enum ListOrthogonalScrollingBehavior: Hashable, Sendable {
     }
 }
 
-/// UIKit 原生 list section 的外观。
+/// UIKit 原生列表分区的外观样式。
 public enum ListUIKitListAppearance: Hashable, Sendable {
+    /// 无分组背景的标准列表外观。
     case plain
+    /// 使用分组背景的列表外观。
     case grouped
+    /// 分组内容向两侧内缩的列表外观。
     case insetGrouped
+    /// 用于侧边栏导航的列表外观。
     case sidebar
+    /// 不使用侧边栏分组背景的列表外观。
     case sidebarPlain
 
     var uiKitValue: UICollectionLayoutListConfiguration.Appearance {
@@ -444,14 +246,20 @@ public enum ListUIKitListAppearance: Hashable, Sendable {
     }
 }
 
-/// UIKit 原生 list section 配置。使用该布局时，Row 的 swipe actions 会真正接入
+/// UIKit 原生列表分区的布局配置。
+///
+/// 使用此布局时，条目的滑动操作接入
 /// `UICollectionLayoutListConfiguration`，同时保留 ListKit 的 diffable identity。
+/// 未调用 `.sectionInsets(...)` 时保留 UIKit 生成的 Section inset；显式调用则覆盖它。
+/// 不支持 item-level supplementary；已匹配内容的此类声明会被 adapter 拒绝。
 public struct ListUIKitListLayout: Hashable, Sendable {
+    var options = ListSectionLayoutOptions()
     /// UIKit list section 的视觉样式。
     public var appearance: ListUIKitListAppearance
     /// 是否显示系统分隔线；`nil` 保留 UIKit 根据 appearance 提供的默认值。
     public var showsSeparators: Bool?
-    /// header 顶部额外间距；`nil` 使用 UIKit 默认值。
+    /// 原样传给 UIKit List configuration 的 headerTopPadding；`nil` 保留系统默认值。
+    /// 此属性不会创建 header，也不替代 boundary 的尺寸、offset 或 Section inset 配置。
     public var headerTopPadding: CGFloat?
 
     /// 创建 UIKit 原生 list section 配置。
@@ -459,7 +267,7 @@ public struct ListUIKitListLayout: Hashable, Sendable {
     /// - Parameters:
     ///   - appearance: 系统 list 外观。
     ///   - showsSeparators: 是否显示系统分隔线；`nil` 时不写入 UIKit。
-    ///   - headerTopPadding: header 顶部额外间距。
+    ///   - headerTopPadding: UIKit List 的 headerTopPadding，须为有限非负数；`nil` 保留默认值。
     public init(
         appearance: ListUIKitListAppearance = .plain,
         showsSeparators: Bool? = nil,
@@ -482,276 +290,55 @@ public struct ListUIKitListLayout: Hashable, Sendable {
     }
 }
 
-/// 创建 UIKit 原生 list section layout。
+/// 创建 UIKit 原生列表分区布局。
+///
+/// 使用 `ListUIKitListLayout` 的系统默认值与限制；需要自定义边界补充视图时显式声明其布局和内容。
+/// 本入口保留 UIKit 原生列表能力；普通列表使用单轨道 GridLayout。
+///
+/// - Parameters:
+///   - appearance: 列表外观，默认为 `plain`。
+///   - showsSeparators: 是否显示系统分隔线；`nil` 保留当前外观的系统默认值。
+///   - headerTopPadding: 页眉顶部间距，须为有限非负数；`nil` 保留系统默认值。
+/// - Returns: 可放入分区布局构建器的 UIKit 列表配置。
 public func UIKitListLayout(
     appearance: ListUIKitListAppearance = .plain,
     showsSeparators: Bool? = nil,
     headerTopPadding: CGFloat? = nil
-) -> ListSectionLayout {
-    .uiKitListConfiguration(
-        ListUIKitListLayout(
-            appearance: appearance,
-            showsSeparators: showsSeparators,
-            headerTopPadding: headerTopPadding
-        )
-    )
+) -> ListUIKitListLayout {
+    .init(
+        appearance: appearance, showsSeparators: showsSeparators, headerTopPadding: headerTopPadding)
 }
 
-/// section 的 list 布局配置。
-public struct ListSectionListLayout: Hashable, Sendable {
-    /// item 高度。
-    public var itemHeight: ListLayoutDimension
-    /// 行间距。
-    public var spacing: CGFloat
-    /// section 内容 inset。
-    public var contentInsets: ListLayoutInsets
-
-    /// 创建 list 布局配置。
-    ///
-    /// - Parameters:
-    ///   - itemHeight: item 高度。
-    ///   - spacing: 行间距。
-    ///   - contentInsets: section 内容 inset。
-    public init(
-        itemHeight: ListLayoutDimension = .estimated(44),
-        spacing: CGFloat = 0,
-        contentInsets: ListLayoutInsets = .zero
-    ) {
-        self.itemHeight = itemHeight
-        self.spacing = spacing
-        self.contentInsets = contentInsets
-    }
-}
-
-/// section 的 grid 布局配置。
-public struct ListSectionGridLayout: Hashable, Sendable {
-    /// 列数。
-    public var columns: Int
-    /// item 间距和行间距。
-    public var spacing: CGFloat
-    /// item 高度。
-    public var itemHeight: ListLayoutDimension
-    /// section 内容 inset。
-    public var contentInsets: ListLayoutInsets
-
-    /// 创建 grid 布局配置。`columns < 1` 会被 layout 生成兜底为 1，并由 diagnostics 报告。
-    ///
-    /// - Parameters:
-    ///   - columns: 列数。
-    ///   - spacing: item 间距和行间距。
-    ///   - itemHeight: item 高度；为 `nil` 时使用与列宽一致的比例高度。
-    ///   - contentInsets: section 内容 inset。
-    public init(
-        columns: Int,
-        spacing: CGFloat = 0,
-        itemHeight: ListLayoutDimension? = nil,
-        contentInsets: ListLayoutInsets = .zero
-    ) {
-        let safeColumns = max(columns, 1)
-        self.columns = columns
-        self.spacing = spacing
-        self.itemHeight = itemHeight ?? .fractionalWidth(1 / CGFloat(safeColumns))
-        self.contentInsets = contentInsets
-    }
-}
-
-/// section 的横向自适应布局配置。
-public struct ListSectionHorizontalLayout: Hashable, Sendable {
-    /// item 宽度。
-    public var itemWidth: ListLayoutDimension
-    /// 横向 group 高度。
-    public var itemHeight: ListLayoutDimension
-    /// item 间距。
-    public var spacing: CGFloat
-    /// section 内容 inset。
-    public var contentInsets: ListLayoutInsets
-    /// section 横向滚动行为。
-    public var scrollingBehavior: ListOrthogonalScrollingBehavior
-
-    /// 创建横向布局配置。
-    ///
-    /// - Parameters:
-    ///   - itemWidth: item 宽度。
-    ///   - itemHeight: 横向 group 高度。
-    ///   - spacing: item 间距。
-    ///   - contentInsets: section 内容 inset。
-    ///   - scrollingBehavior: Section 的横向滚动行为。
-    public init(
-        itemWidth: ListLayoutDimension = .estimated(44),
-        itemHeight: ListLayoutDimension = .estimated(44),
-        spacing: CGFloat = 0,
-        contentInsets: ListLayoutInsets = .zero,
-        scrollingBehavior: ListOrthogonalScrollingBehavior = .continuous
-    ) {
-        self.itemWidth = itemWidth
-        self.itemHeight = itemHeight
-        self.spacing = spacing
-        self.contentInsets = contentInsets
-        self.scrollingBehavior = scrollingBehavior
-    }
-}
-
-/// 自定义 section layout 的类型安全逃生口。
-///
-/// - Important: `id` 只描述自定义布局的稳定身份；真正的布局由 `makeSection` 在主线程生成。
-public struct ListCustomSectionLayout<SectionID> where SectionID: Hashable & Sendable {
-    /// 自定义布局的稳定身份，用于 layout metadata diff 和诊断。
-    public let id: AnyListID
-    let makeSection: @MainActor (
-        ListSection<SectionID>,
-        Int,
-        any NSCollectionLayoutEnvironment
-    ) -> NSCollectionLayoutSection
-
-    /// 创建自定义 compositional layout。
-    ///
-    /// - Parameters:
-    ///   - id: 自定义布局的稳定身份。
-    ///   - makeSection: 根据当前 section、index 和 layout environment 创建 layout section 的闭包。
-    public init<ID>(
-        id: ID,
-        makeSection: @escaping @MainActor (
-            ListSection<SectionID>,
-            Int,
-            any NSCollectionLayoutEnvironment
-        ) -> NSCollectionLayoutSection
-    ) where ID: Hashable & Sendable {
-        self.id = AnyListID(id)
-        self.makeSection = makeSection
-    }
-
-    /// 创建自定义 compositional layout。
-    ///
-    /// - Parameters:
-    ///   - id: 自定义布局的稳定身份。
-    ///   - makeSection: 根据当前 section、index 和 layout environment 创建 layout section 的闭包。
-    /// - Returns: 自定义 layout 描述。
-    public static func custom<ID>(
-        id: ID,
-        makeSection: @escaping @MainActor (
-            ListSection<SectionID>,
-            Int,
-            any NSCollectionLayoutEnvironment
-        ) -> NSCollectionLayoutSection
-    ) -> ListCustomSectionLayout<SectionID> where ID: Hashable & Sendable {
-        ListCustomSectionLayout(id: id, makeSection: makeSection)
-    }
-}
-
-extension ListCustomSectionLayout: Hashable {
-    /// 自定义布局 provider 闭包不参与比较；实例按内部稳定令牌判断相等。
-    public static func == (lhs: ListCustomSectionLayout<SectionID>, rhs: ListCustomSectionLayout<SectionID>) -> Bool {
-        lhs.id == rhs.id
-    }
-
-    /// 将标识当前自定义布局实例的稳定令牌写入 hasher。
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
-
-/// Section 主布局描述。
-///
-/// - Usage:
-/// ```swift
-/// ListSection(.users) { ... }
-///     .layout(.grid(columns: 2, spacing: 12))
-/// ```
+/// 内建 Section 布局；普通列表与网格共用 gridConfiguration。
 public enum ListSectionLayout: Hashable, Sendable {
-    /// list 布局配置。
-    case listConfiguration(ListSectionListLayout)
-    /// grid 布局配置。
+    /// 使用网格配置生成分区布局。
     case gridConfiguration(ListSectionGridLayout)
-    /// 横向布局配置。
-    case horizontalConfiguration(ListSectionHorizontalLayout)
-    /// UIKit 原生 list 配置。
+    /// 使用 UIKit 原生列表配置生成分区布局。
     case uiKitListConfiguration(ListUIKitListLayout)
 
-    /// 创建 list 布局枚举值。
-    ///
-    /// - Parameters:
-    ///   - itemHeight: item 高度。
-    ///   - spacing: 行间距。
-    ///   - contentInsets: section 内容 inset。
-    /// - Returns: list layout 描述。
-    public static func list(
-        itemHeight: ListLayoutDimension = .estimated(44),
-        spacing: CGFloat = 0,
-        contentInsets: ListLayoutInsets = .zero
-    ) -> ListSectionLayout {
-        .listConfiguration(
-            ListSectionListLayout(
-                itemHeight: itemHeight,
-                spacing: spacing,
-                contentInsets: contentInsets
-            )
-        )
-    }
-
-    /// 创建 grid 布局枚举值。
-    ///
-    /// - Parameters:
-    ///   - columns: 列数。
-    ///   - spacing: item 间距和行间距。
-    ///   - itemHeight: item 高度；为 `nil` 时使用与列宽一致的比例高度。
-    ///   - contentInsets: section 内容 inset。
-    /// - Returns: grid layout 描述。
-    public static func grid(
-        columns: Int,
-        spacing: CGFloat = 0,
-        itemHeight: ListLayoutDimension? = nil,
-        contentInsets: ListLayoutInsets = .zero
-    ) -> ListSectionLayout {
-        .gridConfiguration(
-            ListSectionGridLayout(
-                columns: columns,
-                spacing: spacing,
-                itemHeight: itemHeight,
-                contentInsets: contentInsets
-            )
-        )
-    }
-
-    /// 创建 horizontal 布局枚举值。
-    ///
-    /// - Parameters:
-    ///   - itemWidth: item 宽度。
-    ///   - itemHeight: 横向 group 高度。
-    ///   - spacing: item 间距。
-    ///   - contentInsets: section 内容 inset。
-    ///   - scrollingBehavior: Section 的横向滚动行为。
-    /// - Returns: 横向 layout 描述。
-    public static func horizontal(
-        itemWidth: ListLayoutDimension = .estimated(44),
-        itemHeight: ListLayoutDimension = .estimated(44),
-        spacing: CGFloat = 0,
-        contentInsets: ListLayoutInsets = .zero,
-        scrollingBehavior: ListOrthogonalScrollingBehavior = .continuous
-    ) -> ListSectionLayout {
-        .horizontalConfiguration(
-            ListSectionHorizontalLayout(
-                itemWidth: itemWidth,
-                itemHeight: itemHeight,
-                spacing: spacing,
-                contentInsets: contentInsets,
-                scrollingBehavior: scrollingBehavior
-            )
-        )
+    /// 未声明布局、空分支及解析失败时使用的单轨道估算布局。
+    static var defaultLayout: Self {
+        .gridConfiguration(GridLayout(tracks: 1))
     }
 
     @MainActor func makeCompositionalSection(
-        itemSupplementaries: [NSCollectionLayoutSupplementaryItem]
+        environment: any NSCollectionLayoutEnvironment,
+        itemSupplementaries: [NSCollectionLayoutSupplementaryItem],
+        scrollDirection: ListLayoutScrollDirection = .vertical
     ) -> NSCollectionLayoutSection {
         switch self {
-        case .listConfiguration(let configuration):
-            return configuration.makeCompositionalSection(itemSupplementaries: itemSupplementaries)
         case .gridConfiguration(let configuration):
-            return configuration.makeCompositionalSection(itemSupplementaries: itemSupplementaries)
-        case .horizontalConfiguration(let configuration):
-            return configuration.makeCompositionalSection(itemSupplementaries: itemSupplementaries)
+            return configuration.makeSection(
+                environment: environment,
+                itemSupplementaries: itemSupplementaries, scrollDirection: scrollDirection)
         case .uiKitListConfiguration:
-            preconditionFailure("ListKit: UIKitListLayout requires a compositional layout environment; use CollectionListAdapter.makeCompositionalLayout().")
+            preconditionFailure("ListKit: UIKitListLayout requires adapter configuration")
         }
+    }
+
+    var gridLayout: ListSectionGridLayout? {
+        guard case .gridConfiguration(let value) = self else { return nil }
+        return value
     }
 
     var uiKitListLayout: ListUIKitListLayout? {
@@ -760,114 +347,27 @@ public enum ListSectionLayout: Hashable, Sendable {
     }
 }
 
-private extension ListSectionListLayout {
-    @MainActor func makeCompositionalSection(
-        itemSupplementaries: [NSCollectionLayoutSupplementaryItem]
-    ) -> NSCollectionLayoutSection {
-        let itemSize = NSCollectionLayoutSize(
-            widthDimension: .fractionalWidth(1),
-            heightDimension: itemHeight.makeDimension()
-        )
-        let item = NSCollectionLayoutItem(layoutSize: itemSize, supplementaryItems: itemSupplementaries)
-        let group = NSCollectionLayoutGroup.horizontal(layoutSize: itemSize, subitem: item, count: 1)
-        let section = NSCollectionLayoutSection(group: group)
-        section.interGroupSpacing = spacing
-        section.contentInsets = contentInsets.directionalEdgeInsets
-        return section
-    }
-}
-
-private extension ListSectionGridLayout {
-    @MainActor func makeCompositionalSection(
-        itemSupplementaries: [NSCollectionLayoutSupplementaryItem]
-    ) -> NSCollectionLayoutSection {
-        let safeColumns = max(columns, 1)
-        let itemSize = NSCollectionLayoutSize(
-            widthDimension: .fractionalWidth(1),
-            heightDimension: .fractionalHeight(1)
-        )
-        let item = NSCollectionLayoutItem(layoutSize: itemSize, supplementaryItems: itemSupplementaries)
-        let groupSize = NSCollectionLayoutSize(
-            widthDimension: .fractionalWidth(1),
-            heightDimension: itemHeight.makeDimension()
-        )
-        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitem: item, count: safeColumns)
-        group.interItemSpacing = .fixed(spacing)
-
-        let section = NSCollectionLayoutSection(group: group)
-        section.interGroupSpacing = spacing
-        section.contentInsets = contentInsets.directionalEdgeInsets
-        return section
-    }
-}
-
-private extension ListSectionHorizontalLayout {
-    @MainActor func makeCompositionalSection(
-        itemSupplementaries: [NSCollectionLayoutSupplementaryItem]
-    ) -> NSCollectionLayoutSection {
-        let itemSize = NSCollectionLayoutSize(
-            widthDimension: itemWidth.makeDimension(),
-            heightDimension: .fractionalHeight(1)
-        )
-        let item = NSCollectionLayoutItem(layoutSize: itemSize, supplementaryItems: itemSupplementaries)
-        let groupSize = NSCollectionLayoutSize(
-            widthDimension: .fractionalWidth(1),
-            heightDimension: itemHeight.makeDimension()
-        )
-        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
-        group.interItemSpacing = .fixed(spacing)
-
-        let section = NSCollectionLayoutSection(group: group)
-        section.orthogonalScrollingBehavior = scrollingBehavior.uiKitValue
-        section.interGroupSpacing = spacing
-        section.contentInsets = contentInsets.directionalEdgeInsets
-        return section
-    }
-}
-
-/// supplementary 相对 section 或 item 的锚点。
-public enum ListSupplementaryAnchor: Hashable, Sendable {
-    /// 左上角。
+/// 附属视图相对于所属条目的锚点。
+/// leading / trailing 使用 UIKit 的方向性语义，不表示固定左侧或右侧；top / bottom 不随滚动轴互换。
+public enum ListItemSupplementaryAnchor: Hashable, Sendable {
+    /// 顶部与 leading 边缘的交点。
     case topLeading
     /// 顶部居中。
     case top
-    /// 右上角。
+    /// 顶部与 trailing 边缘的交点。
     case topTrailing
-    /// 左侧居中。
+    /// leading 边缘居中。
     case leading
-    /// 中心。
+    /// item 使用无边缘的中心锚点。
     case center
-    /// 右侧居中。
+    /// trailing 边缘居中。
     case trailing
-    /// 左下角。
+    /// 底部与 leading 边缘的交点。
     case bottomLeading
     /// 底部居中。
     case bottom
-    /// 右下角。
+    /// 底部与 trailing 边缘的交点。
     case bottomTrailing
-
-    var boundaryAlignment: NSRectAlignment {
-        switch self {
-        case .topLeading:
-            return .topLeading
-        case .top:
-            return .top
-        case .topTrailing:
-            return .topTrailing
-        case .leading:
-            return .leading
-        case .center:
-            return .none
-        case .trailing:
-            return .trailing
-        case .bottomLeading:
-            return .bottomLeading
-        case .bottom:
-            return .bottom
-        case .bottomTrailing:
-            return .bottomTrailing
-        }
-    }
 
     var directionalEdges: NSDirectionalRectEdge {
         switch self {
@@ -893,236 +393,35 @@ public enum ListSupplementaryAnchor: Hashable, Sendable {
     }
 }
 
-/// supplementary 是 section boundary 还是 item-level。
-public enum ListSupplementaryPlacement: Hashable, Sendable {
-    /// section boundary supplementary。
-    case boundary(
-        alignment: ListSupplementaryAnchor,
-        extendsBoundary: Bool,
-        pinToVisibleBounds: Bool,
-        offset: ListLayoutPoint
-    )
-    /// item-level supplementary。
-    case itemSupplementary(anchor: ListSupplementaryAnchor, fractionalOffset: ListLayoutPoint)
-
-    /// 是否为 item-level supplementary。
-    public var isItem: Bool {
-        if case .itemSupplementary = self { return true }
-        return false
-    }
-
-    var placementKind: ListSupplementaryPlacementKind {
-        switch self {
-        case .boundary:
-            return .boundary
-        case .itemSupplementary:
-            return .item
-        }
-    }
-}
-
-enum ListSupplementaryPlacementKind: Hashable, Sendable {
-    case boundary
-    case item
-}
-
-/// supplementary 的 compositional layout 描述。
-public struct ListSupplementaryLayout: Hashable, Sendable {
-    /// supplementary kind。
-    public var kind: String
-    /// supplementary 放置方式。
-    public var placement: ListSupplementaryPlacement
-    /// supplementary 宽度。
-    public var width: ListLayoutDimension
-    /// supplementary 高度。
-    public var height: ListLayoutDimension
-    /// supplementary zIndex。
-    public var zIndex: Int
-
-    /// 创建 supplementary layout 描述。
+/// Section 边界位置，直接映射 UIKit alignment；不随内容轴转置。
+/// none 保留 UIKit 的无边界对齐语义，不承诺居中。item 居中使用 ListItemSupplementaryAnchor.center。
+public enum ListBoundaryAlignment: Hashable, Sendable {
+    /// 边界视图在容器中的对齐位置。
     ///
-    /// - Parameters:
-    ///   - kind: supplementary element kind。
-    ///   - placement: boundary 或 item-level placement。
-    ///   - width: supplementary 宽度。
-    ///   - height: supplementary 高度。
-    ///   - zIndex: supplementary 层级。
-    /// - Note: 调用方通常优先使用 `BoundarySupplementaryLayout` 或 `ItemSupplementaryLayout`。
-    public init(
-        kind: String,
-        placement: ListSupplementaryPlacement,
-        width: ListLayoutDimension = .fractionalWidth(1),
-        height: ListLayoutDimension = .estimated(44),
-        zIndex: Int = 0
-    ) {
-        self.kind = kind
-        self.placement = placement
-        self.width = width
-        self.height = height
-        self.zIndex = zIndex
-    }
-
-    @MainActor var layoutSize: NSCollectionLayoutSize {
-        NSCollectionLayoutSize(widthDimension: width.makeDimension(), heightDimension: height.makeDimension())
-    }
-
-    @MainActor func makeBoundarySupplementaryItem() -> NSCollectionLayoutBoundarySupplementaryItem? {
-        guard case let .boundary(alignment, extendsBoundary, pinToVisibleBounds, offset) = placement else {
-            return nil
-        }
-
-        let item = NSCollectionLayoutBoundarySupplementaryItem(
-            layoutSize: layoutSize,
-            elementKind: kind,
-            alignment: alignment.boundaryAlignment,
-            absoluteOffset: offset.cgPoint
-        )
-        item.extendsBoundary = extendsBoundary
-        item.pinToVisibleBounds = pinToVisibleBounds
-        item.zIndex = zIndex
-        return item
-    }
-
-    @MainActor func makeItemSupplementaryItem() -> NSCollectionLayoutSupplementaryItem? {
-        guard case let .itemSupplementary(anchor, fractionalOffset) = placement else {
-            return nil
-        }
-
-        let layoutAnchor = NSCollectionLayoutAnchor(
-            edges: anchor.directionalEdges,
-            fractionalOffset: fractionalOffset.cgPoint
-        )
-        let item = NSCollectionLayoutSupplementaryItem(
-            layoutSize: layoutSize,
-            elementKind: kind,
-            containerAnchor: layoutAnchor
-        )
-        item.zIndex = zIndex
-        return item
-    }
-
-    var boundaryReservedContentInsets: ListLayoutInsets {
-        guard width.isFullWidth, let inset = height.estimatedContentInsetValue else {
-            return .zero
-        }
-
-        switch placement {
-        case .boundary(let alignment, let extendsBoundary, _, _):
-            // UIKit 已为扩展边界的补充视图占位，只保留调用方显式声明的 section inset。
-            guard !extendsBoundary else { return .zero }
-            switch alignment {
-            case .top:
-                return ListLayoutInsets(top: inset)
-            case .bottom:
-                return ListLayoutInsets(bottom: inset)
-            default:
-                return .zero
-            }
-        case .itemSupplementary:
-            return .zero
+    /// `top` 和 `bottom` 表示上下边缘，`leading` 和 `trailing` 表示逻辑起始侧与结束侧；组合值表示角点。
+    /// `none` 不指定对齐边缘。
+    case topLeading, top, topTrailing, leading, none, trailing, bottomLeading, bottom, bottomTrailing
+    var boundaryAlignment: NSRectAlignment {
+        switch self {
+        case .topLeading:
+            return .topLeading
+        case .top:
+            return .top
+        case .topTrailing:
+            return .topTrailing
+        case .leading:
+            return .leading
+        case .none:
+            return .none
+        case .trailing:
+            return .trailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottom:
+            return .bottom
+        case .bottomTrailing:
+            return .bottomTrailing
         }
     }
 
-    func pinningBoundaryToVisibleBounds(_ isPinned: Bool = true) -> ListSupplementaryLayout {
-        guard case let .boundary(alignment, extendsBoundary, _, offset) = placement else {
-            return self
-        }
-
-        var copy = self
-        copy.placement = .boundary(
-            alignment: alignment,
-            extendsBoundary: extendsBoundary,
-            pinToVisibleBounds: isPinned,
-            offset: offset
-        )
-        return copy
-    }
-}
-
-/// 创建 supplementary layout 描述。
-///
-/// - Parameters:
-///   - kind: supplementary element kind。
-///   - placement: boundary 或 item-level placement。
-///   - width: supplementary 宽度。
-///   - height: supplementary 高度。
-///   - zIndex: supplementary 层级。
-/// - Returns: supplementary layout 描述。
-public func SupplementaryLayout(
-    kind: String,
-    placement: ListSupplementaryPlacement,
-    width: ListLayoutDimension = .fractionalWidth(1),
-    height: ListLayoutDimension = .estimated(44),
-    zIndex: Int = 0
-) -> ListSupplementaryLayout {
-    ListSupplementaryLayout(
-        kind: kind,
-        placement: placement,
-        width: width,
-        height: height,
-        zIndex: zIndex
-    )
-}
-
-/// 创建 section boundary supplementary layout。
-///
-/// - Parameters:
-///   - kind: supplementary element kind。
-///   - alignment: boundary 对齐方式。
-///   - width: supplementary 宽度。
-///   - height: supplementary 高度。
-///   - extendsBoundary: 是否延伸到 section 边界外。
-///   - pinned: 是否随滚动吸顶或吸底。
-///   - offset: boundary 偏移。
-///   - zIndex: supplementary 层级。
-/// - Returns: boundary supplementary layout 描述。
-public func BoundarySupplementaryLayout(
-    kind: String,
-    alignment: ListSupplementaryAnchor = .top,
-    width: ListLayoutDimension = .fractionalWidth(1),
-    height: ListLayoutDimension = .estimated(44),
-    extendsBoundary: Bool = false,
-    pinned: Bool = false,
-    offset: CGPoint = .zero,
-    zIndex: Int = 0
-) -> ListSupplementaryLayout {
-    SupplementaryLayout(
-        kind: kind,
-        placement: .boundary(
-            alignment: alignment,
-            extendsBoundary: extendsBoundary,
-            pinToVisibleBounds: pinned,
-            offset: ListLayoutPoint(offset)
-        ),
-        width: width,
-        height: height,
-        zIndex: zIndex
-    )
-}
-
-/// 创建 item-level supplementary layout。
-///
-/// - Parameters:
-///   - kind: supplementary element kind。
-///   - anchor: item 上的锚点。
-///   - width: supplementary 宽度。
-///   - height: supplementary 高度。
-///   - fractionalOffset: 相对 item 的偏移。
-///   - zIndex: supplementary 层级。
-/// - Returns: item-level supplementary layout 描述。
-public func ItemSupplementaryLayout(
-    kind: String,
-    anchor: ListSupplementaryAnchor,
-    width: ListLayoutDimension,
-    height: ListLayoutDimension,
-    fractionalOffset: CGPoint = .zero,
-    zIndex: Int = 0
-) -> ListSupplementaryLayout {
-    SupplementaryLayout(
-        kind: kind,
-        placement: .itemSupplementary(anchor: anchor, fractionalOffset: ListLayoutPoint(fractionalOffset)),
-        width: width,
-        height: height,
-        zIndex: zIndex
-    )
 }

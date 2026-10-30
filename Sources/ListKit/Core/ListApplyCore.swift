@@ -34,6 +34,7 @@ final class ListAsyncMutationBridge<Result: Sendable>: @unchecked Sendable {
         return true
     }
 
+    /// 记录取消状态，并在锁外通知已注册的取消处理器；已完成请求不再处理。
     func cancel() {
         lock.lock()
         guard !isFinished else {
@@ -46,6 +47,7 @@ final class ListAsyncMutationBridge<Result: Sendable>: @unchecked Sendable {
         cancellation?()
     }
 
+    /// 仅恢复一次等待中的延续，并释放取消处理器；恢复操作在锁外执行。
     func resume(returning result: Result) {
         lock.lock()
         guard !isFinished else {
@@ -61,11 +63,13 @@ final class ListAsyncMutationBridge<Result: Sendable>: @unchecked Sendable {
     }
 }
 
+/// 区分普通条目与附属视图，以选择对应的刷新规则。
 enum ListNodeRole: Hashable, Sendable {
     case row
     case supplementary
 }
 
+/// 更新计划中统一保存的条目或附属视图刷新规则。
 enum ListNodeRefreshRule: Equatable, Sendable {
     case row(ListRowRefreshRule)
     case supplementary(ListSupplementaryRefreshRule)
@@ -115,7 +119,7 @@ struct ListApplyPlan {
     let snapshotLayoutInvalidationItems: [AnyListIdentity]
     /// 使用 `reloadItems` 进入完整 configuration 路径的 identity。
     let snapshotReloadItems: [AnyListIdentity]
-    /// 因 supplementary `.reloadSection` 进入完整 reload 路径的 Section。
+    /// 因 supplementary 身份替换或 `.reloadSection` 进入完整 reload 路径的 Section。
     let snapshotReloadSections: [AnyListID]
     /// snapshot 提交后是否还需检查当前可见 Row 的 policy。
     let shouldRunVisibleRefresh: Bool
@@ -692,13 +696,15 @@ extension ListRefreshTrigger {
     }
 }
 
+/// 根据不可变描述快照规划差异更新和刷新动作，不直接操作 UIKit 视图。
 enum ListApplyPlanner {
     /// 根据新旧描述树生成结构 diff、刷新分组和初始 summary。
     static func makePlan(
         old oldSections: [ListSectionSnapshot],
         new newSections: [ListSectionSnapshot],
         options: ListApplyOptions,
-        diagnosticsIssues: [ListDiagnosticsIssue]
+        diagnosticsIssues: [ListDiagnosticsIssue],
+        supplementaryReplacementSections: [AnyListID] = []
     ) -> ListApplyPlan {
         let oldRows = oldSections.flatMap(\.rows)
         let newRows = newSections.flatMap(\.rows)
@@ -720,7 +726,8 @@ enum ListApplyPlanner {
                 oldRowsByIdentity: oldRowsByIdentity,
                 newRows: newRows,
                 oldSupplementariesByIdentity: oldSupplementariesByIdentity,
-                newSupplementaries: newSupplementaries
+                newSupplementaries: newSupplementaries,
+                supplementaryReplacementSections: supplementaryReplacementSections
             )
             : ListSnapshotRefreshPlan()
         let reloadedSectionIDs = Set(snapshotRefresh.reloadSections)
@@ -810,10 +817,15 @@ enum ListApplyPlanner {
         oldRowsByIdentity: [AnyListIdentity: ListNodeSnapshot],
         newRows: [ListNodeSnapshot],
         oldSupplementariesByIdentity: [AnyListIdentity: ListNodeSnapshot],
-        newSupplementaries: [ListNodeSnapshot]
+        newSupplementaries: [ListNodeSnapshot],
+        supplementaryReplacementSections: [AnyListID]
     ) -> ListSnapshotRefreshPlan {
+        // 身份替换属于结构变化，不受 refreshID 或 never 刷新策略影响。
+        // 先确定分区重载，再解析条目动作，避免同一分区同时参与分区重载与条目刷新。
         var reloadedSectionIDs: Set<AnyListID> = []
-        var orderedReloadSectionIDs: [AnyListID] = []
+        var orderedReloadSectionIDs = supplementaryReplacementSections.filter {
+            reloadedSectionIDs.insert($0).inserted
+        }
         for supplementary in newSupplementaries {
             guard let oldSupplementary = oldSupplementariesByIdentity[supplementary.identity],
                   case .supplementary(let rule) = supplementary.refreshRule,
@@ -1174,7 +1186,7 @@ final class ListEventRouter<Context> {
         }
     }
 
-    /// 按事件的动态类型分发，并携带触发位置的最新列表上下文。
+    /// 按事件的动态类型分发，原样传递调用方提供的上下文。
     func dispatch(_ event: any ListEvent, context: Context) {
         handlers[ObjectIdentifier(type(of: event))]?(event, context)
     }

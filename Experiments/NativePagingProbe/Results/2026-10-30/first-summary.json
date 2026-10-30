@@ -1,0 +1,92 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "9CC16D4E-D6ED-4441-819D-53F30F278283",
+        "deviceName" : "iPhone 17 Pro Max",
+        "modelName" : "iPhone 17 Pro Max",
+        "osBuildNumber" : "23F77",
+        "osVersion" : "26.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 6,
+      "passedTests" : 1,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "Examples · Built with macOS 27.2",
+  "expectedFailures" : 0,
+  "failedTests" : 6,
+  "finishTime" : 1793324688.785,
+  "passedTests" : 1,
+  "result" : "Failed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1793324457.217,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"148.0\") is not equal to (\"0.0\") +/- (\"1.0\") - baseline-horizontal-nested: native first page must align with measured group",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 1,
+      "testIdentifierString" : "NativePagingProbeUITests/testEstimatedBaseline()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/NativePagingProbeUITests/testEstimatedBaseline",
+      "testName" : "testEstimatedBaseline()"
+    },
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"148.0\") is not equal to (\"0.0\") +/- (\"1.0\") - full-horizontal-nested: native first page must align with measured group",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 2,
+      "testIdentifierString" : "NativePagingProbeUITests/testEstimatedFullInvalidation()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/NativePagingProbeUITests/testEstimatedFullInvalidation",
+      "testName" : "testEstimatedFullInvalidation()"
+    },
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"148.0\") is not equal to (\"0.0\") +/- (\"1.0\") - invalidate-horizontal-nested: native first page must align with measured group",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 3,
+      "testIdentifierString" : "NativePagingProbeUITests/testEstimatedInvalidate()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/NativePagingProbeUITests/testEstimatedInvalidate",
+      "testName" : "testEstimatedInvalidate()"
+    },
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"148.0\") is not equal to (\"0.0\") +/- (\"1.0\") - rebuild-horizontal-nested: native first page must align with measured group",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 4,
+      "testIdentifierString" : "NativePagingProbeUITests/testEstimatedRebuild()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/NativePagingProbeUITests/testEstimatedRebuild",
+      "testName" : "testEstimatedRebuild()"
+    },
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"60.0\") is not equal to (\"0.0\") +/- (\"1.0\") - baseline-horizontal-single: native first page must align with measured group",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 6,
+      "testIdentifierString" : "NativePagingProbeUITests/testSingleBaseline()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/NativePagingProbeUITests/testSingleBaseline",
+      "testName" : "testSingleBaseline()"
+    },
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"60.0\") is not equal to (\"0.0\") +/- (\"1.0\") - rebuild-horizontal-single: native first page must align with measured group",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 7,
+      "testIdentifierString" : "NativePagingProbeUITests/testSingleRebuild()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/NativePagingProbeUITests/testSingleRebuild",
+      "testName" : "testSingleRebuild()"
+    }
+  ],
+  "title" : "Test - Examples",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 7
+}

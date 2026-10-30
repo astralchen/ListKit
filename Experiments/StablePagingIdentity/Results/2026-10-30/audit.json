@@ -1,0 +1,204 @@
+{
+  "scope": "This experiment edited only the prototype controller, its new UI test, prototype documentation, and experiment evidence. Concurrent changes are preserved, not validated as library changes by this experiment.",
+  "ownedPaths": [
+    "Examples/Examples/StablePagingProbeViewController.swift",
+    "Examples/ExamplesUITests/StablePagingIdentityUITests.swift",
+    "Experiments/StablePagingProbe/README.md",
+    "Experiments/StablePagingIdentity/"
+  ],
+  "preexistingFilesChanged": [
+    {
+      "path": "Examples/Examples/StablePagingProbeViewController.swift",
+      "before": "272c1d543f3e333a191a3270a974021e442615c94f1cf73dc3f6718c4bb1ec4f",
+      "after": "10e599aa9ef615100d9b4f032fe102da839a0504b9275fbb7893ab2fa25f0c34"
+    },
+    {
+      "path": "Examples/ExamplesUITests/LayoutLabUITests.swift",
+      "before": "197ae555e1e8fa1c54151084740803fa4d30846cd072f58f9e9f33a0627a7902",
+      "after": "0bb15495681ae64202a426b2b7001423e454256b90ceb44c496c142ade55dace"
+    },
+    {
+      "path": "Experiments/PostureDemo/PostureDemo.xcodeproj/project.pbxproj",
+      "before": "aa8ba872a2490ccae0a56885a0aeb6c0cd0fdfcf33beded347394dc56a39c0f7",
+      "after": null
+    },
+    {
+      "path": "Experiments/PostureDemo/PostureDemo.xcodeproj/xcshareddata/xcschemes/PostureDemo.xcscheme",
+      "before": "33799665437932ca24a52308de3e8219895c2d94e4911a4ebd5dd07ba3ca0b79",
+      "after": null
+    },
+    {
+      "path": "Experiments/PostureDemo/PostureDemo/AppDelegate.swift",
+      "before": "0858803dea2d22f6baa2e9fc424864677bf66747d9aa22e3494887bfcefca1d1",
+      "after": null
+    },
+    {
+      "path": "Experiments/PostureDemo/PostureDemo/PostureLayout.swift",
+      "before": "10499685c1a8583ceee95636d8bffcf3bac7bf734da5015db5d26787b507873f",
+      "after": null
+    },
+    {
+      "path": "Experiments/PostureDemo/PostureDemo/PostureViewController.swift",
+      "before": "705ad97fc1eb9614dd8fd1b671af36d6a8448f39a813123374a0c7f41aad354d",
+      "after": null
+    },
+    {
+      "path": "Experiments/PostureDemo/PostureDemoTests/PostureLayoutTests.swift",
+      "before": "362077e17684576b6f632ee54cf993e80a1fc93c071a314843a254236313099f",
+      "after": null
+    },
+    {
+      "path": "Experiments/PostureDemo/PostureDemoUITests/PostureDemoUITests.swift",
+      "before": "a56f37e8881df46337fd35d3f4c2aef5da6f3bbe75e631b2bbf556829f64469a",
+      "after": null
+    },
+    {
+      "path": "Experiments/StablePagingProbe/README.md",
+      "before": "792d2dd2dcd499198d200aa5fcc370f2e9a63e6f0cf13bcc0c50940e61ffc933",
+      "after": "260e6f156b91be145a0740cb862c77582892700b5dcd05d45d2feaff8ea49600"
+    },
+    {
+      "path": "Sources/ListKit/Collection/GridLayoutSizing.swift",
+      "before": "31ef8dc3edeaa10e051d4c37c764e3fae8da6dfe23770ca938f4d819fc01fe18",
+      "after": "e9a6927f435965f6fa589e8c7e4f8932fcc9c9df9ed65a054d0c5a60b50a2397"
+    },
+    {
+      "path": "Sources/ListKit/Collection/SectionLayoutComponents.swift",
+      "before": "dad4b3cc3fc131393a08d593d36fa950022868f84a390c4b7c9a9c3f7991e710",
+      "after": "bad49e2e9962f79f03984ecd39c0d9978388de29c636a8483dfa95809ded73e5"
+    },
+    {
+      "path": "Sources/ListKit/Collection/SectionLayoutSource.swift",
+      "before": "3840c572f0df4687b25870656d4edef2e414f76d659c016521baa5eaeb747e40",
+      "after": "6f8dcd4f42bb762906f055780bd29033ca7760415fd9252c61225f530c3c0a42"
+    },
+    {
+      "path": "Examples/ExamplesUITests/ExamplesUITests.swift",
+      "before": "0ffa6fc92ba969aeccab812311ca5db156ca30f60034defd2411bfa620bbee90",
+      "after": "a98f37d0ec22e3403e166b4171e1820f5ee485521d7292698022cd29d5cef4fe"
+    },
+    {
+      "path": "README.md",
+      "before": "96918dffe0e9ab8a39d7d72cbbf2c00d35b96c2a8303e708845e722bbd372a00",
+      "after": "fa81beb402686d8bacaabf7f03ea23a9a9469bd5c350a80f725e794c78ca6d29"
+    },
+    {
+      "path": "Sources/ListKit/Collection/CollectionListAdapter.swift",
+      "before": "1360c5c485368178a6e45673f8750191bf824f6f7e60cdb868c545a1d9e820be",
+      "after": "c524599dba32ee40598dd4b1f8c0764d5b709e53f96d5c0501fea80e976fa124"
+    },
+    {
+      "path": "Sources/ListKit/Collection/CollectionSectionIndexView.swift",
+      "before": "7b8fce73e69fa437a854bcb05422a1be9aae83078d9180fc3457bdf7343aa717",
+      "after": "557f343b939189c09330bfa5dc84b9c20ebf4ab0724de66ff666adbed06b0550"
+    },
+    {
+      "path": "Sources/ListKit/Collection/UICollectionViewCompositionalSeparatorLayout.swift",
+      "before": "737cb8c63afd9703bf0b5b056076653fee2f948ff27473a7d63a6a1abcd708f7",
+      "after": "5d7d0ae7bc9d15650d54d84e860c2bbe24c23768b72347b917d25d4df1d63c84"
+    },
+    {
+      "path": "Sources/ListKit/Core/ApplyOptions.swift",
+      "before": "491c2d5c6aa462224fb5a9d1a90449c1a045a2c43b1d38208f60d188185b199c",
+      "after": "aca98c7243605d8ff68778566927ab29dd2f290fe4f62da4c52c8ac17d551133"
+    },
+    {
+      "path": "Sources/ListKit/Core/Diagnostics.swift",
+      "before": "1a0d07fe4cd708241d98b99aa17283328bb03b64762d5041f74f8efcb20eb4eb",
+      "after": "72171833e8b6bdfbfe45711db2d5c873a13d815381a132087a2aebdf6cb371b9"
+    },
+    {
+      "path": "Sources/ListKit/Core/Events.swift",
+      "before": "a12db57815d94bf82eb2e8438c75cf7d41f27c5e02abf8e109c60d22f93b64e4",
+      "after": "9e922f9e8c37786b8802f6449d73c58acdfa1af8978a787169e7aeb508950d8b"
+    },
+    {
+      "path": "Sources/ListKit/Core/Identity.swift",
+      "before": "d2ef1772bdd5e1ad73339dcbfd3759ef88f1773915632dac5f8dbef4606dcf4e",
+      "after": "68c725bdbcb35e7f5ad892a20d8a950fb02c12f9e56e531fd977256c07f3866e"
+    },
+    {
+      "path": "Sources/ListKit/Core/ListApplyCore.swift",
+      "before": "5f2c459b73237cfbfb0ba5d7f920c14618b6a871f6b13a410cb1c99eafa3d874",
+      "after": "a4b4e2cb3e03a98712d0dc37907d123199bb8264c94ee57cef3967571a37206e"
+    },
+    {
+      "path": "Sources/ListKit/DSL/Row.swift",
+      "before": "67fa0399dfd45de762c64444fb27d6c8831500015017c649c99627e8a86683f6",
+      "after": "87f6ed2500677fd250d144c8fc035390af12f83a53ae34b79b88486ccd7c897d"
+    },
+    {
+      "path": "Sources/ListKit/DSL/Supplementary.swift",
+      "before": "9d29b5e58395083b5ee4f1c5a90be95cccfa7a1be020ceefea1083e0391cc28c",
+      "after": "013403b5a5c10cbaac6d99a1be3aa205b5b268c6d8bd7f225c83a75e155c692e"
+    },
+    {
+      "path": "Sources/ListKit/Reusable/CollectionReusable.swift",
+      "before": "d7225415dcb86d03858f550a4c8bb9914efd72476a54e196074d519f14d1a53f",
+      "after": "4d71ac10cc5bd70f80d1687137de9f70c04a93f3ff3bc3e59ffa394f053a8734"
+    },
+    {
+      "path": "Sources/ListKit/Reusable/TableReusable.swift",
+      "before": "7702fa321178269008b660a6e788ce6232a89cc6df2e60e36643f68cf6739e23",
+      "after": "4aa9984be464619917b0c1dcbd15ef72306cc9ad0dfa89581412388d8d7f86f0"
+    },
+    {
+      "path": "Sources/ListKit/Table/TableDSL.swift",
+      "before": "3d467d666763c63b785d5bc6ea9f0aa7fa40941e21c8265573c47a9b1f3d9952",
+      "after": "377f0a90ec0aebbeb0229172284a0ca5c547f27280e64d2760e4137b14ca89b3"
+    },
+    {
+      "path": "Sources/ListKit/Table/TableListAdapter.swift",
+      "before": "b46824ac22efa1de094d43161379a04c57f19259467c064fe275af5abbb53a30",
+      "after": "0d32e5f28e74def3a10d0287be1c984b8f08079bb9a5bac367bd247f7d79c6f6"
+    },
+    {
+      "path": "Tests/ListKitTests/CollectionContextMenuTests.swift",
+      "before": "7e40dcfeb81d6dbd7e92fd9a0e48d9cb80ff8715adda8c888a5b5c2eb5102433",
+      "after": "b8b61709a52f24602bee625cf3a86c74360e0100e912e3a1d2d38eae03b8f3f4"
+    }
+  ],
+  "concurrentChangesPreserved": [
+    "Examples/ExamplesUITests/LayoutLabUITests.swift",
+    "Experiments/PostureDemo/PostureDemo.xcodeproj/project.pbxproj",
+    "Experiments/PostureDemo/PostureDemo.xcodeproj/xcshareddata/xcschemes/PostureDemo.xcscheme",
+    "Experiments/PostureDemo/PostureDemo/AppDelegate.swift",
+    "Experiments/PostureDemo/PostureDemo/PostureLayout.swift",
+    "Experiments/PostureDemo/PostureDemo/PostureViewController.swift",
+    "Experiments/PostureDemo/PostureDemoTests/PostureLayoutTests.swift",
+    "Experiments/PostureDemo/PostureDemoUITests/PostureDemoUITests.swift",
+    "Sources/ListKit/Collection/GridLayoutSizing.swift",
+    "Sources/ListKit/Collection/SectionLayoutComponents.swift",
+    "Sources/ListKit/Collection/SectionLayoutSource.swift",
+    "Examples/ExamplesUITests/ExamplesUITests.swift",
+    "README.md",
+    "Sources/ListKit/Collection/CollectionListAdapter.swift",
+    "Sources/ListKit/Collection/CollectionSectionIndexView.swift",
+    "Sources/ListKit/Collection/UICollectionViewCompositionalSeparatorLayout.swift",
+    "Sources/ListKit/Core/ApplyOptions.swift",
+    "Sources/ListKit/Core/Diagnostics.swift",
+    "Sources/ListKit/Core/Events.swift",
+    "Sources/ListKit/Core/Identity.swift",
+    "Sources/ListKit/Core/ListApplyCore.swift",
+    "Sources/ListKit/DSL/Row.swift",
+    "Sources/ListKit/DSL/Supplementary.swift",
+    "Sources/ListKit/Reusable/CollectionReusable.swift",
+    "Sources/ListKit/Reusable/TableReusable.swift",
+    "Sources/ListKit/Table/TableDSL.swift",
+    "Sources/ListKit/Table/TableListAdapter.swift",
+    "Tests/ListKitTests/CollectionContextMenuTests.swift"
+  ],
+  "currentSourceSHA256": {
+    "Examples/Examples/StablePagingProbeViewController.swift": "10e599aa9ef615100d9b4f032fe102da839a0504b9275fbb7893ab2fa25f0c34",
+    "Examples/ExamplesUITests/StablePagingIdentityUITests.swift": "7745edafba19f03a889285da388837e23c72444ef6a14e956830f4b84f5d1967",
+    "Experiments/StablePagingProbe/README.md": "260e6f156b91be145a0740cb862c77582892700b5dcd05d45d2feaff8ea49600"
+  },
+  "runtimeSourceMatches": {
+    "finalController": true,
+    "verifiedController": true,
+    "verifiedTests": true,
+    "regressionTests": true
+  },
+  "stagedPathsObserved": [],
+  "gitDiffCheck": ""
+}

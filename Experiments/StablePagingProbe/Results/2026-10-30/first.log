@@ -1,0 +1,225 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -workspace ListKit.xcworkspace -scheme Examples -destination "platform=iOS Simulator,id=9CC16D4E-D6ED-4441-819D-53F30F278283" -derivedDataPath /tmp/listkit-native-paging-build -resultBundlePath /tmp/listkit-stable-paging-20261030/first.xcresult "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG NATIVE_PAGING_PROBE" "-only-testing:ExamplesUITests/StablePagingProbeUITests"
+
+Build settings from command line:
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG NATIVE_PAGING_PROBE
+
+2026-10-30 09:56:07.698 xcodebuild[12013:74911] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+Resolve Package Graph
+2026-10-30 09:56:07.802 xcodebuild[12013:74911] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 09:56:07.907 xcodebuild[12013:74911] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+
+
+Resolved source packages:
+  ListKit: /Users/sondra/Documents/GitHub/ListKit
+
+Writing result bundle at path:
+	/tmp/listkit-stable-paging-20261030/first.xcresult
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (5 targets)
+    Target 'ExamplesUITests' in project 'Examples'
+        ➜ Explicit dependency on target 'Examples' in project 'Examples'
+    Target 'ExamplesTests' in project 'Examples'
+        ➜ Explicit dependency on target 'Examples' in project 'Examples'
+    Target 'Examples' in project 'Examples'
+        ➜ Explicit dependency on target 'ListKit-product' in project 'ListKit'
+    Target 'ListKit-product' in project 'ListKit'
+        ➜ Explicit dependency on target 'ListKit' in project 'ListKit'
+    Target 'ListKit' in project 'ListKit' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/ibtool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --print-asset-tag-combinations --output-format xml1 /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/Assets.xcassets
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+ReadFileContents /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/share/docc/features.json
+
+Build description signature: 02bec1782cd9ab8ad10269814387fdb9
+Build description path: /tmp/listkit-native-paging-build/Build/Intermediates.noindex/XCBuildData/02bec1782cd9ab8ad10269814387fdb9.xcbuilddata
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache
+    cd /Users/sondra/Documents/GitHub/ListKit
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -o /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache
+
+WriteAuxiliaryFile /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftFileList (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    write-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftFileList
+
+WriteAuxiliaryFile /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftConstValuesFileList (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    write-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.LinkFileList (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    write-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.LinkFileList
+
+WriteAuxiliaryFile /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-OutputFileMap.json (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    write-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-OutputFileMap.json
+
+SwiftDriver Examples normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Examples -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -emit-localized-strings -emit-localized-strings-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64 -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ Examples (in target 'Examples' from project 'Examples')
+
+SwiftCompile normal arm64 (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+
+SwiftCompile normal arm64 Compiling\ SceneDelegate.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/SceneDelegate.swift (in target 'Examples' from project 'Examples')
+
+SwiftCompile normal arm64 /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/SceneDelegate.swift (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftPerFileCompile SceneDelegate.swift
+
+SwiftCompile normal arm64 Compiling\ StablePagingProbeViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift (in target 'Examples' from project 'Examples')
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift:215:17: error: overriding property must be as accessible as its enclosing type
+213 |     private let tile = UILabel()
+214 |     private let captionLabel = UILabel()
+215 |     private var constraints: [NSLayoutConstraint] = []
+    |                 `- error: overriding property must be as accessible as its enclosing type
+216 |     private var vertical = false
+217 |     var onFit: ((CGSize) -> Void)?
+
+/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIView.h:447:71: note: overridden declaration is here
+445 | @interface UIView (UIConstraintBasedLayoutInstallingConstraints)
+446 | 
+447 | @property(nonatomic,readonly) NSArray<__kindof NSLayoutConstraint *> *constraints API_AVAILABLE(ios(6.0));
+    |                                                                       `- note: overridden declaration is here
+448 | 
+449 | - (void)addConstraint:(NSLayoutConstraint *)constraint API_AVAILABLE(ios(6.0)); // This method will be deprecated in a future release and should be avoided.  Instead, set NSLayoutConstraint's active property to YES.
+
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift:215:17: error: cannot override with a stored property 'constraints'
+213 |     private let tile = UILabel()
+214 |     private let captionLabel = UILabel()
+215 |     private var constraints: [NSLayoutConstraint] = []
+    |                 `- error: cannot override with a stored property 'constraints'
+216 |     private var vertical = false
+217 |     var onFit: ((CGSize) -> Void)?
+
+/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIView.h:447:71: note: attempt to override property here
+445 | @interface UIView (UIConstraintBasedLayoutInstallingConstraints)
+446 | 
+447 | @property(nonatomic,readonly) NSArray<__kindof NSLayoutConstraint *> *constraints API_AVAILABLE(ios(6.0));
+    |                                                                       `- note: attempt to override property here
+448 | 
+449 | - (void)addConstraint:(NSLayoutConstraint *)constraint API_AVAILABLE(ios(6.0)); // This method will be deprecated in a future release and should be avoided.  Instead, set NSLayoutConstraint's active property to YES.
+
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift:215:17: error: cannot override with a stored property 'constraints'
+213 |     private let tile = UILabel()
+214 |     private let captionLabel = UILabel()
+215 |     private var constraints: [NSLayoutConstraint] = []
+    |                 `- error: cannot override with a stored property 'constraints'
+216 |     private var vertical = false
+217 |     var onFit: ((CGSize) -> Void)?
+
+/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIView.h:447:71: note: attempt to override property here
+445 | @interface UIView (UIConstraintBasedLayoutInstallingConstraints)
+446 | 
+447 | @property(nonatomic,readonly) NSArray<__kindof NSLayoutConstraint *> *constraints API_AVAILABLE(ios(6.0));
+    |                                                                       `- note: attempt to override property here
+448 | 
+449 | - (void)addConstraint:(NSLayoutConstraint *)constraint API_AVAILABLE(ios(6.0)); // This method will be deprecated in a future release and should be avoided.  Instead, set NSLayoutConstraint's active property to YES.
+
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift:235:39: error: ambiguous use of 'constraints'
+213 |     private let tile = UILabel()
+214 |     private let captionLabel = UILabel()
+215 |     private var constraints: [NSLayoutConstraint] = []
+    |                 `- note: found this candidate 
+216 |     private var vertical = false
+217 |     var onFit: ((CGSize) -> Void)?
+    :
+233 |         captionLabel.text = "\(Int(caption))"
+234 |         contentView.backgroundColor = [.systemBlue, .systemOrange, .systemPurple][(item / 6) % 3]
+235 |         NSLayoutConstraint.deactivate(constraints)
+    |                                       `- error: ambiguous use of 'constraints'
+236 |         if vertical {
+237 |             constraints = [tile.topAnchor.constraint(equalTo: contentView.topAnchor),
+
+/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIView.h:447:71: note: found this candidate in module 'UIKit'
+445 | @interface UIView (UIConstraintBasedLayoutInstallingConstraints)
+446 | 
+447 | @property(nonatomic,readonly) NSArray<__kindof NSLayoutConstraint *> *constraints API_AVAILABLE(ios(6.0));
+    |                                                                       `- note: found this candidate in module 'UIKit'
+448 | 
+449 | - (void)addConstraint:(NSLayoutConstraint *)constraint API_AVAILABLE(ios(6.0)); // This method will be deprecated in a future release and should be avoided.  Instead, set NSLayoutConstraint's active property to YES.
+
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift:257:37: error: ambiguous use of 'constraints'
+213 |     private let tile = UILabel()
+214 |     private let captionLabel = UILabel()
+215 |     private var constraints: [NSLayoutConstraint] = []
+    |                 `- note: found this candidate 
+216 |     private var vertical = false
+217 |     var onFit: ((CGSize) -> Void)?
+    :
+255 |                 captionLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)]
+256 |         }
+257 |         NSLayoutConstraint.activate(constraints)
+    |                                     `- error: ambiguous use of 'constraints'
+258 |     }
+259 |     func measure(cross: CGFloat) -> CGSize {
+
+/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIView.h:447:71: note: found this candidate in module 'UIKit'
+445 | @interface UIView (UIConstraintBasedLayoutInstallingConstraints)
+446 | 
+447 | @property(nonatomic,readonly) NSArray<__kindof NSLayoutConstraint *> *constraints API_AVAILABLE(ios(6.0));
+    |                                                                       `- note: found this candidate in module 'UIKit'
+448 | 
+449 | - (void)addConstraint:(NSLayoutConstraint *)constraint API_AVAILABLE(ios(6.0)); // This method will be deprecated in a future release and should be avoided.  Instead, set NSLayoutConstraint's active property to YES.
+Failed frontend command:
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -c /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/AdminTableDemoViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/AppDelegate.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/ContextMenuDemoViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LayoutLabConfiguration.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LayoutLabParametersViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LayoutLabReusableViews.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LayoutLabViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LiveRoomCollectionDesignScreens.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LiveRoomDemoViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LiveRoomDesignScreenViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LiveRoomModels.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LiveRoomViewModel.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/LiveRoomViews.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/NativePagingProbeViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/SceneDelegate.swift -primary-file /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources/GeneratedAssetSymbols.swift -emit-dependencies-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/StablePagingProbeViewController.d -emit-const-values-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/StablePagingProbeViewController.swiftconstvalues -emit-reference-dependencies-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/StablePagingProbeViewController.swiftdeps -serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/StablePagingProbeViewController.dia -emit-localized-strings -emit-localized-strings-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64 -target arm64-apple-ios15.0-simulator -module-can-import-version DeveloperToolsSupport 24.0.24 24.0.24 -module-can-import-version SwiftUI 8.0.85.29 8.0.85 -module-can-import-version UIKit 9127.0.85.32 9127.0.85 -disable-cross-import-overlay-search -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libFoundationMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#FoundationMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libObservationMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#ObservationMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libPreviewsMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#PreviewsMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libSwiftMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#SwiftMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#SwiftUIMacros -disable-implicit-swift-modules -Xcc -fno-implicit-modules -Xcc -fno-implicit-module-maps -explicit-swift-module-map-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-dependencies-1.json -Xllvm -aarch64-use-tbi -enable-objc-interop -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -no-color-diagnostics -Xcc -fno-color-diagnostics -enable-testing -g -debug-info-format\=dwarf -dwarf-version\=4 -profile-generate -profile-coverage-mapping -swift-version 6 -Onone -D DEBUG -D NATIVE_PAGING_PROBE -serialize-debugging-options -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -empty-abi-descriptor -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -working-directory -Xcc /Users/sondra/Documents/GitHub/ListKit/Examples -enable-anonymous-context-mangled-names -file-compilation-dir /Users/sondra/Documents/GitHub/ListKit/Examples -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources -Xcc -DDEBUG\=1 -no-auto-bridging-header-chaining -module-name Examples -const-gather-protocols-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples_const_extract_protocols.json -disable-clang-spi -clang-target arm64-apple-ios27.1-simulator -target-sdk-version 27.1 -target-sdk-name iphonesimulator27.1 -in-process-plugin-server-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftInProcPluginServer.dylib -o /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/StablePagingProbeViewController.o -debug-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftmodule -index-unit-output-path /Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/StablePagingProbeViewController.o -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -index-system-modules
+
+SwiftCompile normal arm64 /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftPerFileCompile StablePagingProbeViewController.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling SceneDelegate.swift (in target 'Examples' from project 'Examples')
+
+PruneExplicitPrecompiledModules /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules
+
+
+Test session results, code coverage, and logs:
+	/tmp/listkit-stable-paging-20261030/first.xcresult
+
+Testing failed:
+	Overriding property must be as accessible as its enclosing type
+	Cannot override with a stored property 'constraints'
+	Ambiguous use of 'constraints'
+	Ambiguous use of 'constraints'
+	Testing cancelled because the build failed.
+
+** TEST FAILED **
+
+
+The following build commands failed:
+	SwiftCompile normal arm64 Compiling\ StablePagingProbeViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift (in target 'Examples' from project 'Examples')
+	SwiftCompile normal arm64 /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift (in target 'Examples' from project 'Examples')
+	Testing workspace ListKit with scheme Examples
+(3 failures)

@@ -1,6 +1,6 @@
-import XCTest
-import UIKit
 import ListKit
+import UIKit
+import XCTest
 
 /// 只使用公开模块接口编译，防止公共 DSL 或只读描述树能力意外退回 internal。
 @MainActor
@@ -8,7 +8,7 @@ final class ListKitPublicAPITests: XCTestCase {
     func testExtendingBoundariesKeepOnlyExplicitSectionInsets() {
         for height in [ListLayoutDimension.estimated(64), .absolute(64)] {
             let section = makeBoundarySpacingSection(height: height, extendsBoundary: true)
-                .makeCompositionalLayoutSection()
+                .resolvedForTesting()
 
             XCTAssertEqual(section.contentInsets.top, 8)
             XCTAssertEqual(section.contentInsets.bottom, 12)
@@ -19,12 +19,12 @@ final class ListKitPublicAPITests: XCTestCase {
         }
     }
 
-    func testNonExtendingBoundariesRetainReservedSpace() {
+    func testNonExtendingBoundariesDoNotAddHiddenInsets() {
         let section = makeBoundarySpacingSection(height: .estimated(64), extendsBoundary: false)
-            .makeCompositionalLayoutSection()
+            .resolvedForTesting()
 
-        XCTAssertEqual(section.contentInsets.top, 72)
-        XCTAssertEqual(section.contentInsets.bottom, 76)
+        XCTAssertEqual(section.contentInsets.top, 8)
+        XCTAssertEqual(section.contentInsets.bottom, 12)
         XCTAssertEqual(section.contentInsets.leading, 16)
         XCTAssertEqual(section.contentInsets.trailing, 20)
         XCTAssertFalse(section.boundarySupplementaryItems.contains(where: \.extendsBoundary))
@@ -36,14 +36,31 @@ final class ListKitPublicAPITests: XCTestCase {
     ) -> ListSection<Int> {
         ListSection(0) {
             Row(1, model: "Content", cell: UICollectionViewCell.self) { _, _, _ in }
-        } header: {
-            Header(UICollectionReusableView.self, id: "header") { _, _ in }
-                .layout(height: height, extendsBoundary: extendsBoundary)
-        } footer: {
-            Footer(UICollectionReusableView.self, id: "footer") { _, _ in }
-                .layout(height: height, extendsBoundary: extendsBoundary)
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0).sectionInsets(
+                .init(top: 8, leading: 16, bottom: 12, trailing: 20)
+            )
+                .boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionHeader,
+                        size: .init(width: .fractionalWidth(1), height: height), alignment: .top
+                    ).extendsBoundary(extendsBoundary).whenContentExists()
+                    BoundarySupplementaryLayout(
+                        kind: UICollectionView.elementKindSectionFooter,
+                        size: .init(width: .fractionalWidth(1), height: height), alignment: .bottom
+                    ).extendsBoundary(extendsBoundary).whenContentExists()
+                }
+        } supplementaries: {
+            SectionSupplementary(
+                UICollectionReusableView.self,
+                kind: UICollectionView.elementKindSectionHeader, id: "header"
+            ) { _, _ in }
+
+            SectionSupplementary(
+                UICollectionReusableView.self,
+                kind: UICollectionView.elementKindSectionFooter, id: "footer"
+            ) { _, _ in }
         }
-        .layout(.list(contentInsets: .init(top: 8, leading: 16, bottom: 12, trailing: 20)))
     }
 
     func testRefreshRulesGroupsAndDescriptionStorageArePublic() {
@@ -76,6 +93,24 @@ final class ListKitPublicAPITests: XCTestCase {
         XCTAssertNil(tableSection.header)
         XCTAssertNil(tableSection.footer)
         XCTAssertEqual(supplementaryRule.action, .reloadSection)
+    }
+
+    func testProviderSupplementaryCanDeclareItemGeometry() {
+        let provider = ProviderSupplementary("custom", id: 1, view: UICollectionReusableView.self) {
+            _, _, _ in
+            UICollectionReusableView()
+        }
+        let section = ListSection(0) {
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0).itemSupplementaries {
+                ItemSupplementaryLayout(
+                    kind: "custom",
+                    size: .init(width: .absolute(12), height: .absolute(12)), itemAnchor: .topTrailing)
+            }
+        } supplementaries: {
+            SectionSupplementary(provider)
+        }
+        XCTAssertEqual(section.supplementaries.first?.kind, "custom")
     }
 
     func testPublicSummaryMetricsExposeOrthogonalActions() {

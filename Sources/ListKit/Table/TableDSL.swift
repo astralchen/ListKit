@@ -2,7 +2,7 @@ import UIKit
 
 // MARK: - Table DSL
 
-/// UITableView row/header/footer 高度描述。
+/// 表格条目、页眉或页脚的高度规则。
 public enum TableRowHeight: Equatable, Sendable {
     /// 固定高度。
     case fixed(CGFloat)
@@ -44,7 +44,7 @@ public struct InheritedTableRowID: Hashable, Sendable {
     private init() {}
 }
 
-/// UITableView row/header/footer 配置和事件闭包收到的上下文。
+/// 表格条目、页眉及页脚配置与事件处理器的上下文。
 @MainActor
 public struct TableListContext {
     /// 当前 row/header/footer 的稳定展示身份。
@@ -53,13 +53,14 @@ public struct TableListContext {
     public var sectionID: AnyListID { identity.sectionID }
     /// 当前展示身份对应的类型擦除 Row 或 supplementary ID。
     public var itemID: AnyListID { identity.rowID }
-    /// 事件发生时的位置；跨刷新逻辑应优先使用 `identity`。
+    /// 创建上下文时保存的位置，不会随列表更新自动改变。
+    /// 页眉和页脚使用所在分区的第 0 行位置；延迟处理时应通过 `identity` 重新定位。
     public let indexPath: IndexPath
     private let tableViewReference: TableListViewReference
 
-    /// 事件发生时关联的 table view。
+    /// 创建上下文时关联的表格视图。
     ///
-    /// adapter 已释放 table view 时访问该属性会触发前置条件失败；需要弱生命周期
+    /// 表格视图已释放时访问该属性会触发前置条件失败；需要弱生命周期
     /// 查询时使用 `tableViewIfAvailable`。
     public var tableView: UITableView {
         guard let tableView = tableViewReference.tableView else {
@@ -124,7 +125,7 @@ private final class TableListViewReference {
 
 /// 类型擦除后的 table row 描述。
 public struct AnyTableRow {
-    /// 包含 Section、Row ID 和展示变体的稳定 identity。
+    /// 由分区标识符、条目标识符、展示类型及可选变体组成的稳定身份。
     public let identity: AnyListIdentity
     /// 调用方提供的内容版本；用于 apply 时判断 kept Row 是否需要刷新。
     public let refreshID: AnyListID?
@@ -132,15 +133,15 @@ public struct AnyTableRow {
     public let refreshRule: ListRowRefreshRule
     /// controlled selection 的目标状态；`nil` 表示由 UIKit/用户交互维护。
     public let isSelected: Bool?
-    /// 是否禁止当前 Row 进入选择状态。
+    /// 是否禁止用户选择或取消选择当前条目，不覆盖受控选择状态。
     public let isSelectionDisabled: Bool
-    /// 是否允许焦点系统聚焦当前 Row；`nil` 使用 UIKit 默认值。
+    /// 是否允许条目获得焦点；`nil` 时查询外部代理，代理未提供结果时允许聚焦。
     public let isFocusable: Bool?
-    /// 焦点移动是否同步改变选择；`nil` 使用 UIKit 默认值。
+    /// 焦点移动是否同步改变选择；`nil` 时先查询外部代理，再使用列表视图的设置。
     public let selectionFollowsFocus: Bool?
-    /// 是否允许 spring-loading；`nil` 使用 UIKit 默认值。
+    /// 是否允许弹簧加载交互；`nil` 时查询外部代理，代理未提供结果时允许。
     public let isSpringLoadingEnabled: Bool?
-    /// Row 的实际高度策略；`nil` 使用 table view 默认高度。
+    /// 条目的高度策略；`nil` 时先查询外部代理，再使用表格视图的默认行高。
     public let height: TableRowHeight?
     /// 单独覆盖的估算高度；`nil` 使用 `height` 或 table view 默认值。
     public let estimatedHeight: CGFloat?
@@ -203,6 +204,11 @@ public protocol TableRowRepresentable {
 }
 
 public extension TableRowRepresentable {
+    /// 默认调用不带继承标识符的条目转换方法。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 外层遍历提供的标识符，默认实现忽略此值。
     @MainActor func eraseToAnyTableRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -419,7 +425,8 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return copy
     }
 
-    /// 禁止当前 Row 被选择，同时保留 section 级选择策略和显式声明的高亮回调。
+    /// 禁用条目的用户选择与取消选择操作，保留显式高亮回调。
+    /// 此设置不清除已有选择，也不覆盖 `selected(_:)` 声明的受控状态。
     public func selectionDisabled(_ disabled: Bool = true) -> Self {
         var copy = self
         copy.rowIsSelectionDisabled = disabled
@@ -753,6 +760,13 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         return copy
     }
 
+    /// 将当前描述转换为指定分区中的类型擦除条目。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 外层遍历提供的标识符；显式声明自身身份的条目忽略此值。
+    /// - Returns: 保留配置与事件处理器的类型擦除条目。
+    /// - Precondition: 使用继承身份的条目必须提供 `inheritedID`。
     @MainActor public func eraseToAnyTableRow<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID? = nil
@@ -848,12 +862,20 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
         )
     }
 
+    /// 将当前描述转换为指定分区中的类型擦除条目集合。
+    ///
+    /// - Parameter sectionID: 条目所属分区的稳定标识符。
     @MainActor public func eraseToAnyTableRows<SectionID>(sectionID: SectionID) -> [AnyTableRow]
         where SectionID: Hashable & Sendable
     {
         [eraseToAnyTableRow(sectionID: sectionID)]
     }
 
+    /// 将当前描述转换为指定分区中的类型擦除条目集合。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 外层遍历提供的标识符；显式声明自身身份的条目忽略此值。
     @MainActor public func eraseToAnyTableRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -917,12 +939,20 @@ public struct TableRowGroup: TableRowRepresentable {
         self.rows = content()
     }
 
+    /// 按声明顺序合并子描述生成的类型擦除条目。
+    ///
+    /// - Parameter sectionID: 条目所属分区的稳定标识符。
     @MainActor public func eraseToAnyTableRows<SectionID>(sectionID: SectionID) -> [AnyTableRow]
         where SectionID: Hashable & Sendable
     {
         rows.flatMap { $0.eraseToAnyTableRows(sectionID: sectionID) }
     }
 
+    /// 按声明顺序合并子描述生成的类型擦除条目。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 外层遍历提供的标识符；显式声明自身身份的条目忽略此值。
     @MainActor public func eraseToAnyTableRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -978,41 +1008,50 @@ private struct InheritedIDTableRowScope: TableRowRepresentable {
     })
 }
 
-/// `TableSection` rows 的 result builder。
+/// 按声明顺序组合表格分区条目的结果构建器。
 @resultBuilder
 public enum TableRowBuilder {
+    /// 将表达式转换为构建器的元素集合。
     public static func buildExpression(_ expression: any TableRowRepresentable) -> [any TableRowRepresentable] {
         [expression]
     }
 
+    /// 按原顺序接收表达式数组。
     public static func buildExpression(_ expression: [any TableRowRepresentable]) -> [any TableRowRepresentable] {
         expression
     }
 
+    /// 将不产生值的表达式转换为空集合。
     public static func buildExpression(_ expression: ()) -> [any TableRowRepresentable] {
         []
     }
 
+    /// 按声明顺序合并构建块中的元素集合。
     public static func buildBlock(_ components: [any TableRowRepresentable]...) -> [any TableRowRepresentable] {
         components.flatMap { $0 }
     }
 
+    /// 按迭代顺序合并循环各次生成的元素集合。
     public static func buildArray(_ components: [[any TableRowRepresentable]]) -> [any TableRowRepresentable] {
         components.flatMap { $0 }
     }
 
+    /// 返回条件表达式第一个分支的构建结果。
     public static func buildEither(first component: [any TableRowRepresentable]) -> [any TableRowRepresentable] {
         component
     }
 
+    /// 返回条件表达式第二个分支的构建结果。
     public static func buildEither(second component: [any TableRowRepresentable]) -> [any TableRowRepresentable] {
         component
     }
 
+    /// 返回可选分支的元素；分支不存在时返回空集合。
     public static func buildOptional(_ component: [any TableRowRepresentable]?) -> [any TableRowRepresentable] {
         component ?? []
     }
 
+    /// 传递通过系统可用性检查的分支结果。
     public static func buildLimitedAvailability(_ component: [any TableRowRepresentable]) -> [any TableRowRepresentable] {
         component
     }
@@ -1042,7 +1081,7 @@ public struct AnyTableSectionSupplementary {
     let endDisplayHandler: (@MainActor (UITableViewHeaderFooterView, TableListContext) -> Void)?
 }
 
-/// Table section header/footer 的 builder 元素。
+/// 表格分区页眉或页脚的内容声明。
 public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & Sendable {
     let kind: TableSectionSupplementaryKind
     private let makeSupplementaryProvider: @MainActor (SectionID) -> AnyTableSectionSupplementary
@@ -1268,38 +1307,47 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
 /// 将条件、数组和可用性分支组合成 Table Section header/footer 描述。
 @resultBuilder
 public enum TableSectionSupplementaryBuilder<SectionID> where SectionID: Hashable & Sendable {
+    /// 将表达式转换为构建器的元素集合。
     public static func buildExpression(_ expression: TableSectionSupplementary<SectionID>) -> [TableSectionSupplementary<SectionID>] {
         [expression]
     }
 
+    /// 按原顺序接收表达式数组。
     public static func buildExpression(_ expression: [TableSectionSupplementary<SectionID>]) -> [TableSectionSupplementary<SectionID>] {
         expression
     }
 
+    /// 将不产生值的表达式转换为空集合。
     public static func buildExpression(_ expression: ()) -> [TableSectionSupplementary<SectionID>] {
         []
     }
 
+    /// 按声明顺序合并构建块中的元素集合。
     public static func buildBlock(_ components: [TableSectionSupplementary<SectionID>]...) -> [TableSectionSupplementary<SectionID>] {
         components.flatMap { $0 }
     }
 
+    /// 按迭代顺序合并循环各次生成的元素集合。
     public static func buildArray(_ components: [[TableSectionSupplementary<SectionID>]]) -> [TableSectionSupplementary<SectionID>] {
         components.flatMap { $0 }
     }
 
+    /// 返回条件表达式第一个分支的构建结果。
     public static func buildEither(first component: [TableSectionSupplementary<SectionID>]) -> [TableSectionSupplementary<SectionID>] {
         component
     }
 
+    /// 返回条件表达式第二个分支的构建结果。
     public static func buildEither(second component: [TableSectionSupplementary<SectionID>]) -> [TableSectionSupplementary<SectionID>] {
         component
     }
 
+    /// 返回可选分支的元素；分支不存在时返回空集合。
     public static func buildOptional(_ component: [TableSectionSupplementary<SectionID>]?) -> [TableSectionSupplementary<SectionID>] {
         component ?? []
     }
 
+    /// 传递通过系统可用性检查的分支结果。
     public static func buildLimitedAvailability(_ component: [TableSectionSupplementary<SectionID>]) -> [TableSectionSupplementary<SectionID>] {
         component
     }
@@ -1344,7 +1392,7 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     ///
     /// - Parameters:
     ///   - id: section 的稳定身份。
-    ///   - rows: row builder。
+    ///   - rows: 按声明顺序生成条目的构建闭包。
     ///   - header: header builder，最多使用第一个 header。
     ///   - footer: footer builder，最多使用第一个 footer。
     @MainActor public init(
@@ -1402,41 +1450,50 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     }
 }
 
-/// `TableListAdapter.apply` 的 section result builder。
+/// 按声明顺序组合表格分区的结果构建器。
 @resultBuilder
 public enum TableSectionBuilder<SectionID> where SectionID: Hashable & Sendable {
+    /// 将表达式转换为构建器的元素集合。
     public static func buildExpression(_ expression: TableSection<SectionID>) -> [TableSection<SectionID>] {
         [expression]
     }
 
+    /// 按原顺序接收表达式数组。
     public static func buildExpression(_ expression: [TableSection<SectionID>]) -> [TableSection<SectionID>] {
         expression
     }
 
+    /// 将不产生值的表达式转换为空集合。
     public static func buildExpression(_ expression: ()) -> [TableSection<SectionID>] {
         []
     }
 
+    /// 按声明顺序合并构建块中的元素集合。
     public static func buildBlock(_ components: [TableSection<SectionID>]...) -> [TableSection<SectionID>] {
         components.flatMap { $0 }
     }
 
+    /// 按迭代顺序合并循环各次生成的元素集合。
     public static func buildArray(_ components: [[TableSection<SectionID>]]) -> [TableSection<SectionID>] {
         components.flatMap { $0 }
     }
 
+    /// 返回条件表达式第一个分支的构建结果。
     public static func buildEither(first component: [TableSection<SectionID>]) -> [TableSection<SectionID>] {
         component
     }
 
+    /// 返回条件表达式第二个分支的构建结果。
     public static func buildEither(second component: [TableSection<SectionID>]) -> [TableSection<SectionID>] {
         component
     }
 
+    /// 返回可选分支的元素；分支不存在时返回空集合。
     public static func buildOptional(_ component: [TableSection<SectionID>]?) -> [TableSection<SectionID>] {
         component ?? []
     }
 
+    /// 传递通过系统可用性检查的分支结果。
     public static func buildLimitedAvailability(_ component: [TableSection<SectionID>]) -> [TableSection<SectionID>] {
         component
     }
@@ -1446,7 +1503,7 @@ public enum TableSectionBuilder<SectionID> where SectionID: Hashable & Sendable 
 public enum TableSectionsBuilder<SectionID> where SectionID: Hashable & Sendable {
     /// 构建 section 数组。
     ///
-    /// - Parameter content: section builder。
+    /// - Parameter content: 按声明顺序生成分区的构建闭包。
     /// - Returns: 构建完成的 section 数组。
     @MainActor public static func build(
         @TableSectionBuilder<SectionID> _ content: () -> [TableSection<SectionID>]

@@ -1,60 +1,41 @@
-import UIKit
 import ObjectiveC
+import UIKit
 
 // MARK: - Supplementary Model
 
-/// 类型擦除后的 supplementary 描述。
-///
-/// - Note: 调用方通常不直接创建它；`Header`、`Footer`、`SectionSupplementary`、
-/// `Supplementary` 和 `ProviderSupplementary` 会在 section 构建阶段转成
-/// `AnySupplementary`。
+/// 附属视图内容的类型擦除描述，几何信息由分区布局保存。
 public struct AnySupplementary {
     /// 包含 Section、supplementary ID、view 类型和展示变体的稳定 identity。
     public let identity: AnyListIdentity
-    /// UIKit supplementary element kind。
+    /// 关联内容与几何的业务 kind；自适应多 line Grid 可映射为多个实际 UIKit elementKind。
     public let kind: String
-    /// 调用方提供的内容版本，用于判断可见 supplementary 是否需要重配。
+    /// 调用方提供的内容版本，配合刷新规则决定是否重配可见视图或重载所属分区。
     public let refreshID: AnyListID?
     /// identity 保持不变时使用的 supplementary 刷新规则。
     public let refreshRule: ListSupplementaryRefreshRule
 
-    let register: @MainActor (UICollectionView) -> Void
-    let viewProvider: @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
+    let register: @MainActor (UICollectionView, String) -> Void
+    let viewProvider: @MainActor (UICollectionView, String, IndexPath, ListContext) -> UICollectionReusableView
+    let supportsElementKindMapping: Bool
     let configureVisibleView: (@MainActor (UICollectionReusableView, ListContext) -> Void)?
     let tapHandler: (@MainActor (ListContext) -> Void)?
     let displayHandler: (@MainActor (UICollectionReusableView, ListContext) -> Void)?
     let endDisplayHandler: (@MainActor (UICollectionReusableView, ListContext) -> Void)?
 }
 
-/// Section header/footer/custom supplementary 的 SwiftUI-like builder 元素。
-///
-/// - Usage:
-/// ```swift
-/// ListSection(.main) { ... } header: {
-///     if showHeader {
-///         Header(TitleHeaderView.self, id: "title") { view, _ in
-///             view.titleLabel.text = title
-///         }
-///         .layout(height: .estimated(44), pinned: true)
-///     }
-/// }
-/// ```
+/// 通过业务元素种类与布局关联的分区附属视图内容。
 public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Sendable {
-    /// UIKit supplementary element kind。
+    /// 关联内容与几何的业务 kind；自适应多 line Grid 可映射为多个实际 UIKit elementKind。
     public let kind: String
-    var layout: ListSupplementaryLayout?
     private let makeSupplementaryProvider: @MainActor (SectionID) -> AnySupplementary
 
     init(
         kind: String,
-        layout: ListSupplementaryLayout? = nil,
         makeSupplementary: @escaping @MainActor (SectionID) -> AnySupplementary
     ) {
         self.kind = kind
-        self.layout = layout
         self.makeSupplementaryProvider = makeSupplementary
     }
-
     @MainActor func makeSupplementary(sectionID: SectionID) -> AnySupplementary {
         makeSupplementaryProvider(sectionID)
     }
@@ -63,7 +44,8 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
     ///
     /// - Parameter refreshID: 当前 supplementary 内容版本 id。
     /// - Returns: 应用内容版本后的 supplementary。
-    public func refreshID<RefreshID>(_ refreshID: RefreshID) -> Self where RefreshID: Hashable & Sendable {
+    public func refreshID<RefreshID>(_ refreshID: RefreshID) -> Self
+    where RefreshID: Hashable & Sendable {
         mapSupplementary { supplementary in
             AnySupplementary(
                 identity: supplementary.identity,
@@ -72,6 +54,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 refreshRule: supplementary.refreshRule,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
+                supportsElementKindMapping: supplementary.supportsElementKindMapping,
                 configureVisibleView: supplementary.configureVisibleView,
                 tapHandler: supplementary.tapHandler,
                 displayHandler: supplementary.displayHandler,
@@ -90,6 +73,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 refreshRule: rule,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
+                supportsElementKindMapping: supplementary.supportsElementKindMapping,
                 configureVisibleView: supplementary.configureVisibleView,
                 tapHandler: supplementary.tapHandler,
                 displayHandler: supplementary.displayHandler,
@@ -119,11 +103,12 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 refreshID: supplementary.refreshID,
                 refreshRule: supplementary.refreshRule,
                 register: supplementary.register,
-                viewProvider: { collectionView, indexPath, context in
-                    let view = supplementary.viewProvider(collectionView, indexPath, context)
+                viewProvider: { collectionView, elementKind, indexPath, context in
+                    let view = supplementary.viewProvider(collectionView, elementKind, indexPath, context)
                     ListTapHandlerInstaller.install(on: view, context: context, handler: handler)
                     return view
                 },
+                supportsElementKindMapping: supplementary.supportsElementKindMapping,
                 configureVisibleView: supplementary.configureVisibleView,
                 tapHandler: handler,
                 displayHandler: supplementary.displayHandler,
@@ -136,7 +121,9 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
     ///
     /// - Parameter handler: supplementary 即将展示时调用的闭包。
     /// - Returns: 绑定展示事件后的 supplementary。
-    public func onDisplay(_ handler: @escaping @MainActor (UICollectionReusableView, ListContext) -> Void) -> Self {
+    public func onDisplay(
+        _ handler: @escaping @MainActor (UICollectionReusableView, ListContext) -> Void
+    ) -> Self {
         mapSupplementary { supplementary in
             AnySupplementary(
                 identity: supplementary.identity,
@@ -145,6 +132,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 refreshRule: supplementary.refreshRule,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
+                supportsElementKindMapping: supplementary.supportsElementKindMapping,
                 configureVisibleView: supplementary.configureVisibleView,
                 tapHandler: supplementary.tapHandler,
                 displayHandler: handler,
@@ -157,7 +145,9 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
     ///
     /// - Parameter handler: supplementary 结束展示时调用的闭包。
     /// - Returns: 绑定结束展示事件后的 supplementary。
-    public func onEndDisplay(_ handler: @escaping @MainActor (UICollectionReusableView, ListContext) -> Void) -> Self {
+    public func onEndDisplay(
+        _ handler: @escaping @MainActor (UICollectionReusableView, ListContext) -> Void
+    ) -> Self {
         mapSupplementary { supplementary in
             AnySupplementary(
                 identity: supplementary.identity,
@@ -166,6 +156,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
                 refreshRule: supplementary.refreshRule,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
+                supportsElementKindMapping: supplementary.supportsElementKindMapping,
                 configureVisibleView: supplementary.configureVisibleView,
                 tapHandler: supplementary.tapHandler,
                 displayHandler: supplementary.displayHandler,
@@ -174,198 +165,71 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
         }
     }
 
-    /// 配置 boundary supplementary 的布局；header 默认 `.top`，footer 默认 `.bottom`。
-    ///
-    /// - Parameters:
-    ///   - alignment: boundary 对齐方式；为 `nil` 时 header 默认 `.top`、footer 默认 `.bottom`。
-    ///   - width: supplementary 宽度。
-    ///   - height: supplementary 高度。
-    ///   - extendsBoundary: 是否延伸到 section 边界外。
-    ///   - pinned: 是否随滚动吸顶或吸底。
-    ///   - offset: boundary 偏移。
-    ///   - zIndex: supplementary 层级。
-    /// - Returns: 应用 layout 后的 supplementary。
-    @MainActor public func layout(
-        alignment: ListSupplementaryAnchor? = nil,
-        width: ListLayoutDimension = .fractionalWidth(1),
-        height: ListLayoutDimension = .estimated(44),
-        extendsBoundary: Bool = false,
-        pinned: Bool = false,
-        offset: CGPoint = .zero,
-        zIndex: Int = 0
-    ) -> Self {
-        boundary(
-            alignment: alignment ?? defaultBoundaryAlignment,
-            width: width,
-            height: height,
-            extendsBoundary: extendsBoundary,
-            pinned: pinned,
-            offset: offset,
-            zIndex: zIndex
-        )
-    }
-
-    /// 把 supplementary 放到 section boundary，例如 header/footer 或 section 角标。
-    ///
-    /// - Parameters:
-    ///   - alignment: boundary 对齐方式；为 `nil` 时使用默认方向。
-    ///   - width: supplementary 宽度。
-    ///   - height: supplementary 高度。
-    ///   - extendsBoundary: 是否延伸到 section 边界外。
-    ///   - pinned: 是否随滚动吸顶或吸底。
-    ///   - offset: boundary 偏移。
-    ///   - zIndex: supplementary 层级。
-    /// - Returns: 应用 boundary placement 后的 supplementary。
-    @MainActor public func boundary(
-        alignment: ListSupplementaryAnchor? = nil,
-        width: ListLayoutDimension = .fractionalWidth(1),
-        height: ListLayoutDimension = .estimated(44),
-        extendsBoundary: Bool = false,
-        pinned: Bool = false,
-        offset: CGPoint = .zero,
-        zIndex: Int = 0
-    ) -> Self {
-        var copy = self
-        copy.layout = ListSupplementaryLayout(
-            kind: kind,
-            placement: .boundary(
-                alignment: alignment ?? defaultBoundaryAlignment,
-                extendsBoundary: extendsBoundary,
-                pinToVisibleBounds: pinned,
-                offset: ListLayoutPoint(offset)
-            ),
-            width: width,
-            height: height,
-            zIndex: zIndex
-        )
-        return copy
-    }
-
-    /// 把 supplementary 挂到每个 item 上。
-    ///
-    /// - Parameters:
-    ///   - anchor: item 上的锚点。
-    ///   - width: supplementary 宽度。
-    ///   - height: supplementary 高度。
-    ///   - fractionalOffset: 相对 item 的偏移。
-    ///   - zIndex: supplementary 层级。
-    /// - Returns: 应用 item-level placement 后的 supplementary。
-    public func itemSupplementaryLayout(
-        anchor: ListSupplementaryAnchor,
-        width: ListLayoutDimension,
-        height: ListLayoutDimension,
-        fractionalOffset: CGPoint = .zero,
-        zIndex: Int = 0
-    ) -> Self {
-        var copy = self
-        copy.layout = ListSupplementaryLayout(
-            kind: kind,
-            placement: .itemSupplementary(anchor: anchor, fractionalOffset: ListLayoutPoint(fractionalOffset)),
-            width: width,
-            height: height,
-            zIndex: zIndex
-        )
-        return copy
-    }
-
-    /// 快捷切换 boundary supplementary 的 pinned 状态。
-    ///
-    /// - Parameter isSticky: 是否随滚动吸顶或吸底。
-    /// - Returns: 应用 pinned 状态后的 supplementary。
-    @MainActor public func sticky(_ isSticky: Bool = true) -> Self {
-        var layout = self.layout ?? ListSupplementaryLayout(
-            kind: kind,
-            placement: .boundary(
-                alignment: defaultBoundaryAlignment,
-                extendsBoundary: false,
-                pinToVisibleBounds: false,
-                offset: .zero
-            )
-        )
-        layout = layout.pinningBoundaryToVisibleBounds(isSticky)
-
-        var copy = self
-        copy.layout = layout
-        return copy
-    }
-
-    @MainActor private var defaultBoundaryAlignment: ListSupplementaryAnchor {
-        kind == UICollectionView.elementKindSectionFooter ? .bottom : .top
-    }
-
     private func mapSupplementary(
         _ transform: @escaping @MainActor (AnySupplementary) -> AnySupplementary
     ) -> Self {
         let provider = makeSupplementaryProvider
-        return ListSectionSupplementary(kind: kind, layout: layout) { sectionID in
+        return ListSectionSupplementary(kind: kind) { sectionID in
             transform(provider(sectionID))
         }
     }
 }
 
-/// 在 `ListSection` 的 `header:` builder 中声明 header。
+/// 使用指定视图类型和业务身份创建分区附属视图。
+///
+/// `kind` 须非空且在分区内唯一，用于关联内容与几何；多行自适应网格可映射为不同的 UIKit 地址。
+/// `id` 标识业务内容，业务种类或视图类型变化时展示身份也随之变化。
 ///
 /// - Parameters:
-///   - viewType: header reusable view 类型。
-///   - id: header 身份。
-///   - configure: 配置 header view 的闭包。
-/// - Returns: 可放入 `header:` builder 的 supplementary 描述。
-@MainActor public func Header<SectionID, ID, View>(
-    _ viewType: View.Type,
-    id: ID,
-    configure: @escaping @MainActor (View, ListContext) -> Void
-) -> ListSectionSupplementary<SectionID>
-    where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UICollectionReusableView
-{
-    SectionSupplementary(UICollectionView.elementKindSectionHeader, viewType, id: id, configure: configure)
-}
-
-/// 在 `ListSection` 的 `footer:` builder 中声明 footer。
-///
-/// - Parameters:
-///   - viewType: footer reusable view 类型。
-///   - id: footer 身份。
-///   - configure: 配置 footer view 的闭包。
-/// - Returns: 可放入 `footer:` builder 的 supplementary 描述。
-@MainActor public func Footer<SectionID, ID, View>(
-    _ viewType: View.Type,
-    id: ID,
-    configure: @escaping @MainActor (View, ListContext) -> Void
-) -> ListSectionSupplementary<SectionID>
-    where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UICollectionReusableView
-{
-    SectionSupplementary(UICollectionView.elementKindSectionFooter, viewType, id: id, configure: configure)
-}
-
-/// 声明自定义 kind 的 section supplementary。
-///
-/// - Parameters:
-///   - kind: supplementary element kind。
-///   - viewType: reusable view 类型。
-///   - id: supplementary 身份。
-///   - configure: 配置 reusable view 的闭包。
-/// - Returns: 可放入 `supplementaries:` builder 的 supplementary 描述。
+///   - viewType: 自动注册和出队的附属视图类型。
+///   - kind: 与布局几何声明对应的业务元素种类。
+///   - id: 附属视图内容的稳定标识符。
+///   - configure: 在主执行器上配置视图的闭包。
+/// - Returns: 可放入分区附属视图构建器的内容声明。
 @MainActor public func SectionSupplementary<SectionID, ID, View>(
-    _ kind: String,
-    _ viewType: View.Type,
-    id: ID,
+    _ viewType: View.Type, kind: String, id: ID,
     configure: @escaping @MainActor (View, ListContext) -> Void
 ) -> ListSectionSupplementary<SectionID>
-    where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UICollectionReusableView
-{
-    ListSectionSupplementary(kind: kind) { sectionID in
-        Supplementary(kind, id: id, view: viewType, configure: configure)
-            .eraseToAnySupplementary(sectionID: sectionID)
+where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UICollectionReusableView {
+    return ListSectionSupplementary(kind: kind) { sectionID in
+        Supplementary(kind, id: id, view: viewType, configure: configure).eraseToAnySupplementary(
+            sectionID: sectionID)
     }
 }
 
-/// Header/Footer/自定义 supplementary 的描述模型。
+/// 将已有的附属视图描述关联到所在分区。
 ///
-/// - Note: 调用方通常通过 `ListSection.header(...)` / `footer(...)` 使用它；需要自定义 kind 时再直接用
-/// `supplementary(_:_:id:configure:)`。
-public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICollectionReusableView {
+/// - Parameter supplementary: 包含内容提供者、刷新规则与事件的附属视图描述。
+/// - Returns: 保留原元素种类与配置的分区附属视图声明。
+@MainActor public func SectionSupplementary<SectionID, ID, View>(
+    _ supplementary: Supplementary<ID, View>
+) -> ListSectionSupplementary<SectionID>
+where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UICollectionReusableView {
+    ListSectionSupplementary(kind: supplementary.kind) {
+        supplementary.eraseToAnySupplementary(sectionID: $0)
+    }
+}
+
+/// 将已有的附属视图描述关联到所在分区。
+///
+/// - Parameter supplementary: 包含内容提供者、刷新规则与事件的附属视图描述。
+/// - Returns: 保留原元素种类与配置的分区附属视图声明。
+@MainActor public func SectionSupplementary<SectionID, ID>(
+    _ supplementary: ProviderSupplementary<ID>
+) -> ListSectionSupplementary<SectionID>
+where SectionID: Hashable & Sendable, ID: Hashable & Sendable {
+    ListSectionSupplementary(kind: supplementary.kind) {
+        supplementary.eraseToAnySupplementary(sectionID: $0)
+    }
+}
+
+/// 自定义 supplementary 的描述模型。
+///
+/// - Note: 常规声明使用 SectionSupplementary；此值可独立组合刷新与事件后放入 supplementary builder。
+public struct Supplementary<ID, View>
+where ID: Hashable & Sendable, View: UICollectionReusableView {
     private let id: ID
-    private let kind: String
+    let kind: String
     private let viewType: View.Type
     private let configure: @MainActor (View, ListContext) -> Void
     private var supplementaryRefreshID: AnyListID?
@@ -377,7 +241,7 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
     /// 创建 supplementary 描述。
     ///
     /// - Parameters:
-    ///   - kind: supplementary element kind。
+    ///   - kind: 附属视图的 UIKit 元素种类。
     ///   - id: supplementary 身份。
     ///   - viewType: reusable view 类型。
     ///   - configure: 配置 reusable view 的闭包。
@@ -397,7 +261,8 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
     ///
     /// - Parameter refreshID: 当前 supplementary 内容版本 id。
     /// - Returns: 应用内容版本后的 supplementary。
-    public func refreshID<RefreshID>(_ refreshID: RefreshID) -> Self where RefreshID: Hashable & Sendable {
+    public func refreshID<RefreshID>(_ refreshID: RefreshID) -> Self
+    where RefreshID: Hashable & Sendable {
         var copy = self
         copy.supplementaryRefreshID = AnyListID(refreshID)
         return copy
@@ -410,6 +275,12 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
         return copy
     }
 
+    /// 返回使用指定触发条件和动作的附属视图描述副本。
+    ///
+    /// - Parameters:
+    ///   - trigger: 应用列表更新时的刷新触发条件。
+    ///   - action: 刷新动作，默认重配可见视图且不额外使布局失效。
+    /// - Returns: 应用刷新规则后的描述副本。
     public func refresh(
         when trigger: ListRefreshTrigger,
         action: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none)
@@ -448,8 +319,7 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
     }
 
     @MainActor func eraseToAnySupplementary<SectionID>(sectionID: SectionID) -> AnySupplementary
-        where SectionID: Hashable & Sendable
-    {
+    where SectionID: Hashable & Sendable {
         let identity = AnyListIdentity(
             sectionID: AnyListID(sectionID),
             rowID: AnyListID(id),
@@ -480,11 +350,11 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
             kind: kind,
             refreshID: supplementaryRefreshID,
             refreshRule: supplementaryRefreshRule,
-            register: { collectionView in
-                collectionView.lk.register(viewType, ofKind: kind)
+            register: { collectionView, elementKind in
+                collectionView.lk.register(viewType, ofKind: elementKind)
             },
-            viewProvider: { collectionView, indexPath, context in
-                let view = collectionView.lk.dequeue(viewType, ofKind: kind, for: indexPath)
+            viewProvider: { collectionView, elementKind, indexPath, context in
+                let view = collectionView.lk.dequeue(viewType, ofKind: elementKind, for: indexPath)
                 configure(view, context)
                 ListTapHandlerInstaller.install(
                     on: view,
@@ -493,6 +363,7 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
                 )
                 return view
             },
+            supportsElementKindMapping: true,
             configureVisibleView: { view, context in
                 guard let typedView = view as? View else { return }
                 configure(typedView, context)
@@ -504,17 +375,17 @@ public struct Supplementary<ID, View> where ID: Hashable & Sendable, View: UICol
     }
 }
 
-/// Provider-backed supplementary escape hatch for mixed migration pages.
+/// 由调用方控制注册和出队的附属视图描述。
 ///
-/// - Important: 常规接入优先使用 `Header`、`Footer`、`SectionSupplementary` 或
-/// `ListSection.header/footer/supplementary`。只有现有代码已经封装了 view provider
-/// 并且短期内不能拆开时，才使用这个迁移入口。
+/// 此类型不提供可见视图的原地配置闭包。默认 `reconfigureVisible` 动作不会重新执行提供者；
+/// 需要由刷新规则更新内容时，使用 `reloadSection`，该动作也会重载分区中的条目。
 public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     private let id: ID
-    private let kind: String
+    let kind: String
     private let presentationID: ObjectIdentifier
-    private let registerProvider: @MainActor (UICollectionView) -> Void
-    private let viewProvider: @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
+    private let registerProvider: @MainActor (UICollectionView, String) -> Void
+    private let supportsElementKindMapping: Bool
+    private let viewProvider: @MainActor (UICollectionView, String, IndexPath, ListContext) -> UICollectionReusableView
     private var supplementaryRefreshID: AnyListID?
     private var supplementaryRefreshRule: ListSupplementaryRefreshRule = .automatic
     private var supplementaryTapHandler: (@MainActor (ListContext) -> Void)?
@@ -522,68 +393,116 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     /// 用 view 类型作为展示 identity 的 ProviderSupplementary。
     ///
     /// - Parameters:
-    ///   - kind: supplementary element kind。
+    ///   - kind: 附属视图的 UIKit 元素种类。
     ///   - id: supplementary 身份。
     ///   - viewType: 用于 presentation identity 和默认注册的 reusable view 类型。
     ///   - register: 可选的自定义注册闭包。
     ///   - viewProvider: 创建或 dequeue reusable view 的闭包。
-    /// - Important: 此入口只用于迁移期保留旧 view provider。
+    /// - Important: 此重载不支持内部元素种类映射；需要映射时使用接收实际元素种类的重载。
+    ///   提供者须使用传入的索引路径出队视图。
     public init<View>(
         _ kind: String,
         id: ID,
         view viewType: View.Type,
         register: (@MainActor (UICollectionView) -> Void)? = nil,
-        viewProvider: @escaping @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
+        viewProvider:
+            @escaping @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
     ) where View: UICollectionReusableView {
         self.id = id
         self.kind = kind
         self.presentationID = ObjectIdentifier(viewType)
-        self.registerProvider = register ?? { collectionView in
-            collectionView.lk.register(viewType, ofKind: kind)
+        self.registerProvider = { collectionView, _ in
+            if let register { register(collectionView) }
+            else { collectionView.lk.register(viewType, ofKind: kind) }
         }
-        self.viewProvider = viewProvider
+        self.viewProvider = { collectionView, _, indexPath, context in
+            viewProvider(collectionView, indexPath, context)
+        }
+        self.supportsElementKindMapping = false
     }
 
     /// 完全自定义 presentation identity 的 ProviderSupplementary。
     ///
     /// - Parameters:
-    ///   - kind: supplementary element kind。
+    ///   - kind: 附属视图的 UIKit 元素种类。
     ///   - id: supplementary 身份。
     ///   - presentationID: 自定义展示身份。
     ///   - register: 注册 reusable view 的闭包。
     ///   - viewProvider: 创建或 dequeue reusable view 的闭包。
-    /// - Important: 仅用于无法用具体 reusable view 类型表达 presentation identity 的迁移场景。
+    /// - Important: 此重载不支持内部元素种类映射；需要映射时使用接收实际元素种类的重载。
     public init(
         _ kind: String,
         id: ID,
         presentationID: ObjectIdentifier,
         register: @escaping @MainActor (UICollectionView) -> Void,
-        viewProvider: @escaping @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
+        viewProvider:
+            @escaping @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
+    ) {
+        self.id = id
+        self.kind = kind
+        self.presentationID = presentationID
+        self.registerProvider = { collectionView, _ in register(collectionView) }
+        self.viewProvider = { collectionView, _, indexPath, context in
+            viewProvider(collectionView, indexPath, context)
+        }
+        self.supportsElementKindMapping = false
+    }
+
+    /// 支持布局内部 kind 映射的 provider。elementKind 与 indexPath 是本次 UIKit 请求，必须原样用于 dequeue。
+    /// context.indexPath 则是所属业务 item 的位置；不能用它替代 supplementary 的 dequeue indexPath。
+    public init<View>(
+        _ kind: String, id: ID, view viewType: View.Type,
+        register: (@MainActor (UICollectionView, String) -> Void)? = nil,
+        viewProvider: @escaping @MainActor (UICollectionView, String, IndexPath, ListContext) -> UICollectionReusableView
+    ) where View: UICollectionReusableView {
+        self.id = id
+        self.kind = kind
+        self.presentationID = ObjectIdentifier(viewType)
+        self.registerProvider = register ?? { collectionView, elementKind in
+            collectionView.lk.register(viewType, ofKind: elementKind)
+        }
+        self.viewProvider = viewProvider
+        self.supportsElementKindMapping = true
+    }
+
+    /// 自定义展示身份的映射 provider；注册和 dequeue 都必须使用传入的实际 elementKind。
+    public init(
+        _ kind: String, id: ID, presentationID: ObjectIdentifier,
+        register: @escaping @MainActor (UICollectionView, String) -> Void,
+        viewProvider: @escaping @MainActor (UICollectionView, String, IndexPath, ListContext) -> UICollectionReusableView
     ) {
         self.id = id
         self.kind = kind
         self.presentationID = presentationID
         self.registerProvider = register
         self.viewProvider = viewProvider
+        self.supportsElementKindMapping = true
     }
 
     /// 设置内容刷新版本。
     ///
     /// - Parameter refreshID: 当前 supplementary 内容版本 id。
     /// - Returns: 应用内容版本后的 provider supplementary。
-    public func refreshID<RefreshID>(_ refreshID: RefreshID) -> Self where RefreshID: Hashable & Sendable {
+    public func refreshID<RefreshID>(_ refreshID: RefreshID) -> Self
+    where RefreshID: Hashable & Sendable {
         var copy = self
         copy.supplementaryRefreshID = AnyListID(refreshID)
         return copy
     }
 
-    /// 设置 provider supplementary 的完整刷新规则。
+    /// 设置附属视图的刷新规则；可见重配动作不会再次调用此类型的提供者。
     public func refresh(_ rule: ListSupplementaryRefreshRule) -> Self {
         var copy = self
         copy.supplementaryRefreshRule = rule
         return copy
     }
 
+    /// 返回使用指定触发条件和动作的附属视图描述副本。
+    ///
+    /// - Parameters:
+    ///   - trigger: 应用列表更新时的刷新触发条件。
+    ///   - action: 刷新动作；默认可见重配不会再次调用提供者，可用 `reloadSection` 更新内容。
+    /// - Returns: 应用刷新规则后的描述副本。
     public func refresh(
         when trigger: ListRefreshTrigger,
         action: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none)
@@ -602,8 +521,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     }
 
     @MainActor func eraseToAnySupplementary<SectionID>(sectionID: SectionID) -> AnySupplementary
-        where SectionID: Hashable & Sendable
-    {
+    where SectionID: Hashable & Sendable {
         let identity = AnyListIdentity(
             sectionID: AnyListID(sectionID),
             rowID: AnyListID(id),
@@ -617,8 +535,8 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
             refreshID: supplementaryRefreshID,
             refreshRule: supplementaryRefreshRule,
             register: registerProvider,
-            viewProvider: { collectionView, indexPath, context in
-                let view = viewProvider(collectionView, indexPath, context)
+            viewProvider: { collectionView, elementKind, indexPath, context in
+                let view = viewProvider(collectionView, elementKind, indexPath, context)
                 ListTapHandlerInstaller.install(
                     on: view,
                     context: context,
@@ -626,6 +544,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
                 )
                 return view
             },
+            supportsElementKindMapping: supportsElementKindMapping,
             configureVisibleView: nil,
             tapHandler: supplementaryTapHandler,
             displayHandler: nil,
@@ -655,7 +574,7 @@ private final class ListTapGestureRecognizer: UITapGestureRecognizer {}
 
 /// 内部点击事件安装器。
 ///
-/// - Important: Supplementary view 会被复用，所以每次配置时先移除旧 tap 手势，再安装新的闭包代理。
+/// 每次安装时移除 ListKit 自有的旧点击手势与代理；处理器非空时再安装新的手势。
 /// `TapProxy` 通过 associated object 持有，避免 UIKit gesture target 被提前释放。
 @MainActor
 enum ListTapHandlerInstaller {
@@ -673,7 +592,8 @@ enum ListTapHandlerInstaller {
         guard let handler else { return }
         let proxy = TapProxy(handler: handler)
         view.isUserInteractionEnabled = true
-        view.addGestureRecognizer(ListTapGestureRecognizer(target: proxy, action: #selector(TapProxy.invoke)))
+        view.addGestureRecognizer(
+            ListTapGestureRecognizer(target: proxy, action: #selector(TapProxy.invoke)))
         objc_setAssociatedObject(view, &tapProxyKey, proxy, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 

@@ -5,7 +5,7 @@ import UIKit
 /// 自定义列表事件标记协议。
 public protocol ListEvent: Sendable {}
 
-/// Row/Header/Footer 配置和事件闭包收到的上下文。
+/// 集合视图条目与附属视图的配置和事件上下文。
 ///
 /// - Usage:
 /// ```swift
@@ -23,7 +23,9 @@ public struct ListContext {
     public var sectionID: AnyListID { identity.sectionID }
     /// 当前 row 或 supplementary 的稳定数据 id。
     public var itemID: AnyListID { identity.rowID }
-    /// 事件发生时的位置。列表变化后该位置可能失效，跨刷新逻辑应优先使用 `identity`。
+    /// 创建上下文时保存的业务位置，不会随后续列表更新自动改变。
+    /// 条目附属视图使用所属条目的位置；查询实际 UIKit 附属视图地址时使用适配器的地址转换接口。
+    /// 延迟发送事件或跨刷新使用时，应通过 `identity` 重新定位。
     public let indexPath: IndexPath
     private let collectionViewReference: ListCollectionViewReference
 
@@ -49,7 +51,7 @@ public struct ListContext {
     ///
     /// - Parameters:
     ///   - identity: 当前 row 或 supplementary 的稳定展示身份。
-    ///   - indexPath: 当前 cell 或 supplementary 的 index path。
+    ///   - indexPath: 条目的业务位置；条目附属视图使用所属条目位置，边界视图使用其分区内位置。
     ///   - collectionView: 当前 collection view。
     ///   - eventDispatcher: adapter 持有的事件分发闭包。
     /// - Note: 这个初始化器仅供 ListKit 内部构造 context；调用方通过 row/supplementary 的

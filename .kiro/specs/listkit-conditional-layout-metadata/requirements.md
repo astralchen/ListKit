@@ -1,19 +1,11 @@
-# ListKit Conditional Layout Metadata Requirements
+# Section 整体布局与补充视图
 
-## Summary
+当前实现契约见 [Layout API](../../../Documentation/Layout-API.md)。
 
-ListKit 页面只初始化一次 `collectionView.collectionViewLayout = adapter.makeCompositionalLayout()`。之后所有 section layout、header/footer/supplementary、background decoration 的条件变化都通过 `adapter.apply { ... }` 表达，并由 ListKit 自动注册 decoration、更新 layout metadata、触发 layout invalidation。
-
-## Requirements
-
-- `CollectionListAdapter.apply(...)` 必须检测 section layout metadata 变化，并在 apply 完成后自动 invalidate 当前 `collectionView.collectionViewLayout`。
-- layout metadata 包括 section 顺序、`ListSectionLayout`、custom layout id、legacy layout id、supplementary kind/identity/placement/size/pinning、background decoration kind/insets/zIndex。
-- Row 数据或 refreshID 变化但 layout metadata 不变时，不应额外 invalidate layout。
-- `ListSection` 必须支持 SwiftUI-like 条件 section layout 声明：条件写在 `layout:` builder 内，例如 `if isGrid { GridLayout(...) } else { ListLayout(...) }`。
-- `ListSection` 必须支持 SwiftUI-like 条件 header/footer/supplementary 声明：条件写在 `header:`、`footer:`、`supplementaries:` builder 内，例如 `if showHeader { Header(...) }`。
-- `ListSection` 必须支持 SwiftUI-like 条件 supplementary layout 声明：条件写在 `supplementaryLayouts:` builder 内，例如 `if isPinned { BoundarySupplementaryLayout(...) }`。
-- `ListSection` 不提供 `headerIf`、`footerIf`、`supplementaryIf` 这类条件参数 API；条件统一放在 builder 的 `if` 分支里。
-- `ListSection` 必须支持 SwiftUI-like 条件 background decoration 声明：条件写在 `background:` builder 内，例如 `if showBackground { BackgroundDecoration(...) }`。
-- `ListSection` 必须支持 section background decoration DSL，并把 decoration item 写入 compositional section。
-- typed background decoration view 必须自动注册到当前 compositional layout；raw kind 入口不自动注册 view。
-- 页面不需要因为条件 `.layout(...)`、header/footer 或 background decoration 变化重新设置 `collectionView.collectionViewLayout`。
+- layout 返回完整值，公共修饰保持主体类型；Section inset 只有一个来源。
+- boundarySupplementaries 与 itemSupplementaries 分开建模，通过实际 kind 关联 SectionSupplementary 内容与 UIKit 注册；decoration 通过逻辑 kind 关联注册，并解析实际 elementKind。
+- decorationItems 为布局集合，decorations 为 SectionDecoration 注册集合；重复修饰替换集合，显式空集合清除几何。
+- Supplementary 内容不携带尺寸/位置；事件使用内容 onTap，刷新继续支持可见视图重配及 reloadSection。
+- 环境选择返回完整值，自定义 provider 明确边界和 inset 所有权；布局签名覆盖几何与关联变化。
+- 不保留通用 Header/Footer、旧背景 DSL 或迁移包装层；UITableView 的 TableHeader/TableFooter 保留。
+- 测试覆盖编译正反例、状态更新、真实 UIKit 几何与 LayoutLab 交互；验证状态见 Documentation/Layout-Validation.md。

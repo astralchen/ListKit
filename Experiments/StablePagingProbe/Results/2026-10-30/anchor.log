@@ -1,0 +1,811 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -workspace ListKit.xcworkspace -scheme Examples -destination "platform=iOS Simulator,id=9CC16D4E-D6ED-4441-819D-53F30F278283" -derivedDataPath /tmp/listkit-native-paging-build -resultBundlePath /tmp/listkit-stable-paging-20261030/anchor.xcresult "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG NATIVE_PAGING_PROBE" "-only-testing:ExamplesUITests/StablePagingProbeUITests/testMeasuredLineSlotsWithPublicAnchor" "-only-testing:ExamplesTests"
+
+Build settings from command line:
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG NATIVE_PAGING_PROBE
+
+2026-10-30 09:59:29.136 xcodebuild[15392:91455] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+Resolve Package Graph
+2026-10-30 09:59:29.228 xcodebuild[15392:91455] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+
+
+Resolved source packages:
+  ListKit: /Users/sondra/Documents/GitHub/ListKit
+
+Writing result bundle at path:
+	/tmp/listkit-stable-paging-20261030/anchor.xcresult
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (5 targets)
+    Target 'ExamplesUITests' in project 'Examples'
+        ➜ Explicit dependency on target 'Examples' in project 'Examples'
+    Target 'ExamplesTests' in project 'Examples'
+        ➜ Explicit dependency on target 'Examples' in project 'Examples'
+    Target 'Examples' in project 'Examples'
+        ➜ Explicit dependency on target 'ListKit-product' in project 'ListKit'
+    Target 'ListKit-product' in project 'ListKit'
+        ➜ Explicit dependency on target 'ListKit' in project 'ListKit'
+    Target 'ListKit' in project 'ListKit' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --print-asset-tag-combinations --output-format xml1 /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/Assets.xcassets
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/ibtool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+ReadFileContents /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/share/docc/features.json
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+Build description signature: a2e37cca4c28ae5446f4497f0644276f
+Build description path: /tmp/listkit-native-paging-build/Build/Intermediates.noindex/XCBuildData/a2e37cca4c28ae5446f4497f0644276f.xcbuilddata
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache
+    cd /Users/sondra/Documents/GitHub/ListKit
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -o /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache
+
+SwiftDriver ListKit normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name ListKit -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name listkit -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit_const_extract_protocols.json -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit -experimental-emit-module-separately -disable-cmo
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ ListKit (in target 'ListKit' from project 'ListKit')
+
+SwiftCompile normal arm64 (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    
+
+SwiftCompile normal arm64 Compiling\ ListCollectionLayout.swift /Users/sondra/Documents/GitHub/ListKit/Sources/ListKit/Collection/ListCollectionLayout.swift (in target 'ListKit' from project 'ListKit')
+
+SwiftCompile normal arm64 /Users/sondra/Documents/GitHub/ListKit/Sources/ListKit/Collection/ListCollectionLayout.swift (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    builtin-SwiftPerFileCompile ListCollectionLayout.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling ListCollectionLayout.swift (in target 'ListKit' from project 'ListKit')
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for ListKit (in target 'ListKit' from project 'ListKit')
+
+SwiftDriver\ Compilation\ Requirements ListKit normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name ListKit -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name listkit -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit_const_extract_protocols.json -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit -experimental-emit-module-separately -disable-cmo
+
+SwiftDriver\ Compilation ListKit normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name ListKit -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name listkit -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit_const_extract_protocols.json -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit -experimental-emit-module-separately -disable-cmo
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.swiftsourceinfo (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.swiftsourceinfo /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.swiftmodule/arm64-apple-ios-simulator.swiftdoc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.swiftdoc (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.swiftdoc /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.swiftmodule/arm64-apple-ios-simulator.swiftdoc
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.swiftmodule/arm64-apple-ios-simulator.abi.json /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.abi.json (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.abi.json /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+Ld /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.o normal (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios15.0-simulator -r -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -O0 -Xlinker -no_warn_duplicate_libraries -F/tmp/listkit-native-paging-build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -filelist /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.LinkFileList -nostdlib -Xlinker -object_path_lto -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit_lto.o -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -debug_variant -Xlinker -dependency_info -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.swiftmodule -o /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.o
+
+SwiftDriver Examples normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Examples -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -emit-localized-strings -emit-localized-strings-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64 -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+ExtractAppIntentsMetadata (in target 'ListKit' from project 'ListKit')
+    cd /Users/sondra/Documents/GitHub/ListKit
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v27.1.266.1.9QWGqu/Metal.xctoolchain --module-name ListKit --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk --xcode-version 27A9275 --platform-family iOS --deployment-target 15.0 --bundle-identifier listkit.ListKit --output /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.appintents --target-triple arm64-apple-ios15.0-simulator --binary-file /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ListKit.o --dependency-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit_dependency_info.dat --stringsdata-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.SwiftFileList --metadata-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/ListKit.DependencyMetadataFileList --static-metadata-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/ListKit.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ListKit.build/Debug-iphonesimulator/ListKit-t.build/Objects-normal/arm64/ListKit.SwiftConstValuesFileList --force --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-10-30 09:59:42.743 appintentsmetadataprocessor[15561:93293] Starting appintentsmetadataprocessor export
+2026-10-30 09:59:43.016 appintentsmetadataprocessor[15561:93293] Extracted no relevant App Intents symbols, skipping writing output
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ Examples (in target 'Examples' from project 'Examples')
+
+SwiftCompile normal arm64 (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+
+SwiftCompile normal arm64 Compiling\ StablePagingProbeViewController.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift (in target 'Examples' from project 'Examples')
+
+SwiftCompile normal arm64 /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/StablePagingProbeViewController.swift (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftPerFileCompile StablePagingProbeViewController.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling StablePagingProbeViewController.swift (in target 'Examples' from project 'Examples')
+
+SwiftCompile normal arm64 Compiling\ SceneDelegate.swift /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/SceneDelegate.swift (in target 'Examples' from project 'Examples')
+
+SwiftCompile normal arm64 /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/SceneDelegate.swift (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftPerFileCompile SceneDelegate.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling SceneDelegate.swift (in target 'Examples' from project 'Examples')
+
+SwiftDriver\ Compilation Examples normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Examples -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -emit-localized-strings -emit-localized-strings-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64 -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for Examples (in target 'Examples' from project 'Examples')
+
+SwiftDriver\ Compilation\ Requirements Examples normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Examples -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -emit-localized-strings -emit-localized-strings-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64 -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.swiftmodule/arm64-apple-ios-simulator.swiftmodule /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftmodule (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftmodule /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.swiftmodule/arm64-apple-ios-simulator.swiftmodule
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.swiftmodule/arm64-apple-ios-simulator.abi.json /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.abi.json (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.abi.json /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftsourceinfo (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftsourceinfo /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+Ld /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples.debug.dylib normal (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios15.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/tmp/listkit-native-paging-build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F/tmp/listkit-native-paging-build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -filelist /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.LinkFileList -install_name @rpath/Examples.debug.dylib -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path -Xlinker -rpath -Xlinker /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -debug_variant -Xlinker -dependency_info -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples_dependency_info.dat -fobjc-link-runtime -fprofile-instr-generate -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.swiftmodule -Xlinker -alias -Xlinker _main -Xlinker ___debug_main_executable_dylib_entry_point -Xlinker -no_adhoc_codesign -o /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples.debug.dylib
+
+ConstructStubExecutorLinkFileList /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-ExecutorLinkFileList-normal-arm64.txt (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    construct-stub-executor-link-file-list /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples.debug.dylib /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor_no_swift_entry_point.a /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor.a --output /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-ExecutorLinkFileList-normal-arm64.txt
+note: Using stub executor library with Swift entry point. (in target 'Examples' from project 'Examples')
+
+Ld /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples normal (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios15.0-simulator -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Xlinker -rpath -Xlinker @executable_path -Xlinker -rpath -Xlinker @loader_path -Xlinker -rpath -Xlinker /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -Xlinker -rpath -Xlinker @executable_path/Frameworks -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -debug_variant -e ___debug_blank_executor_main -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_dylib -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-DebugDylibPath-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_instlnm -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-DebugDylibInstallName-normal-arm64.txt -Xlinker -filelist -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples-ExecutorLinkFileList-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples.app-Simulated.xcent -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __ents_der -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples.app-Simulated.xcent.der /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples.debug.dylib -Xlinker -no_adhoc_codesign -o /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples
+
+ExtractAppIntentsMetadata (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v27.1.266.1.9QWGqu/Metal.xctoolchain --module-name Examples --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk --xcode-version 27A9275 --platform-family iOS --deployment-target 15.0 --bundle-identifier com.sondra.Examples --output /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app --target-triple arm64-apple-ios15.0-simulator --binary-file /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples --dependency-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples_dependency_info.dat --stringsdata-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftFileList --metadata-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples.DependencyMetadataFileList --static-metadata-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Examples.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Objects-normal/arm64/Examples.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-10-30 09:59:47.149 appintentsmetadataprocessor[15611:93676] Starting appintentsmetadataprocessor export
+2026-10-30 09:59:47.150 appintentsmetadataprocessor[15611:93676] warning: Metadata extraction skipped, no AppIntents.framework dependency found
+
+ProcessInfoPlistFile /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Info.plist /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/Info.plist (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-infoPlistUtility /Users/sondra/Documents/GitHub/ListKit/Examples/Examples/Info.plist -producttype com.apple.product-type.application -genpkginfo /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PkgInfo -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/Launch\ Screen-SBPartialInfo.plist -additionalcontentfile /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/assetcatalog_generated_info.plist -o /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Info.plist
+
+CopySwiftLibs /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples.debug.dylib --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Frameworks --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/SystemExtensions --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Extensions --platform iphonesimulator --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v27.1.266.1.9QWGqu/Metal.xctoolchain --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+
+SwiftDriver ExamplesUITests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ExamplesUITests -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+SwiftDriver ExamplesTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ExamplesTests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ExamplesTests -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+ProcessInfoPlistFile /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/Info.plist /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/empty-ExamplesTests.plist (in target 'ExamplesTests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-infoPlistUtility /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/empty-ExamplesTests.plist -producttype com.apple.product-type.bundle.unit-test -expandbuildsettings -format binary -platform iphonesimulator -o /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/Info.plist
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ ExamplesUITests (in target 'ExamplesUITests' from project 'Examples')
+
+SwiftCompile normal arm64 (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+
+SwiftCompile normal arm64 Compiling\ StablePagingProbeUITests.swift /Users/sondra/Documents/GitHub/ListKit/Examples/ExamplesUITests/StablePagingProbeUITests.swift (in target 'ExamplesUITests' from project 'Examples')
+
+SwiftCompile normal arm64 /Users/sondra/Documents/GitHub/ListKit/Examples/ExamplesUITests/StablePagingProbeUITests.swift (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-SwiftPerFileCompile StablePagingProbeUITests.swift
+
+SwiftDriver\ Compilation\ Requirements ExamplesTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ExamplesTests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ExamplesTests -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+SwiftDriver\ Compilation ExamplesTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ExamplesTests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ExamplesTests -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+Ld /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/ExamplesTests normal (in target 'ExamplesTests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios15.0-simulator -bundle -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/tmp/listkit-native-paging-build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -L/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F/tmp/listkit-native-paging-build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -F/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -filelist /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.LinkFileList -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path -Xlinker -rpath -Xlinker /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/PackageFrameworks -Xlinker -rpath -Xlinker @loader_path/Frameworks -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -bundle_loader /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples -Xlinker -object_path_lto -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -debug_variant -Xlinker -dependency_info -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests_dependency_info.dat -fobjc-link-runtime -fprofile-instr-generate -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.swiftmodule -Xlinker -needed_framework -Xlinker XCTest -framework XCTest -Xlinker -needed-lXCTestSwiftSupport -lXCTestSwiftSupport /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples.debug.dylib -Xlinker -no_adhoc_codesign -o /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/ExamplesTests
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples.xcodeproj: ExamplesTests: ld: warning: building for iOS-simulator-15.0, but linking with dylib '@rpath/XCTest.framework/XCTest' which was built for newer version 17.0
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples.xcodeproj: ExamplesTests: ld: warning: building for iOS-simulator-15.0, but linking with dylib '@rpath/libXCTestSwiftSupport.dylib' which was built for newer version 17.0
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples.xcodeproj: ExamplesTests: ld: warning: building for iOS-simulator-15.0, but linking with dylib '@rpath/Testing.framework/Testing' which was built for newer version 17.0
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for ExamplesUITests (in target 'ExamplesUITests' from project 'Examples')
+
+SwiftDriver\ Compilation\ Requirements ExamplesUITests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ExamplesUITests -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.swiftsourceinfo (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.swiftsourceinfo /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests.swiftmodule/arm64-apple-ios-simulator.abi.json /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.abi.json (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.abi.json /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+Copy /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests.swiftmodule/arm64-apple-ios-simulator.swiftmodule /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.swiftmodule (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.swiftmodule /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests.swiftmodule/arm64-apple-ios-simulator.swiftmodule
+
+CopySwiftLibs /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest (in target 'ExamplesTests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/ExamplesTests --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/Frameworks --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/PlugIns --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/SystemExtensions --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/Extensions --platform iphonesimulator --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v27.1.266.1.9QWGqu/Metal.xctoolchain --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+
+ExtractAppIntentsMetadata (in target 'ExamplesTests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v27.1.266.1.9QWGqu/Metal.xctoolchain --module-name ExamplesTests --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk --xcode-version 27A9275 --platform-family iOS --deployment-target 15.0 --bundle-identifier com.sondra.ExamplesTests --output /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest --target-triple arm64-apple-ios15.0-simulator --binary-file /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest/ExamplesTests --dependency-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests_dependency_info.dat --stringsdata-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.SwiftFileList --metadata-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests.DependencyMetadataFileList --static-metadata-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/ExamplesTests.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesTests.build/Objects-normal/arm64/ExamplesTests.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-10-30 09:59:48.556 appintentsmetadataprocessor[15629:93796] Starting appintentsmetadataprocessor export
+2026-10-30 09:59:48.569 appintentsmetadataprocessor[15629:93796] warning: Metadata extraction skipped, no AppIntents.framework dependency found
+
+CodeSign /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest (in target 'ExamplesTests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/PlugIns/ExamplesTests.xctest
+
+CodeSign /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples.debug.dylib (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/Examples.debug.dylib
+
+SwiftDriverJobDiscovery normal arm64 Compiling StablePagingProbeUITests.swift (in target 'ExamplesUITests' from project 'Examples')
+
+SwiftDriver\ Compilation ExamplesUITests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ExamplesUITests -Onone @/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.SwiftFileList -DDEBUG -DNATIVE_PAGING_PROBE -module-alias Testing\=_Testing_Unavailable -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -target arm64-apple-ios15.0-simulator -g -module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path /tmp/listkit-native-paging-build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -c -j8 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/listkit-native-paging-build/SDKStatCaches.noindex/iphonesimulator27.1-24A94232-e829b21a6f8c9b70876ba0858053c04435d3147121984ba087c28d913653d626.sdkstatcache -output-file-map /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/listkit-native-paging-build/ModuleCache.noindex -sdk-module-cache-path /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /tmp/listkit-native-paging-build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-generated-files.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-own-target-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/Examples-99f74599dfbcd1f4ebfc95c5b998a347-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests-project-headers.hmap -Xcc -I/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources/arm64 -Xcc -I/tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests-Swift.h -working-directory /Users/sondra/Documents/GitHub/ListKit/Examples -experimental-emit-module-separately -disable-cmo
+
+CodeSign /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/__preview.dylib (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/__preview.dylib
+/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app/__preview.dylib: replacing existing signature
+
+CodeSign /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app
+
+Validate /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app (in target 'Examples' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-validationUtility /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/Examples.app -shallow-bundle -infoplist-subpath Info.plist
+
+Ld /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/ExamplesUITests normal (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios15.0-simulator -bundle -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/tmp/listkit-native-paging-build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -L/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F/tmp/listkit-native-paging-build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk/Developer/Library/Frameworks -filelist /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.LinkFileList -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -debug_variant -Xlinker -dependency_info -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests_dependency_info.dat -fobjc-link-runtime -fprofile-instr-generate -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.swiftmodule -Xlinker -needed_framework -Xlinker XCTest -framework XCTest -Xlinker -needed-lXCTestSwiftSupport -lXCTestSwiftSupport -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests.xctest-Simulated.xcent -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __ents_der -Xlinker /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests.xctest-Simulated.xcent.der -Xlinker -no_adhoc_codesign -o /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/ExamplesUITests
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples.xcodeproj: ExamplesUITests: ld: warning: building for iOS-simulator-15.0, but linking with dylib '@rpath/XCTest.framework/XCTest' which was built for newer version 17.0
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples.xcodeproj: ExamplesUITests: ld: warning: building for iOS-simulator-15.0, but linking with dylib '@rpath/libXCTestSwiftSupport.dylib' which was built for newer version 17.0
+/Users/sondra/Documents/GitHub/ListKit/Examples/Examples.xcodeproj: ExamplesUITests: ld: warning: building for iOS-simulator-15.0, but linking with dylib '@rpath/XCUIAutomation.framework/XCUIAutomation' which was built for newer version 17.0
+
+ProcessInfoPlistFile /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/Info.plist /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/empty-ExamplesUITests.plist (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-infoPlistUtility /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/empty-ExamplesUITests.plist -producttype com.apple.product-type.bundle.ui-testing -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ProductTypeInfoPlistAdditions.plist -o /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/Info.plist
+
+ExtractAppIntentsMetadata (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v27.1.266.1.9QWGqu/Metal.xctoolchain --module-name ExamplesUITests --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk --xcode-version 27A9275 --platform-family iOS --deployment-target 15.0 --bundle-identifier com.sondra.ExamplesUITests --output /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest --target-triple arm64-apple-ios15.0-simulator --binary-file /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/ExamplesUITests --dependency-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests_dependency_info.dat --stringsdata-file /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.SwiftFileList --metadata-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests.DependencyMetadataFileList --static-metadata-file-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/ExamplesUITests.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/Objects-normal/arm64/ExamplesUITests.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-10-30 09:59:49.585 appintentsmetadataprocessor[15639:93867] Starting appintentsmetadataprocessor export
+2026-10-30 09:59:49.587 appintentsmetadataprocessor[15639:93867] warning: Metadata extraction skipped, no AppIntents.framework dependency found
+
+CopySwiftLibs /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/ExamplesUITests --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/Frameworks --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/PlugIns --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/SystemExtensions --scan-folder /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/Extensions --platform iphonesimulator --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v27.1.266.1.9QWGqu/Metal.xctoolchain --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/listkit-native-paging-build/Build/Intermediates.noindex/Examples.build/Debug-iphonesimulator/ExamplesUITests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+
+CodeSign /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app/PlugIns/ExamplesUITests.xctest
+
+CodeSign /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app (in target 'ExamplesUITests' from project 'Examples')
+    cd /Users/sondra/Documents/GitHub/ListKit/Examples
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app
+/tmp/listkit-native-paging-build/Build/Products/Debug-iphonesimulator/ExamplesUITests-Runner.app: replacing existing signature
+
+PruneExplicitPrecompiledModules /tmp/listkit-native-paging-build/SDKExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /tmp/listkit-native-paging-build/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /tmp/listkit-native-paging-build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+2026-10-30 09:59:50.394 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+Test Suite 'All tests' started at 2026-10-30 09:59:54.872.
+Test Suite 'All tests' passed at 2026-10-30 09:59:54.874.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64-apple-ios17.0-simulator
+◇ Suite DemoVisualStyleTests started.
+◇ Test tabBarUsesNativeSystemAppearance() started.
+✔ Test tabBarUsesNativeSystemAppearance() passed after 0.021 seconds.
+◇ Test actionButtonsUseGlassConfigurationOnIOS26() started.
+✔ Test actionButtonsUseGlassConfigurationOnIOS26() passed after 0.001 seconds.
+◇ Test liveConsoleToolbarFitsPhoneWidth() started.
+✔ Test liveConsoleToolbarFitsPhoneWidth() passed after 0.003 seconds.
+◇ Test headerMoreButtonsExposeConfiguredMenus() started.
+✔ Test headerMoreButtonsExposeConfiguredMenus() passed after 0.060 seconds.
+◇ Test tabsOwnNavigationControllersWithNativeLargeTitles() started.
+✔ Test tabsOwnNavigationControllersWithNativeLargeTitles() passed after 0.018 seconds.
+◇ Test liveRoomStatusMetricsFitPhoneWidth() started.
+✔ Test liveRoomStatusMetricsFitPhoneWidth() passed after 0.004 seconds.
+◇ Test roomToolkitRootViewIsCollectionView() started.
+✔ Test roomToolkitRootViewIsCollectionView() passed after 0.018 seconds.
+◇ Test liveMessageCellsLeaveSectionBackgroundVisible() started.
+✔ Test liveMessageCellsLeaveSectionBackgroundVisible() passed after 0.001 seconds.
+◇ Test giftMessageCellFitsPhoneWidthWithoutFixedBadgeColumn() started.
+✔ Test giftMessageCellFitsPhoneWidthWithoutFixedBadgeColumn() passed after 0.003 seconds.
+◇ Test giftMessageUsesAlignedMetadataAndCompactAccessory() started.
+✔ Test giftMessageUsesAlignedMetadataAndCompactAccessory() passed after 0.004 seconds.
+◇ Test sectionHeaderTextUsesCompactInnerInsets() started.
+✔ Test sectionHeaderTextUsesCompactInnerInsets() passed after 0.001 seconds.
+◇ Test roomMetricsAlignIconsAndTitlesBelowThem() started.
+✔ Test roomMetricsAlignIconsAndTitlesBelowThem() passed after 0.032 seconds.
+◇ Test capsuleLabelsUseHalfHeightCornerRadius() started.
+✔ Test capsuleLabelsUseHalfHeightCornerRadius() passed after 0.001 seconds.
+✔ Suite DemoVisualStyleTests passed after 0.175 seconds.
+◇ Suite LayoutLabConfigurationTests started.
+◇ Test measuredBadgesRecipeAndCodeMatch() started.
+✔ Test measuredBadgesRecipeAndCodeMatch() passed after 0.005 seconds.
+◇ Test parametersDriveLayoutAndCodeTogether() started.
+✔ Test parametersDriveLayoutAndCodeTogether() passed after 0.001 seconds.
+◇ Test groupSpacingDefaultsToLineSpacingAndCanRestoreFollowing() started.
+✔ Test groupSpacingDefaultsToLineSpacingAndCanRestoreFollowing() passed after 0.001 seconds.
+◇ Test everySceneAndAxisProducesValidRecipe() started.
+✔ Test everySceneAndAxisProducesValidRecipe() passed after 0.001 seconds.
+◇ Test estimatedAndUniformModesMeasureContentAcrossTrackDefinitions() started.
+✔ Test estimatedAndUniformModesMeasureContentAcrossTrackDefinitions() passed after 0.001 seconds.
+◇ Test axisAndContentChangesArePartOfTheRowModel() started.
+✔ Test axisAndContentChangesArePartOfTheRowModel() passed after 0.001 seconds.
+◇ Test codeReflectsSectionOwnershipAndPaging() started.
+✔ Test codeReflectsSectionOwnershipAndPaging() passed after 0.001 seconds.
+◇ Test cellMeasuresExpandedTextAndResetsWhenReusedAcrossAxes() started.
+✔ Test cellMeasuresExpandedTextAndResetsWhenReusedAcrossAxes() passed after 0.048 seconds.
+◇ Test contentCountAndMaximumControlsKeepTheirScope() started.
+✔ Test contentCountAndMaximumControlsKeepTheirScope() passed after 0.001 seconds.
+✔ Suite LayoutLabConfigurationTests passed after 0.059 seconds.
+◇ Suite ListKitLayoutTests started.
+◇ Test listLayoutDoesNotCreateHorizontalOrthogonalScrolling() started.
+✔ Test listLayoutDoesNotCreateHorizontalOrthogonalScrolling() passed after 0.007 seconds.
+◇ Test horizontalLayoutCreatesHorizontalOrthogonalScrolling() started.
+✔ Test horizontalLayoutCreatesHorizontalOrthogonalScrolling() passed after 0.001 seconds.
+◇ Test horizontalLayoutSupportsPagingBehavior() started.
+✔ Test horizontalLayoutSupportsPagingBehavior() passed after 0.001 seconds.
+◇ Test disclosureGroupBuildsHierarchicalRows() started.
+✔ Test disclosureGroupBuildsHierarchicalRows() passed after 0.001 seconds.
+◇ Test hierarchicalIndexTitleAlwaysMapsToAnAppliedItem() started.
+✔ Test hierarchicalIndexTitleAlwaysMapsToAnAppliedItem() passed after 0.008 seconds.
+◇ Test selectingDisclosureParentTogglesTheNativeOutlineSnapshot() started.
+✔ Test selectingDisclosureParentTogglesTheNativeOutlineSnapshot() passed after 0.002 seconds.
+◇ Test gridLayoutDoesNotCreateHorizontalOrthogonalScrolling() started.
+✔ Test gridLayoutDoesNotCreateHorizontalOrthogonalScrolling() passed after 0.001 seconds.
+✔ Suite ListKitLayoutTests passed after 0.024 seconds.
+◇ Suite LiveRoomViewModelTests started.
+◇ Test builderOutputsContainExpectedCollectionAndTableSections() started.
+✔ Test builderOutputsContainExpectedCollectionAndTableSections() passed after 0.010 seconds.
+◇ Test singleAdminSectionDoesNotExposeIndexBar() started.
+✔ Test singleAdminSectionDoesNotExposeIndexBar() passed after 0.001 seconds.
+◇ Test applyDiagnosticsExposeSectionAndRowChangesSeparately() started.
+✔ Test applyDiagnosticsExposeSectionAndRowChangesSeparately() passed after 0.001 seconds.
+◇ Test designScreensInstallNativeListViewsAsRootViews() started.
+✔ Test designScreensInstallNativeListViewsAsRootViews() passed after 0.013 seconds.
+◇ Test collectionScreensPreserveUIKitInsetDefaults() started.
+✔ Test collectionScreensPreserveUIKitInsetDefaults() passed after 0.001 seconds.
+◇ Test adminTableHeaderUsesDynamicSafeAreaMargins() started.
+✔ Test adminTableHeaderUsesDynamicSafeAreaMargins() passed after 0.021 seconds.
+◇ Test adminEventCellKeepsItsBackgroundOutsideTheEditingContentView() started.
+2026-10-30 09:59:55.195598+0800 Examples[15652:94168] Unbalanced calls to begin/end appearance transitions for <Examples.AdminTableDemoViewController: 0x1065b6d00>.
+2026-10-30 09:59:55.196791+0800 Examples[15652:94168] [TableView] Warning once only: UITableView was told to layout its visible cells and other contents without being in the view hierarchy (the table view or one of its superviews has not been added to a window). This may cause bugs by forcing views inside the table view to load and perform layout without accurate information (e.g. table view bounds, trait collection, layout margins, safe area insets, etc), and will also cause unnecessary performance overhead due to extra layout passes. Make a symbolic breakpoint at UITableViewAlertForLayoutOutsideViewHierarchy to catch this in the debugger and see what caused this to occur, so you can avoid this action altogether if possible, or defer it until the table view has been added to a window. Table view: <UITableView: 0x1064c5c00; frame = (0 0; 900 420); clipsToBounds = YES; autoresize = W+H; gestureRecognizers = <NSArray: 0x11283d2f0>; backgroundColor = <UIDynamicSystemColor: 0x10370f340; name = systemGroupedBackgroundColor>; layer = <CALayer: 0x11283c240>; contentOffset: {0, -54}; contentSize: {900, 691.33333333333337}; adjustedContentInset: {54, 0, 0, 0} topEdge=<style=automatic backgroundCapture=color<<UIDynamicSystemColor: 0x10370e580; name = systemBackgroundColor>>>; dataSource: <_TtGC7ListKitP10$101c1c3d023TableDiffableDataSourceO8Examples12AdminSection_: 0x1037da540>>
+✔ Test adminEventCellKeepsItsBackgroundOutsideTheEditingContentView() passed after 0.067 seconds.
+◇ Test sendingMessageAppendsMessageAndRequestsScroll() started.
+✔ Test sendingMessageAppendsMessageAndRequestsScroll() passed after 0.001 seconds.
+◇ Test headerMenuActionsUpdateRoomStateAndResetDemo() started.
+✔ Test headerMenuActionsUpdateRoomStateAndResetDemo() passed after 0.001 seconds.
+◇ Test selectingGiftOnlyChangesGiftSectionRefreshIDs() started.
+✔ Test selectingGiftOnlyChangesGiftSectionRefreshIDs() passed after 0.001 seconds.
+◇ Test micAndGiftSelectionAreIdempotent() started.
+✔ Test micAndGiftSelectionAreIdempotent() passed after 0.001 seconds.
+◇ Test sendGiftPayloadSelectsAndSendsInOneMutation() started.
+✔ Test sendGiftPayloadSelectsAndSendsInOneMutation() passed after 0.001 seconds.
+◇ Test handlingModerationEventRemovesItFromTableOutput() started.
+✔ Test handlingModerationEventRemovesItFromTableOutput() passed after 0.001 seconds.
+◇ Test roomToolkitUsesNativeExpandableAPIGuide() started.
+✔ Test roomToolkitUsesNativeExpandableAPIGuide() passed after 0.001 seconds.
+◇ Test apiGuideSelectionDoesNotActivateOrScroll() started.
+✔ Test apiGuideSelectionDoesNotActivateOrScroll() passed after 0.001 seconds.
+◇ Test apiGuideExpansionStateHidesAndRestoresAllChildren() started.
+✔ Test apiGuideExpansionStateHidesAndRestoresAllChildren() passed after 0.001 seconds.
+◇ Test roomActivityFilterUpdatesOnlyMatchingRowsWithoutRequestingScroll() started.
+✔ Test roomActivityFilterUpdatesOnlyMatchingRowsWithoutRequestingScroll() passed after 0.001 seconds.
+◇ Test micSeatsStartAtTheSectionLeadingBoundary() started.
+✔ Test micSeatsStartAtTheSectionLeadingBoundary() passed after 0.002 seconds.
+◇ Test moderationMovePersistsBusinessOrder() started.
+✔ Test moderationMovePersistsBusinessOrder() passed after 0.001 seconds.
+◇ Test capabilityActivationUsesStableMessageIdentity() started.
+✔ Test capabilityActivationUsesStableMessageIdentity() passed after 0.001 seconds.
+◇ Test sectionContentKeepsDefaultPaddingInsideBackground() started.
+✔ Test sectionContentKeepsDefaultPaddingInsideBackground() passed after 0.001 seconds.
+◇ Test statusSectionDoesNotUseNestedBackgroundDecoration() started.
+✔ Test statusSectionDoesNotUseNestedBackgroundDecoration() passed after 0.002 seconds.
+◇ Test consoleCardsUseCompactSystemSpacing() started.
+✔ Test consoleCardsUseCompactSystemSpacing() passed after 0.001 seconds.
+◇ Test contentSectionHeadersDoNotPinOverRows() started.
+✔ Test contentSectionHeadersDoNotPinOverRows() passed after 0.004 seconds.
+✔ Suite LiveRoomViewModelTests passed after 0.137 seconds.
+✔ Test run with 53 tests in 4 suites passed after 0.396 seconds.
+2026-10-30 09:59:55.317 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+2026-10-30 09:59:55.318 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+2026-10-30 09:59:55.619 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+2026-10-30 09:59:56.667993+0800 ExamplesUITests-Runner[15692:94595] [Default] Running tests...
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-10-30 09:59:57.468.
+Test Suite 'ExamplesUITests.xctest' started at 2026-10-30 09:59:57.473.
+Test Suite 'StablePagingProbeUITests' started at 2026-10-30 09:59:57.474.
+Test Case '-[ExamplesUITests.StablePagingProbeUITests testMeasuredLineSlotsWithPublicAnchor]' started.
+    t =     0.00s Start Test at 2026-10-30 09:59:57.476
+    t =     0.11s Set Up
+    t =     0.12s Open com.sondra.Examples
+    t =     0.12s     Launch com.sondra.Examples
+2026-10-30 09:59:58.434 xcodebuild[15392:91455] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-30 09:59:58.435 xcodebuild[15392:91455] [MT] IDELaunchParametersSnapshot: no debugger version
+objc[15692]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x109f80310) and /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x10a42c398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+2026-10-30 09:59:58.449 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+    t =     2.73s         Setting up automation session
+    t =     2.93s         Wait for com.sondra.Examples to idle
+    t =     4.05s Waiting 10.0s for "stable-collection" CollectionView to exist
+    t =     5.15s     Checking `Expect predicate `existsNoRetry == 1` for object "stable-collection" CollectionView`
+    t =     5.15s         Checking existence of `"stable-collection" CollectionView`
+    t =     5.23s Tap "stable-snapshot" Button
+    t =     5.23s     Wait for com.sondra.Examples to idle
+    t =     5.24s     Find the "stable-snapshot" Button
+    t =     5.27s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =     5.32s     Synthesize event
+    t =     5.65s     Wait for com.sondra.Examples to idle
+    t =     5.94s Find the "stable-state" StaticText
+    t =     5.97s Added attachment named 'restored-slots-horizontal-initial.json'
+    t =     5.97s Find the Target Application 'com.sondra.Examples'
+    t =     6.23s Added attachment named 'restored-slots-horizontal-initial'
+    t =     6.23s Find the "stable-collection" CollectionView
+    t =     6.26s Press Target Application 'com.sondra.Examples'[0.00, 0.00] -> (370.0, 367.0) for 0.1 seconds, then drag to Target Application 'com.sondra.Examples'[0.00, 0.00] -> (195.2, 367.0) with velocity of 250.00 pixels per second, and then hold for 0.2 seconds 
+    t =     6.26s     Wait for com.sondra.Examples to idle
+    t =     6.26s     Find the Target Application 'com.sondra.Examples'
+    t =     6.29s     Check for interrupting elements affecting "Examples" Application
+    t =     6.31s     Synthesize event
+    t =     6.31s         Find the Target Application 'com.sondra.Examples'
+    t =     6.33s         Find the Target Application 'com.sondra.Examples'
+    t =     6.35s         Find the Target Application 'com.sondra.Examples'
+    t =     6.36s         Find the Target Application 'com.sondra.Examples'
+    t =     6.38s         Find the Target Application 'com.sondra.Examples'
+    t =     7.66s     Wait for com.sondra.Examples to idle
+    t =     7.82s Tap "stable-snapshot" Button
+    t =     7.82s     Wait for com.sondra.Examples to idle
+    t =     7.83s     Find the "stable-snapshot" Button
+    t =     7.87s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =     7.89s     Synthesize event
+    t =     8.20s     Wait for com.sondra.Examples to idle
+    t =     8.47s Find the "stable-state" StaticText
+    t =     8.50s Added attachment named 'restored-slots-horizontal-first.json'
+    t =     8.50s Find the Target Application 'com.sondra.Examples'
+    t =     8.73s Added attachment named 'restored-slots-horizontal-first'
+    t =     8.73s Checking existence of `"stable-item-6" Cell`
+    t =     8.76s Find the "stable-item-6" Cell
+STABLE_RESULT restored-slots-horizontal-first target=1 offsetError=0.0 screenError=0.0 stride=269.0
+    t =     8.79s Tap "stable-update" Button
+    t =     8.79s     Wait for com.sondra.Examples to idle
+    t =     8.79s     Find the "stable-update" Button
+    t =     8.82s     Check for interrupting elements affecting "stable-update" Button
+    t =     8.85s     Synthesize event
+    t =     9.15s     Wait for com.sondra.Examples to idle
+    t =     9.47s Tap "stable-snapshot" Button
+    t =     9.47s     Wait for com.sondra.Examples to idle
+    t =     9.48s     Find the "stable-snapshot" Button
+    t =     9.52s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =     9.57s     Synthesize event
+    t =     9.89s     Wait for com.sondra.Examples to idle
+    t =    10.15s Find the "stable-state" StaticText
+    t =    10.17s Added attachment named 'restored-slots-horizontal-updated.json'
+STABLE_UPDATE restored-slots-horizontal content anchorError=0.0
+    t =    10.17s Find the Target Application 'com.sondra.Examples'
+    t =    10.33s Added attachment named 'restored-slots-horizontal-updated'
+    t =    10.33s Find the "stable-collection" CollectionView
+    t =    10.36s Press Target Application 'com.sondra.Examples'[0.00, 0.00] -> (370.0, 367.0) for 0.1 seconds, then drag to Target Application 'com.sondra.Examples'[0.00, 0.00] -> (148.3, 367.0) with velocity of 250.00 pixels per second, and then hold for 0.2 seconds 
+    t =    10.36s     Wait for com.sondra.Examples to idle
+    t =    10.36s     Find the Target Application 'com.sondra.Examples'
+    t =    10.38s     Check for interrupting elements affecting "Examples" Application
+    t =    10.40s     Synthesize event
+    t =    10.40s         Find the Target Application 'com.sondra.Examples'
+    t =    10.41s         Find the Target Application 'com.sondra.Examples'
+    t =    10.43s         Find the Target Application 'com.sondra.Examples'
+    t =    10.45s         Find the Target Application 'com.sondra.Examples'
+    t =    10.48s         Find the Target Application 'com.sondra.Examples'
+    t =    11.96s     Wait for com.sondra.Examples to idle
+    t =    12.11s Tap "stable-snapshot" Button
+    t =    12.11s     Wait for com.sondra.Examples to idle
+    t =    12.15s     Find the "stable-snapshot" Button
+    t =    12.46s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    12.50s     Synthesize event
+    t =    12.85s     Wait for com.sondra.Examples to idle
+    t =    13.15s Find the "stable-state" StaticText
+    t =    13.18s Added attachment named 'restored-slots-horizontal-after-update.json'
+    t =    13.19s Find the Target Application 'com.sondra.Examples'
+    t =    13.43s Added attachment named 'restored-slots-horizontal-after-update'
+    t =    13.43s Checking existence of `"stable-item-12" Cell`
+    t =    13.45s Find the "stable-item-12" Cell
+STABLE_RESULT restored-slots-horizontal-after-update target=2 offsetError=0.0 screenError=0.0 stride=341.0
+    t =    13.48s Tap "stable-resize" Button
+    t =    13.48s     Wait for com.sondra.Examples to idle
+    t =    13.49s     Find the "stable-resize" Button
+    t =    13.51s     Check for interrupting elements affecting "stable-resize" Button
+    t =    13.54s     Synthesize event
+    t =    13.85s     Wait for com.sondra.Examples to idle
+    t =    14.16s Tap "stable-snapshot" Button
+    t =    14.16s     Wait for com.sondra.Examples to idle
+    t =    14.16s     Find the "stable-snapshot" Button
+    t =    14.19s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    14.22s     Synthesize event
+    t =    14.52s     Wait for com.sondra.Examples to idle
+    t =    14.80s Find the "stable-state" StaticText
+    t =    14.83s Added attachment named 'restored-slots-horizontal-resized.json'
+STABLE_UPDATE restored-slots-horizontal container anchorError=0.0
+    t =    14.83s Find the Target Application 'com.sondra.Examples'
+    t =    14.99s Added attachment named 'restored-slots-horizontal-resized'
+    t =    15.00s Find the "stable-collection" CollectionView
+    t =    15.02s Press Target Application 'com.sondra.Examples'[0.00, 0.00] -> (350.0, 347.0) for 0.1 seconds, then drag to Target Application 'com.sondra.Examples'[0.00, 0.00] -> (142.0, 347.0) with velocity of 250.00 pixels per second, and then hold for 0.2 seconds 
+    t =    15.02s     Wait for com.sondra.Examples to idle
+    t =    15.03s     Find the Target Application 'com.sondra.Examples'
+    t =    15.05s     Check for interrupting elements affecting "Examples" Application
+    t =    15.07s     Synthesize event
+    t =    15.07s         Find the Target Application 'com.sondra.Examples'
+    t =    15.09s         Find the Target Application 'com.sondra.Examples'
+    t =    15.11s         Find the Target Application 'com.sondra.Examples'
+    t =    15.12s         Find the Target Application 'com.sondra.Examples'
+    t =    15.14s         Find the Target Application 'com.sondra.Examples'
+    t =    16.58s     Wait for com.sondra.Examples to idle
+    t =    16.74s Tap "stable-snapshot" Button
+    t =    16.74s     Wait for com.sondra.Examples to idle
+    t =    16.74s     Find the "stable-snapshot" Button
+    t =    16.78s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    16.81s     Synthesize event
+    t =    17.12s     Wait for com.sondra.Examples to idle
+    t =    17.59s Find the "stable-state" StaticText
+    t =    17.81s Added attachment named 'restored-slots-horizontal-after-resize.json'
+    t =    17.82s Find the Target Application 'com.sondra.Examples'
+    t =    18.01s Added attachment named 'restored-slots-horizontal-after-resize'
+    t =    18.01s Checking existence of `"stable-item-18" Cell`
+    t =    18.03s Find the "stable-item-18" Cell
+STABLE_RESULT restored-slots-horizontal-after-resize target=3 offsetError=0.0 screenError=0.0 stride=320.0
+    t =    18.07s Find the "stable-collection" CollectionView
+    t =    18.10s Press Target Application 'com.sondra.Examples'[0.00, 0.00] -> (90.0, 347.0) for 0.1 seconds, then drag to Target Application 'com.sondra.Examples'[0.00, 0.00] -> (298.0, 347.0) with velocity of 250.00 pixels per second, and then hold for 0.2 seconds 
+    t =    18.10s     Wait for com.sondra.Examples to idle
+    t =    18.10s     Find the Target Application 'com.sondra.Examples'
+    t =    18.13s     Check for interrupting elements affecting "Examples" Application
+    t =    18.18s     Synthesize event
+    t =    18.19s         Find the Target Application 'com.sondra.Examples'
+    t =    18.20s         Find the Target Application 'com.sondra.Examples'
+    t =    18.22s         Find the Target Application 'com.sondra.Examples'
+    t =    18.24s         Find the Target Application 'com.sondra.Examples'
+    t =    18.27s         Find the Target Application 'com.sondra.Examples'
+    t =    19.88s     Wait for com.sondra.Examples to idle
+    t =    20.04s Tap "stable-snapshot" Button
+    t =    20.04s     Wait for com.sondra.Examples to idle
+    t =    20.07s     Find the "stable-snapshot" Button
+    t =    20.09s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    20.13s     Synthesize event
+    t =    20.43s     Wait for com.sondra.Examples to idle
+    t =    20.72s Find the "stable-state" StaticText
+    t =    20.75s Added attachment named 'restored-slots-horizontal-reverse.json'
+    t =    20.75s Find the Target Application 'com.sondra.Examples'
+    t =    20.92s Added attachment named 'restored-slots-horizontal-reverse'
+    t =    20.92s Checking existence of `"stable-item-12" Cell`
+    t =    20.94s Find the "stable-item-12" Cell
+STABLE_RESULT restored-slots-horizontal-reverse target=2 offsetError=0.0 screenError=0.0 stride=320.0
+    t =    20.96s Find the "stable-trace" StaticText
+    t =    20.99s Added attachment named 'restored-slots-horizontal-trace.json'
+    t =    20.99s Terminate com.sondra.Examples:15701
+2026-10-30 10:00:18.479 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+2026-10-30 10:00:18.480 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+    t =    22.08s Open com.sondra.Examples
+    t =    22.09s     Launch com.sondra.Examples
+2026-10-30 10:00:19.563 xcodebuild[15392:91455] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-30 10:00:19.563 xcodebuild[15392:91455] [MT] IDELaunchParametersSnapshot: no debugger version
+2026-10-30 10:00:19.572 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+    t =    22.30s         Setting up automation session
+    t =    23.44s         Wait for com.sondra.Examples to idle
+    t =    24.75s Waiting 10.0s for "stable-collection" CollectionView to exist
+    t =    25.78s     Checking `Expect predicate `existsNoRetry == 1` for object "stable-collection" CollectionView`
+    t =    25.78s         Checking existence of `"stable-collection" CollectionView`
+    t =    25.83s Tap "stable-snapshot" Button
+    t =    25.83s     Wait for com.sondra.Examples to idle
+    t =    25.84s     Find the "stable-snapshot" Button
+    t =    25.86s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    25.88s     Synthesize event
+    t =    26.17s     Wait for com.sondra.Examples to idle
+    t =    26.45s Find the "stable-state" StaticText
+    t =    26.48s Added attachment named 'restored-slots-vertical-initial.json'
+    t =    26.48s Find the Target Application 'com.sondra.Examples'
+    t =    26.64s Added attachment named 'restored-slots-vertical-initial'
+    t =    26.64s Find the "stable-collection" CollectionView
+    t =    26.66s Press Target Application 'com.sondra.Examples'[0.00, 0.00] -> (220.0, 582.0) for 0.1 seconds, then drag to Target Application 'com.sondra.Examples'[0.00, 0.00] -> (220.0, 407.1) with velocity of 250.00 pixels per second, and then hold for 0.2 seconds 
+    t =    26.66s     Wait for com.sondra.Examples to idle
+    t =    26.66s     Find the Target Application 'com.sondra.Examples'
+    t =    26.67s     Check for interrupting elements affecting "Examples" Application
+    t =    26.69s     Synthesize event
+    t =    26.69s         Find the Target Application 'com.sondra.Examples'
+    t =    26.71s         Find the Target Application 'com.sondra.Examples'
+    t =    26.72s         Find the Target Application 'com.sondra.Examples'
+    t =    26.73s         Find the Target Application 'com.sondra.Examples'
+    t =    26.75s         Find the Target Application 'com.sondra.Examples'
+    t =    28.01s     Wait for com.sondra.Examples to idle
+    t =    28.16s Tap "stable-snapshot" Button
+    t =    28.16s     Wait for com.sondra.Examples to idle
+    t =    28.17s     Find the "stable-snapshot" Button
+    t =    28.20s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    28.22s     Synthesize event
+    t =    28.52s     Wait for com.sondra.Examples to idle
+    t =    28.79s Find the "stable-state" StaticText
+    t =    28.82s Added attachment named 'restored-slots-vertical-first.json'
+    t =    28.82s Find the Target Application 'com.sondra.Examples'
+    t =    28.97s Added attachment named 'restored-slots-vertical-first'
+    t =    28.97s Checking existence of `"stable-item-6" Cell`
+    t =    28.99s Find the "stable-item-6" Cell
+STABLE_RESULT restored-slots-vertical-first target=1 offsetError=0.0 screenError=0.0 stride=269.0
+    t =    29.01s Tap "stable-update" Button
+    t =    29.01s     Wait for com.sondra.Examples to idle
+    t =    29.02s     Find the "stable-update" Button
+    t =    29.04s     Check for interrupting elements affecting "stable-update" Button
+    t =    29.07s     Synthesize event
+    t =    29.37s     Wait for com.sondra.Examples to idle
+    t =    29.67s Tap "stable-snapshot" Button
+    t =    29.67s     Wait for com.sondra.Examples to idle
+    t =    29.68s     Find the "stable-snapshot" Button
+    t =    29.71s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    29.73s     Synthesize event
+    t =    30.03s     Wait for com.sondra.Examples to idle
+    t =    30.30s Find the "stable-state" StaticText
+    t =    30.32s Added attachment named 'restored-slots-vertical-updated.json'
+STABLE_UPDATE restored-slots-vertical content anchorError=0.0
+    t =    30.32s Find the Target Application 'com.sondra.Examples'
+    t =    30.46s Added attachment named 'restored-slots-vertical-updated'
+    t =    30.46s Find the "stable-collection" CollectionView
+    t =    30.48s Press Target Application 'com.sondra.Examples'[0.00, 0.00] -> (220.0, 582.0) for 0.1 seconds, then drag to Target Application 'com.sondra.Examples'[0.00, 0.00] -> (220.0, 360.4) with velocity of 250.00 pixels per second, and then hold for 0.2 seconds 
+    t =    30.48s     Wait for com.sondra.Examples to idle
+    t =    30.48s     Find the Target Application 'com.sondra.Examples'
+    t =    30.49s     Check for interrupting elements affecting "Examples" Application
+    t =    30.51s     Synthesize event
+    t =    30.51s         Find the Target Application 'com.sondra.Examples'
+    t =    30.52s         Find the Target Application 'com.sondra.Examples'
+    t =    30.54s         Find the Target Application 'com.sondra.Examples'
+    t =    30.55s         Find the Target Application 'com.sondra.Examples'
+    t =    30.56s         Find the Target Application 'com.sondra.Examples'
+    t =    32.01s     Wait for com.sondra.Examples to idle
+    t =    32.17s Tap "stable-snapshot" Button
+    t =    32.17s     Wait for com.sondra.Examples to idle
+    t =    32.18s     Find the "stable-snapshot" Button
+    t =    32.20s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    32.22s     Synthesize event
+    t =    32.52s     Wait for com.sondra.Examples to idle
+    t =    32.80s Find the "stable-state" StaticText
+    t =    32.82s Added attachment named 'restored-slots-vertical-after-update.json'
+    t =    32.82s Find the Target Application 'com.sondra.Examples'
+    t =    32.96s Added attachment named 'restored-slots-vertical-after-update'
+    t =    32.96s Checking existence of `"stable-item-12" Cell`
+    t =    32.98s Find the "stable-item-12" Cell
+STABLE_RESULT restored-slots-vertical-after-update target=2 offsetError=0.0 screenError=0.0 stride=341.0
+    t =    32.99s Tap "stable-resize" Button
+    t =    32.99s     Wait for com.sondra.Examples to idle
+    t =    33.00s     Find the "stable-resize" Button
+    t =    33.01s     Check for interrupting elements affecting "stable-resize" Button
+    t =    33.03s     Synthesize event
+    t =    33.33s     Wait for com.sondra.Examples to idle
+    t =    33.63s Tap "stable-snapshot" Button
+    t =    33.63s     Wait for com.sondra.Examples to idle
+    t =    33.64s     Find the "stable-snapshot" Button
+    t =    33.68s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    33.70s     Synthesize event
+    t =    33.99s     Wait for com.sondra.Examples to idle
+    t =    34.28s Find the "stable-state" StaticText
+    t =    34.32s Added attachment named 'restored-slots-vertical-resized.json'
+STABLE_UPDATE restored-slots-vertical container anchorError=0.0
+    t =    34.33s Find the Target Application 'com.sondra.Examples'
+    t =    34.47s Added attachment named 'restored-slots-vertical-resized'
+    t =    34.48s Find the "stable-collection" CollectionView
+    t =    34.50s Press Target Application 'com.sondra.Examples'[0.00, 0.00] -> (220.0, 542.0) for 0.1 seconds, then drag to Target Application 'com.sondra.Examples'[0.00, 0.00] -> (220.0, 334.0) with velocity of 250.00 pixels per second, and then hold for 0.2 seconds 
+    t =    34.50s     Wait for com.sondra.Examples to idle
+    t =    34.50s     Find the Target Application 'com.sondra.Examples'
+    t =    34.51s     Check for interrupting elements affecting "Examples" Application
+    t =    34.53s     Synthesize event
+    t =    34.53s         Find the Target Application 'com.sondra.Examples'
+    t =    34.54s         Find the Target Application 'com.sondra.Examples'
+    t =    34.56s         Find the Target Application 'com.sondra.Examples'
+    t =    34.57s         Find the Target Application 'com.sondra.Examples'
+    t =    34.58s         Find the Target Application 'com.sondra.Examples'
+    t =    35.98s     Wait for com.sondra.Examples to idle
+    t =    36.15s Tap "stable-snapshot" Button
+    t =    36.15s     Wait for com.sondra.Examples to idle
+    t =    36.16s     Find the "stable-snapshot" Button
+    t =    36.19s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    36.21s     Synthesize event
+    t =    36.51s     Wait for com.sondra.Examples to idle
+    t =    36.79s Find the "stable-state" StaticText
+    t =    36.82s Added attachment named 'restored-slots-vertical-after-resize.json'
+    t =    36.82s Find the Target Application 'com.sondra.Examples'
+    t =    36.98s Added attachment named 'restored-slots-vertical-after-resize'
+    t =    36.98s Checking existence of `"stable-item-18" Cell`
+    t =    36.99s Find the "stable-item-18" Cell
+STABLE_RESULT restored-slots-vertical-after-resize target=3 offsetError=0.0 screenError=0.0 stride=320.0
+    t =    37.02s Find the "stable-collection" CollectionView
+    t =    37.03s Press Target Application 'com.sondra.Examples'[0.00, 0.00] -> (220.0, 282.0) for 0.1 seconds, then drag to Target Application 'com.sondra.Examples'[0.00, 0.00] -> (220.0, 490.0) with velocity of 250.00 pixels per second, and then hold for 0.2 seconds 
+    t =    37.03s     Wait for com.sondra.Examples to idle
+    t =    37.04s     Find the Target Application 'com.sondra.Examples'
+    t =    37.05s     Check for interrupting elements affecting "Examples" Application
+    t =    37.07s     Synthesize event
+    t =    37.07s         Find the Target Application 'com.sondra.Examples'
+    t =    37.08s         Find the Target Application 'com.sondra.Examples'
+    t =    37.10s         Find the Target Application 'com.sondra.Examples'
+    t =    37.11s         Find the Target Application 'com.sondra.Examples'
+    t =    37.13s         Find the Target Application 'com.sondra.Examples'
+    t =    38.53s     Wait for com.sondra.Examples to idle
+    t =    38.70s Tap "stable-snapshot" Button
+    t =    38.70s     Wait for com.sondra.Examples to idle
+    t =    38.71s     Find the "stable-snapshot" Button
+    t =    38.73s     Check for interrupting elements affecting "stable-snapshot" Button
+    t =    38.76s     Synthesize event
+    t =    39.05s     Wait for com.sondra.Examples to idle
+    t =    39.34s Find the "stable-state" StaticText
+    t =    39.35s Added attachment named 'restored-slots-vertical-reverse.json'
+    t =    39.35s Find the Target Application 'com.sondra.Examples'
+    t =    39.49s Added attachment named 'restored-slots-vertical-reverse'
+    t =    39.49s Checking existence of `"stable-item-12" Cell`
+    t =    39.51s Find the "stable-item-12" Cell
+STABLE_RESULT restored-slots-vertical-reverse target=2 offsetError=0.0 screenError=0.0 stride=320.0
+    t =    39.53s Find the "stable-trace" StaticText
+    t =    39.56s Added attachment named 'restored-slots-vertical-trace.json'
+    t =    39.56s Terminate com.sondra.Examples:15855
+2026-10-30 10:00:37.041 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+2026-10-30 10:00:37.041 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+    t =    40.59s Tear Down
+Test Case '-[ExamplesUITests.StablePagingProbeUITests testMeasuredLineSlotsWithPublicAnchor]' passed (40.668 seconds).
+Test Suite 'StablePagingProbeUITests' passed at 2026-10-30 10:00:38.143.
+	 Executed 1 test, with 0 failures (0 unexpected) in 40.668 (40.669) seconds
+Test Suite 'ExamplesUITests.xctest' passed at 2026-10-30 10:00:38.143.
+	 Executed 1 test, with 0 failures (0 unexpected) in 40.668 (40.670) seconds
+Test Suite 'Selected tests' passed at 2026-10-30 10:00:38.144.
+	 Executed 1 test, with 0 failures (0 unexpected) in 40.668 (40.675) seconds
+2026-10-30 10:00:38.175 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+2026-10-30 10:00:38.176 xcodebuild[15392:91455] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94232>, error = invalidDigitCount(94232).
+2026-10-30 10:00:38.453 xcodebuild[15392:91455] [MT] IDETestOperationsObserverDebug: 48.680 elapsed -- Testing started completed.
+2026-10-30 10:00:38.453 xcodebuild[15392:91455] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-30 10:00:38.453 xcodebuild[15392:91455] [MT] IDETestOperationsObserverDebug: 48.680 sec, +48.680 sec -- end
+
+Test session results, code coverage, and logs:
+	/tmp/listkit-stable-paging-20261030/anchor.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started

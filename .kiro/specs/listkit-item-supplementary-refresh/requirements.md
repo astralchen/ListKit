@@ -1,17 +1,11 @@
-# ListKit Item Supplementary Refresh Requirements
+# Section 整体布局与补充视图
 
-## Goal
+当前实现契约见 [Layout API](../../../Documentation/Layout-API.md)。
 
-补齐 item-level supplementary 作为 badge、角标等 UI 时的数据刷新语义，并让 builder API 名称清晰表达 item supplementary layout。
-
-## Requirements
-
-1. `ListSectionSupplementary` 必须提供 `itemSupplementaryLayout(...)`，用于把当前 supplementary 放到每个 item 上。
-2. `ListSectionSupplementary` 的旧短名 item layout modifier 不再作为 public API 暴露，因为 ListKit 尚未发布且该命名容易和 row/item 混淆。
-3. item-level supplementary 必须继续复用现有 supplementary register、dequeue、configure、tap、display、endDisplay、refreshID 和 `ListSupplementaryRefreshRule` 语义。
-4. 当 supplementary trigger 为 `.automatic` 或 `.everyApply` 且 action 为 `.reconfigureVisible`，`apply` 完成后必须重配当前可见 supplementary view。
-5. 当 supplementary trigger 为 `.refreshIDChanges`，只有同 identity supplementary 的 refreshID 变化时才执行其 action。
-6. 当 supplementary trigger 为 `.never`，`apply` 不得主动刷新 supplementary view。
-7. `CollectionListAdapter` 必须提供按 kind 刷新当前可见 supplementary 的手动 API。
-8. `CollectionListAdapter` 必须提供按 kind + rowID 刷新当前可见 item supplementary 的手动 API。
-9. `ListApplySummary` 必须能区分 row refresh 统计和 supplementary refresh 统计，避免 supplementary 行为被隐藏在 row 指标里。
+- layout 返回完整值，公共修饰保持主体类型；Section inset 只有一个来源。
+- boundarySupplementaries 与 itemSupplementaries 分开建模，通过实际 kind 关联 SectionSupplementary 内容与 UIKit 注册；decoration 通过逻辑 kind 关联注册，并解析实际 elementKind。
+- decorationItems 为布局集合，decorations 为 SectionDecoration 注册集合；重复修饰替换集合，显式空集合清除几何。
+- Supplementary 内容不携带尺寸/位置；事件使用内容 onTap，刷新继续支持可见视图重配及 reloadSection。
+- 环境选择返回完整值，自定义 provider 明确边界和 inset 所有权；布局签名覆盖几何与关联变化。
+- 不保留通用 Header/Footer、旧背景 DSL 或迁移包装层；UITableView 的 TableHeader/TableFooter 保留。
+- 测试覆盖编译正反例、状态更新、真实 UIKit 几何与 LayoutLab 交互；验证状态见 Documentation/Layout-Validation.md。

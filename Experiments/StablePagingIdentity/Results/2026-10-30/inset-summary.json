@@ -1,0 +1,60 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "9CC16D4E-D6ED-4441-819D-53F30F278283",
+        "deviceName" : "iPhone 17 Pro Max",
+        "modelName" : "iPhone 17 Pro Max",
+        "osBuildNumber" : "23F77",
+        "osVersion" : "26.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 2,
+      "passedTests" : 0,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "Examples · Built with macOS 27.2",
+  "expectedFailures" : 0,
+  "failedTests" : 2,
+  "finishTime" : 1793327457.943,
+  "passedTests" : 0,
+  "result" : "Failed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1793327310.668,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"54.0\") is not equal to (\"0.0\") +/- (\"1.0\") - ltr-horizontal-reorder: logical page leading boundary",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 1,
+      "testIdentifierString" : "StablePagingIdentityUITests/testLTRHorizontal()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/StablePagingIdentityUITests/testLTRHorizontal",
+      "testName" : "testLTRHorizontal()"
+    },
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"-54.0\") is not equal to (\"0.0\") +/- (\"1.0\") - rtl-horizontal-reorder: logical page leading boundary",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 2,
+      "testIdentifierString" : "StablePagingIdentityUITests/testRTLHorizontal()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/StablePagingIdentityUITests/testRTLHorizontal",
+      "testName" : "testRTLHorizontal()"
+    }
+  ],
+  "title" : "Test - Examples",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 2
+}

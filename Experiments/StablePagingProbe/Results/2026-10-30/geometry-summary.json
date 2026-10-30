@@ -1,0 +1,60 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "9CC16D4E-D6ED-4441-819D-53F30F278283",
+        "deviceName" : "iPhone 17 Pro Max",
+        "modelName" : "iPhone 17 Pro Max",
+        "osBuildNumber" : "23F77",
+        "osVersion" : "26.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 2,
+      "passedTests" : 0,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "Examples · Built with macOS 27.2",
+  "expectedFailures" : 0,
+  "failedTests" : 2,
+  "finishTime" : 1793325778.065,
+  "passedTests" : 0,
+  "result" : "Failed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1793325401.65,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"-72.0\") is not equal to (\"0.0\") +/- (\"1.0\") - slots-horizontal: content update must retain aligned page without offset correction",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 1,
+      "testIdentifierString" : "StablePagingProbeUITests/testMeasuredLineSlots()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/StablePagingProbeUITests/testMeasuredLineSlots",
+      "testName" : "testMeasuredLineSlots()"
+    },
+    {
+      "failureText" : "XCTAssertEqualWithAccuracy failed: (\"684.0\") is not equal to (\"783.0\") +/- (\"1.0\") - envelope-horizontal-initial: group capacity/item mapping 18",
+      "targetName" : "ExamplesUITests",
+      "testIdentifier" : 2,
+      "testIdentifierString" : "StablePagingProbeUITests/testMeasuredPageEnvelopeOnly()",
+      "testIdentifierURL" : "test://com.apple.xcode/Examples/ExamplesUITests/StablePagingProbeUITests/testMeasuredPageEnvelopeOnly",
+      "testName" : "testMeasuredPageEnvelopeOnly()"
+    }
+  ],
+  "title" : "Test - Examples",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 2
+}

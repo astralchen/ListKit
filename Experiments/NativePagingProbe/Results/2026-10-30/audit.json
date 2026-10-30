@@ -1,0 +1,16 @@
+{
+  "changed_preexisting_files": [
+    "Examples/Examples/SceneDelegate.swift"
+  ],
+  "library_sources_changed": [],
+  "final_source_sha256": {
+    "Examples/Examples/NativePagingProbeViewController.swift": "3928dd31be26311d43cf055c973cbbea8bbfab99c62ea839f5f120716bf60ff9",
+    "Examples/ExamplesUITests/NativePagingProbeUITests.swift": "a218672958d59e01e4b7c5f44865ebf0b4b9ceff40a7d60cbb264861d52907f5",
+    "Examples/Examples/SceneDelegate.swift": "459c73857e6d8edb7f518d78aab5cef606788eb13a70dc3b59d8472bc178e0e4",
+    "Experiments/NativePagingProbe/analyze.py": "9aab87ce67df70e9a3d97ea95dea02fffe99a2eeb26a095de58f0992c02edc57"
+  },
+  "staged_paths": [],
+  "first_run_source": "first-controller.swift and first-tests.swift",
+  "followup_run_source": "followup-controller.swift and followup-tests.swift",
+  "note": "First-run multigroup and fixed results retained. Followup changes only single-item initial gesture distance, compile guard and MainActor annotation. No library changes."
+}
