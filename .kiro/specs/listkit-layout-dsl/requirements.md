@@ -1,60 +1,11 @@
-# ListKit Layout DSL Requirements
+# Section 整体布局与补充视图
 
-## Requirement 1: Section Layout DSL
+当前实现契约见 [Layout API](../../../Documentation/Layout-API.md)。
 
-**User Story:** 作为 ListKit 页面开发者，我希望 section 可以直接声明列表或网格布局，减少 VC 中重复的 compositional layout 代码。
-
-### Acceptance Criteria
-
-- WHEN 开发者声明 section THE SYSTEM SHALL 支持 `.layout(.list(...))`。
-- WHEN 开发者声明 section THE SYSTEM SHALL 支持 `.layout(.grid(columns: 2, spacing: 12))`。
-- WHEN 开发者声明横向自适应 section THE SYSTEM SHALL 支持 `.layout(.horizontal(...))`。
-- WHEN 开发者需要完全自定义 compositional layout THE SYSTEM SHALL 支持 `.layout(.custom(id: ...) { section, index, environment in ... })`。
-- WHEN 旧页面使用 `.layout("legacy-id")` THE SYSTEM SHALL 保持源码兼容并继续写入 `layoutID`。
-
-## Requirement 2: Compositional Layout Helper
-
-**User Story:** 作为 UIKit 页面开发者，我希望 ListKit 能根据 section DSL 生成 `UICollectionViewCompositionalLayout`，但不强制接管 layout 生命周期。
-
-### Acceptance Criteria
-
-- WHEN adapter 已经 apply sections THE SYSTEM SHALL 提供 `makeCompositionalLayout(fallback:)`。
-- WHEN 页面调用 helper THE SYSTEM SHALL 返回可赋值给 `collectionView.collectionViewLayout` 的 layout。
-- WHEN 页面未显式设置 `scrollDirection`、`interSectionSpacing` 或 `contentInsetsReference` THE SYSTEM SHALL 保留 UIKit layout configuration 的对应系统默认值，且不得修改 collection view 的 `contentInsetAdjustmentBehavior`。
-- WHEN 页面显式设置上述属性 THE SYSTEM SHALL 仅覆盖 layout configuration 的对应属性，并由页面显式管理 scroll view 的 inset adjustment 策略。
-- WHEN `UIKitListLayout` 未显式设置 `showsSeparators` THE SYSTEM SHALL 保留指定 appearance 的 UIKit 默认值。
-- WHEN 使用自绘 compositional separator layout THE SYSTEM SHALL 让 inset 明确相对已解析的 item frame 计算，并保证颜色状态按 layout 实例隔离。
-- WHEN section 未声明 layout THE SYSTEM SHALL 使用 `.list()` 默认布局。
-- WHEN section 使用 `.custom(id:) { ... }` THE SYSTEM SHALL 使用闭包返回的 section，再补充 supplementary layout。
-
-## Requirement 3: Boundary Supplementary Layout
-
-**User Story:** 作为列表开发者，我希望 header、footer 和 custom supplementary 可以自动出现在 compositional layout 中。
-
-### Acceptance Criteria
-
-- WHEN section 声明 header THE SYSTEM SHALL 自动生成 top boundary supplementary。
-- WHEN section 声明 footer THE SYSTEM SHALL 自动生成 bottom boundary supplementary。
-- WHEN section 声明 custom kind supplementary 且没有显式布局 THE SYSTEM SHALL 默认生成 top boundary supplementary。
-- WHEN 开发者调用 `.boundarySupplementaryLayout(...)` THE SYSTEM SHALL 覆盖对应 kind 的 alignment、尺寸、pin、zIndex。
-- WHEN section 调用 `.stickyHeader()` THE SYSTEM SHALL 仅让 header boundary `pinToVisibleBounds = true`。
-
-## Requirement 4: Item-Level Supplementary Layout
-
-**User Story:** 作为 UIKit 开发者，我希望 badge、角标等 custom supplementary 可以挂到每个 item 上。
-
-### Acceptance Criteria
-
-- WHEN 开发者调用 `.itemSupplementaryLayout(...)` THE SYSTEM SHALL 生成 `NSCollectionLayoutSupplementaryItem`。
-- WHEN item-level supplementary 被配置 THE SYSTEM SHALL 复用现有 Supplementary 的注册、dequeue、configure、tap 和 refresh policy。
-- WHEN supplementary provider 收到 item-level indexPath THE SYSTEM SHALL 使用该 item indexPath 构造 `ListContext`。
-
-## Requirement 5: Layout Diagnostics
-
-**User Story:** 作为框架使用者，我希望错误布局配置能在 DEBUG 下被清晰报告。
-
-### Acceptance Criteria
-
-- WHEN `.grid(columns:)` 小于 1 THE SYSTEM SHALL 产生 diagnostics issue，并在布局生成时按 1 column 兜底。
-- WHEN 同一个 kind 同时配置 boundary 和 item placement THE SYSTEM SHALL 产生 diagnostics issue。
-- WHEN 发生 placement 冲突 THE SYSTEM SHALL 采用最后一次显式配置。
+- layout 返回完整值，公共修饰保持主体类型；Section inset 只有一个来源。
+- boundarySupplementaries 与 itemSupplementaries 分开建模，通过实际 kind 关联 SectionSupplementary 内容与 UIKit 注册；decoration 通过逻辑 kind 关联注册，并解析实际 elementKind。
+- decorationItems 为布局集合，decorations 为 SectionDecoration 注册集合；重复修饰替换集合，显式空集合清除几何。
+- Supplementary 内容不携带尺寸/位置；事件使用内容 onTap，刷新继续支持可见视图重配及 reloadSection。
+- 环境选择返回完整值，自定义 provider 明确边界和 inset 所有权；布局签名覆盖几何与关联变化。
+- 不保留通用 Header/Footer、旧背景 DSL 或迁移包装层；UITableView 的 TableHeader/TableFooter 保留。
+- 测试覆盖编译正反例、状态更新、真实 UIKit 几何与 LayoutLab 交互；验证状态见 Documentation/Layout-Validation.md。

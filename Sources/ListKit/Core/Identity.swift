@@ -2,7 +2,7 @@ import UIKit
 
 // MARK: - Identity
 
-/// ListKit 内部使用的类型擦除 ID。
+/// 保留原始值与类型身份的类型擦除标识符。
 ///
 /// - Important: `Int(1)` 和 `String("1")` 不会被误判成同一个 ID。
 /// - Note: `Sendable` 不变量由 initializer 保证，只有 `Hashable & Sendable` 的原始 id 能进入。
@@ -20,10 +20,11 @@ public struct AnyListID: Hashable, CustomStringConvertible, @unchecked Sendable 
         self.valueDescription = String(describing: id)
     }
 
-    /// 尝试取回原始强类型 id。
+    /// 尝试将保存的标识符值转换为指定类型。
     ///
     /// - Parameter type: 要恢复的 id 类型。
-    /// - Returns: 类型匹配时返回原始 id，否则返回 `nil`。
+    /// - Returns: Swift 条件类型转换成功时返回转换后的值，否则返回 `nil`。
+    /// 此转换不使用身份相等性比较所保存的原始类型标识。
     public func typed<ID>(_ type: ID.Type = ID.self) -> ID? where ID: Hashable & Sendable {
         value.base as? ID
     }
@@ -53,10 +54,10 @@ public struct InheritedRowID: Hashable, Sendable {
     private init() {}
 }
 
-/// 列表展示节点的真实身份。
+/// 用于差异更新的列表展示节点身份。
 ///
 /// - Note: `refreshID` 不放进 identity，原因是：数据变了通常只需要刷新同一个展示节点；
-/// 只有 `rowID + Cell.self + variant` 变化时，才代表“这已经是另一个 UI 节点”，应交给 diffable 做 delete + insert。
+/// 分区标识符、条目标识符、视图类型或展示变体变化时，会形成新的展示身份并参与插入与删除。
 public struct AnyListIdentity: Hashable, Sendable {
     /// identity 所属的 Section ID。
     public let sectionID: AnyListID

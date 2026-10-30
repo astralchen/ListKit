@@ -2,7 +2,7 @@ import UIKit
 
 // MARK: - Diagnostics
 
-/// diagnostics 发现的问题类型。
+/// 列表诊断发现的问题类型。
 public enum ListDiagnosticsIssueKind: Equatable, Sendable {
     /// section id 重复。
     case duplicateSection
@@ -12,20 +12,16 @@ public enum ListDiagnosticsIssueKind: Equatable, Sendable {
     case duplicateSupplementary
     /// layout 参数无效。
     case invalidLayout
-    /// supplementary layout 找不到同 kind 的 supplementary view。
-    case orphanSupplementaryLayout
     /// 同一个 section 内同 kind supplementary view 重复。
     case duplicateSupplementaryKind
     /// supplementary layout 配置冲突。
     case conflictingSupplementaryLayout
-    /// legacy layout id 没有被 compositional layout fallback 解析。
-    case unresolvedLayoutID
 }
 
 /// 一条 ListKit 诊断结果。
 ///
-/// - Important: 诊断在 diffable apply 前执行。这样重复 identity 会先被 ListKit 捕获，
-/// 而不是等 `UICollectionViewDiffableDataSource` 用更隐晦的异常崩溃。
+/// 适配器在提交差异快照前验证描述树，是否拦截问题由诊断模式决定。
+/// 依赖容器尺寸或提供者结果的布局问题在布局解析时另行验证。
 public struct ListDiagnosticsIssue: Equatable, Sendable {
     /// 问题分类，用于程序化筛选和测试断言。
     public let kind: ListDiagnosticsIssueKind
@@ -33,40 +29,41 @@ public struct ListDiagnosticsIssue: Equatable, Sendable {
     public let message: String
 }
 
-/// diagnostics 处理方式。
+/// 列表诊断发现问题时的处理策略。
 public enum ListDiagnosticsMode: Equatable, Sendable {
-    /// 不拦截问题，直接交给 diffable。
+    /// 不因描述树诊断而拦截快照提交，也不输出诊断日志。
+    /// 仍会计算描述树诊断结果；独立的布局解析仍拒绝无效几何。
     case disabled
-    /// 打印问题并跳过本次 diffable apply。
+    /// 发现问题时跳过本次快照提交，并在 DEBUG 构建中输出警告。
     case warning
-    /// 触发 assertion。
+    /// 触发断言并阻止本次提交；关闭断言的构建仍跳过提交。
     case assertion
 }
 
-/// diagnostics 配置。
+/// 列表结构诊断与更新日志的配置。
 public struct ListDiagnosticsOptions: Sendable {
-    /// 发现问题时禁用检查、跳过提交并警告，或触发 assertion。
+    /// 诊断问题的拦截与报告策略，默认使用警告模式。
     public var mode: ListDiagnosticsMode
     /// 是否允许在 DEBUG 构建中输出每次 apply 的 summary；还需设置启动参数 -ListKitLogApplySummary true。
     public var logsApplySummary: Bool
 
-    /// 创建 diagnostics 配置。
+    /// 创建 列表结构诊断与更新日志的配置。
     ///
     /// - Parameters:
-    ///   - mode: diagnostics 处理方式。
+    ///   - mode: 列表诊断发现问题时的处理策略。
     ///   - logsApplySummary: 是否允许输出 apply summary 日志，仅在 DEBUG 构建且启动参数为 -ListKitLogApplySummary true 时生效。
     public init(mode: ListDiagnosticsMode = .warning, logsApplySummary: Bool = true) {
         self.mode = mode
         self.logsApplySummary = logsApplySummary
     }
 
-    /// 禁用结构拦截和 summary 日志的配置。
+    /// 关闭结构诊断拦截与日志输出的配置，不关闭诊断结果的计算。
     public static let disabled = ListDiagnosticsOptions(mode: .disabled, logsApplySummary: false)
     /// DEBUG 场景的默认配置：发现问题时警告，设置 -ListKitLogApplySummary true 后输出 apply summary。
     public static let debugDefault = ListDiagnosticsOptions()
 }
 
-/// ListKit 诊断入口。
+/// 用于验证列表内容与布局声明的诊断工具。
 public enum ListDiagnostics {
     /// 校验 section 描述树中的重复 identity 和布局冲突。
     ///
@@ -75,42 +72,63 @@ public enum ListDiagnostics {
     @MainActor public static func validate<SectionID>(
         _ sections: [ListSection<SectionID>]
     ) -> [ListDiagnosticsIssue] where SectionID: Hashable & Sendable {
-        var issues = validate(sections.map { section in
-            ListSectionSnapshot(
-                sectionID: AnyListID(section.id),
-                rows: section.rows.map { row in
-                    ListNodeSnapshot(
-                        identity: row.identity,
-                        refreshID: row.refreshID,
-                        refreshRule: .row(row.refreshRule),
-                        role: .row
-                    )
-                },
-                supplementaries: section.supplementaries.map { supplementary in
-                    ListNodeSnapshot(
-                        identity: supplementary.identity,
-                        refreshID: supplementary.refreshID,
-                        refreshRule: .supplementary(supplementary.refreshRule),
-                        role: .supplementary
-                    )
-                }
-            )
-        })
+        var issues = validate(
+            sections.map { section in
+                ListSectionSnapshot(
+                    sectionID: AnyListID(section.id),
+                    rows: section.rows.map { row in
+                        ListNodeSnapshot(
+                            identity: row.identity,
+                            refreshID: row.refreshID,
+                            refreshRule: .row(row.refreshRule),
+                            role: .row
+                        )
+                    },
+                    supplementaries: section.supplementaries.map { supplementary in
+                        ListNodeSnapshot(
+                            identity: supplementary.identity,
+                            refreshID: supplementary.refreshID,
+                            refreshRule: .supplementary(supplementary.refreshRule),
+                            role: .supplementary
+                        )
+                    }
+                )
+            })
 
         for section in sections {
             let sectionID = AnyListID(section.id)
             issues.append(contentsOf: duplicateSupplementaryKindIssues(in: section, sectionID: sectionID))
-            issues.append(contentsOf: orphanSupplementaryLayoutIssues(in: section, sectionID: sectionID))
-            if let sectionLayout = section.sectionLayout {
-                issues.append(contentsOf: invalidSectionLayoutIssues(sectionLayout, sectionID: sectionID))
+            if case .builtIn(let layout) = section.layoutSource {
+                issues += invalidSectionLayoutIssues(layout, sectionID: sectionID)
+                if layout.uiKitListLayout != nil && layout.options.items.contains(where: { rule in
+                    section.supplementaries.contains { $0.kind == rule.kind }
+                }) {
+                    issues.append(
+                        .init(
+                            kind: .invalidLayout,
+                            message: "ListKit: UIKitListLayout does not support item supplementaries"))
+                }
             }
-            for supplementaryLayout in section.supplementaryLayouts.values {
-                issues.append(contentsOf: invalidSupplementaryLayoutIssues(supplementaryLayout, sectionID: sectionID))
-            }
-
-            issues.append(contentsOf: section.layoutDiagnostics)
+            let options = section.layoutSource.options ?? ListSectionLayoutOptions(decorations: [])
+            let custom: Bool
+            if case .custom = section.layoutSource { custom = true } else { custom = false }
+            issues += options.issues(in: section, custom: custom)
         }
 
+        // 注册作用于整个 UICollectionViewLayout；逻辑 kind 可以在不同 Section 中复用。
+        var decorationTypes: [String: ObjectIdentifier] = [:]
+        for section in sections {
+            for decoration in section.decorations {
+                guard let type = decoration.registrationKey else { continue }
+                if let existing = decorationTypes[decoration.elementKind], existing != type {
+                    issues.append(
+                        .init(
+                            kind: .invalidLayout,
+                            message: "ListKit: decoration elementKind \(decoration.elementKind) has conflicting view registrations"))
+                }
+                decorationTypes[decoration.elementKind] = type
+            }
+        }
         return issues
     }
 
@@ -127,77 +145,26 @@ public enum ListDiagnostics {
             guard count > 1 else { return nil }
             return ListDiagnosticsIssue(
                 kind: .duplicateSupplementaryKind,
-                message: "ListKit: section \(sectionID) declares \(count) supplementary views for kind \(kind); adapter lookup is kind + section, so the last one wins"
+                message:
+                    "ListKit: section \(sectionID) declares \(count) supplementary views for kind \(kind); each kind must identify one declaration within a section"
             )
         }
     }
 
-    private static func orphanSupplementaryLayoutIssues<SectionID>(
-        in section: ListSection<SectionID>,
-        sectionID: AnyListID
-    ) -> [ListDiagnosticsIssue] where SectionID: Hashable & Sendable {
-        let supplementaryKinds = Set(section.supplementaries.map(\.kind))
-
-        return section.supplementaryLayouts.values.compactMap { layout in
-            guard !supplementaryKinds.contains(layout.kind) else { return nil }
-            return ListDiagnosticsIssue(
-                kind: .orphanSupplementaryLayout,
-                message: "ListKit: section \(sectionID) has layout for supplementary kind \(layout.kind), but no matching supplementary view"
-            )
-        }
-    }
-
-    private static func invalidSectionLayoutIssues(
+    static func invalidSectionLayoutIssues(
         _ layout: ListSectionLayout,
         sectionID: AnyListID
     ) -> [ListDiagnosticsIssue] {
         switch layout {
-        case .listConfiguration(let list):
-            return invalidDimensionIssues(list.itemHeight, label: "list itemHeight", sectionID: sectionID)
-                + invalidSpacingIssues(list.spacing, label: "list spacing", sectionID: sectionID)
         case .gridConfiguration(let grid):
-            var issues: [ListDiagnosticsIssue] = []
-            if grid.columns < 1 {
-                issues.append(
-                    ListDiagnosticsIssue(
-                        kind: .invalidLayout,
-                        message: "ListKit: grid layout in section \(sectionID) requires columns >= 1, got \(grid.columns)"
-                    )
-                )
+            return grid.validationErrors.map {
+                .init(kind: .invalidLayout, message: "ListKit: section \(sectionID): " + $0)
             }
-            issues.append(contentsOf: invalidDimensionIssues(grid.itemHeight, label: "grid itemHeight", sectionID: sectionID))
-            issues.append(contentsOf: invalidSpacingIssues(grid.spacing, label: "grid spacing", sectionID: sectionID))
-            return issues
-        case .horizontalConfiguration(let horizontal):
-            return invalidDimensionIssues(horizontal.itemWidth, label: "horizontal itemWidth", sectionID: sectionID)
-                + invalidDimensionIssues(horizontal.itemHeight, label: "horizontal itemHeight", sectionID: sectionID)
-                + invalidSpacingIssues(horizontal.spacing, label: "horizontal spacing", sectionID: sectionID)
-        case .uiKitListConfiguration:
-            return []
+        case .uiKitListConfiguration(let list):
+            return list.headerTopPadding.map {
+                invalidSpacingIssues($0, label: "headerTopPadding", sectionID: sectionID)
+            } ?? []
         }
-    }
-
-    private static func invalidSupplementaryLayoutIssues(
-        _ layout: ListSupplementaryLayout,
-        sectionID: AnyListID
-    ) -> [ListDiagnosticsIssue] {
-        invalidDimensionIssues(layout.width, label: "supplementary \(layout.kind) width", sectionID: sectionID)
-            + invalidDimensionIssues(layout.height, label: "supplementary \(layout.kind) height", sectionID: sectionID)
-    }
-
-    private static func invalidDimensionIssues(
-        _ dimension: ListLayoutDimension,
-        label: String,
-        sectionID: AnyListID
-    ) -> [ListDiagnosticsIssue] {
-        let value = dimension.rawValueForDiagnostics
-        guard value <= 0 else { return [] }
-        return [
-            ListDiagnosticsIssue(
-                kind: .invalidLayout,
-                message: "ListKit: \(label) in section \(sectionID) must be > 0, got \(value)"
-            )
-        ]
     }
 
     private static func invalidSpacingIssues(
@@ -205,21 +172,12 @@ public enum ListDiagnostics {
         label: String,
         sectionID: AnyListID
     ) -> [ListDiagnosticsIssue] {
-        guard spacing < 0 else { return [] }
+        guard !spacing.isFinite || spacing < 0 else { return [] }
         return [
             ListDiagnosticsIssue(
                 kind: .invalidLayout,
                 message: "ListKit: \(label) in section \(sectionID) must be >= 0, got \(spacing)"
             )
         ]
-    }
-}
-
-private extension ListLayoutDimension {
-    var rawValueForDiagnostics: CGFloat {
-        switch self {
-        case .absolute(let value), .estimated(let value), .fractionalWidth(let value), .fractionalHeight(let value):
-            return value
-        }
     }
 }

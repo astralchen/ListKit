@@ -5,7 +5,9 @@ import UIKit
 extension UITableViewCell: ReusableView {}
 extension UITableViewHeaderFooterView: ReusableView {}
 
-/// `tableView.lk` 命名空间，负责自动注册 class/nib 和类型安全 dequeue。
+/// 表格视图的复用工具，通过 `tableView.lk` 访问。
+///
+/// 支持按视图类型自动注册类或同名 nib，并返回指定类型的复用视图。
 public struct ListKitTableViewNamespace {
     let tableView: UITableView
 
@@ -39,6 +41,7 @@ public struct ListKitTableViewNamespace {
     ///   - cellType: 要 dequeue 的 cell 类型。
     ///   - indexPath: cell 所在 index path。
     /// - Returns: 强类型 cell。
+    /// - Precondition: 已使用对应复用标识符注册兼容的单元格类型或 nib。
     @MainActor public func dequeue<Cell>(_ cellType: Cell.Type, for indexPath: IndexPath) -> Cell where Cell: UITableViewCell {
         tableView.dequeueReusableCell(withIdentifier: Cell.listReuseIdentifier, for: indexPath) as! Cell
     }
@@ -47,6 +50,7 @@ public struct ListKitTableViewNamespace {
     ///
     /// - Parameter viewType: 要 dequeue 的 header/footer view 类型。
     /// - Returns: 强类型 header/footer view。
+    /// - Precondition: 已使用对应复用标识符注册兼容的页眉或页脚类型或 nib。
     @MainActor public func dequeueHeaderFooter<View>(_ viewType: View.Type) -> View where View: UITableViewHeaderFooterView {
         tableView.dequeueReusableHeaderFooterView(withIdentifier: View.listReuseIdentifier) as! View
     }

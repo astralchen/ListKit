@@ -98,7 +98,7 @@ final class CollectionContextMenuTests: XCTestCase {
     }
 
     @available(iOS 16.0, *)
-    func testConfigurationPriorityIsLazyAcrossEveryFallback() async {
+    func testConfigurationPriorityPreservesModernDelegateNil() async {
         let (view, adapter) = makeList()
         let delegate = MenuDelegate()
         adapter.collectionDelegate = delegate
@@ -118,8 +118,8 @@ final class CollectionContextMenuTests: XCTestCase {
             stage = current
             calls = []
             let result = adapter.collectionView(view, contextMenuConfigurationForItemsAt: [first], point: CGPoint(x: 3, y: 4))
-            XCTAssertEqual(calls, Array(["items", "row", "new", "old"].prefix(min(current + 1, 4))))
-            XCTAssertEqual(result === config, current < 4)
+            XCTAssertEqual(calls, Array(["items", "row", "new"].prefix(min(current + 1, 3))))
+            XCTAssertEqual(result === config, current < 3)
         }
     }
 
@@ -137,7 +137,7 @@ final class CollectionContextMenuTests: XCTestCase {
     }
 
     @available(iOS 16.0, *)
-    func testModernPreviewsFallbackToLegacyAndUnknownConfigurationsUseOnlyDelegate() async {
+    func testModernPreviewsPreserveDelegateNilAndUnknownConfigurationsUseOnlyDelegate() async {
         let (view, adapter) = makeList()
         let delegate = MenuDelegate()
         adapter.collectionDelegate = delegate
@@ -163,16 +163,79 @@ final class CollectionContextMenuTests: XCTestCase {
                 let result = highlight
                     ? adapter.collectionView(view, contextMenuConfiguration: config, highlightPreviewForItemAt: first)
                     : adapter.collectionView(view, contextMenuConfiguration: config, dismissalPreviewForItemAt: first)
-                XCTAssertEqual(calls, Array(["row", "new", "old"].prefix(min(current + 1, 3))))
-                XCTAssertEqual(result === target, current < 3)
+                XCTAssertEqual(calls, Array(["row", "new"].prefix(min(current + 1, 2))))
+                XCTAssertEqual(result === target, current < 2)
             }
         }
         calls = []
         _ = adapter.collectionView(view, contextMenuConfiguration: unknown, highlightPreviewForItemAt: first)
-        XCTAssertEqual(calls, ["new", "old"])
+        XCTAssertEqual(calls, ["new"])
         calls = []
         _ = adapter.collectionView(view, previewForDismissingContextMenuWithConfiguration: unknown)
         XCTAssertEqual(calls, ["old"])
+    }
+
+    @available(iOS 16.0, *)
+    func testMissingModernConfigurationCallbackUsesLegacyDelegate() async {
+        let (view, adapter) = makeList()
+        let delegate = LegacyMenuDelegate()
+        adapter.collectionDelegate = delegate
+        let config = configuration()
+        let point = CGPoint(x: 3, y: 4)
+        var calls = 0
+        delegate.configuration = { receivedView, indexPath, receivedPoint in
+            XCTAssertTrue(receivedView === view)
+            XCTAssertEqual(indexPath, self.first)
+            XCTAssertEqual(receivedPoint, point)
+            calls += 1
+            return calls == 1 ? config : nil
+        }
+        await apply([row()], to: adapter)
+
+        XCTAssertTrue(adapter.collectionView(view, contextMenuConfigurationForItemsAt: [first], point: point) === config)
+        XCTAssertNil(adapter.collectionView(view, contextMenuConfigurationForItemsAt: [first], point: point))
+        XCTAssertEqual(calls, 2)
+        // 空白区域没有可传给旧版单项回调的位置。
+        XCTAssertNil(adapter.collectionView(view, contextMenuConfigurationForItemsAt: [], point: point))
+        XCTAssertEqual(calls, 2)
+    }
+
+    @available(iOS 16.0, *)
+    func testMissingModernPreviewCallbacksUseLegacyDelegate() async {
+        let (view, adapter) = makeList()
+        let delegate = LegacyMenuDelegate()
+        adapter.collectionDelegate = delegate
+        let config = configuration()
+        let target = preview()
+        var calls = 0
+        delegate.preview = { receivedView, receivedConfig in
+            XCTAssertTrue(receivedView === view)
+            XCTAssertTrue(receivedConfig === config)
+            calls += 1
+            return calls <= 2 ? target : nil
+        }
+        await apply([row()], to: adapter)
+
+        XCTAssertTrue(adapter.collectionView(view, contextMenuConfiguration: config, highlightPreviewForItemAt: first) === target)
+        XCTAssertTrue(adapter.collectionView(view, contextMenuConfiguration: config, dismissalPreviewForItemAt: first) === target)
+        XCTAssertNil(adapter.collectionView(view, contextMenuConfiguration: config, highlightPreviewForItemAt: first))
+        XCTAssertNil(adapter.collectionView(view, contextMenuConfiguration: config, dismissalPreviewForItemAt: first))
+        XCTAssertEqual(calls, 4)
+    }
+
+    @available(iOS 16.0, *)
+    func testMissingMenuDelegateAndCallbacksReturnNil() async {
+        let (view, adapter) = makeList()
+        let delegate = EmptyMenuDelegate()
+        let config = configuration()
+        await apply([row()], to: adapter)
+
+        for forwardedDelegate: UICollectionViewDelegate? in [nil, delegate] {
+            adapter.collectionDelegate = forwardedDelegate
+            XCTAssertNil(adapter.collectionView(view, contextMenuConfigurationForItemsAt: [first], point: .zero))
+            XCTAssertNil(adapter.collectionView(view, contextMenuConfiguration: config, highlightPreviewForItemAt: first))
+            XCTAssertNil(adapter.collectionView(view, contextMenuConfiguration: config, dismissalPreviewForItemAt: first))
+        }
     }
 
     func testLifecycleAndCommitForwardSameObjectsInRowThenDelegateOrder() async {
@@ -369,7 +432,28 @@ private final class MenuAnimator: NSObject, UIContextMenuInteractionCommitAnimat
     }
 }
 
-/// 同时实现新旧代理入口，记录惰性回退和通知顺序。
+@MainActor
+private final class EmptyMenuDelegate: NSObject, UICollectionViewDelegate {}
+
+@MainActor
+private final class LegacyMenuDelegate: NSObject, UICollectionViewDelegate {
+    var configuration: ((UICollectionView, IndexPath, CGPoint) -> UIContextMenuConfiguration?)?
+    var preview: ((UICollectionView, UIContextMenuConfiguration) -> UITargetedPreview?)?
+
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        configuration?(collectionView, indexPath, point)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        preview?(collectionView, configuration)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        preview?(collectionView, configuration)
+    }
+}
+
+/// 同时实现新旧代理入口，记录回调优先级和通知顺序。
 @MainActor
 private final class MenuDelegate: NSObject, UICollectionViewDelegate {
     var oldConfiguration: (() -> UIContextMenuConfiguration?)?

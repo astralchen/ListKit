@@ -1,21 +1,11 @@
-# ListKit Layout DSL Tasks
+# Section 整体布局与补充视图
 
-- [x] Task 1: 新增 `requirements.md`、`design.md`、`tasks.md`，按 Kiro 记录 layout DSL 目标。
-- [x] Task 2: 先添加失败 XCTest，覆盖 DSL、helper、supplementary、diagnostics。
-- [x] Task 3: 新增布局描述类型：`ListSectionLayout`、`ListLayoutDimension`、`ListLayoutInsets`、`ListSupplementaryLayout`。
-- [x] Task 4: 为 `ListSection` 增加 `.layout(_:)`、`.boundarySupplementaryLayout(...)`、`.itemSupplementaryLayout(...)`。
-- [x] Task 5: 实现 `ListSection.makeCompositionalLayoutSection()` 和 supplementary 默认规则。
-- [x] Task 6: 实现 `CollectionListAdapter.makeCompositionalLayout(fallback:)` compositional layout helper 和 `makeCompositionalSection(for:)`。
-- [x] Task 6.1: 默认保留 UIKit `contentInsetsReference` 与 collection view inset adjustment 系统行为，仅在调用方显式设置时覆盖。
-- [x] Task 6.2: 将 scroll direction、Section spacing 和 UIKit list separator visibility 纳入系统默认/显式覆盖语义，并修复 separator 实例状态隔离。
-- [x] Task 7: 扩展 diagnostics：invalid columns、supplementary placement conflict。
-- [x] Task 8: 更新 README，加入 Layout DSL 和 item-level supplementary 示例。
-- [x] Task 9: 运行 ListKit tests、ListKit build、Rebirth workspace build。
+当前实现契约见 [Layout API](../../../Documentation/Layout-API.md)。
 
-## Verification
-
-```bash
-xcodebuild test -scheme ListKit -destination 'id=<booted-simulator-id>'
-xcodebuild -scheme ListKit -destination 'generic/platform=iOS Simulator' build
-xcodebuild -workspace Rebirth.xcworkspace -scheme Rebirth -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
-```
+- layout 返回完整值，公共修饰保持主体类型；Section inset 只有一个来源。
+- boundarySupplementaries 与 itemSupplementaries 分开建模，通过实际 kind 关联 SectionSupplementary 内容与 UIKit 注册；decoration 通过逻辑 kind 关联注册，并解析实际 elementKind。
+- decorationItems 为布局集合，decorations 为 SectionDecoration 注册集合；重复修饰替换集合，显式空集合清除几何。
+- Supplementary 内容不携带尺寸/位置；事件使用内容 onTap，刷新继续支持可见视图重配及 reloadSection。
+- 环境选择返回完整值，自定义 provider 明确边界和 inset 所有权；布局签名覆盖几何与关联变化。
+- 不保留通用 Header/Footer、旧背景 DSL 或迁移包装层；UITableView 的 TableHeader/TableFooter 保留。
+- 测试覆盖编译正反例、状态更新、真实 UIKit 几何与 LayoutLab 交互；验证状态见 Documentation/Layout-Validation.md。

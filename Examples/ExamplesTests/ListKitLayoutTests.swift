@@ -12,11 +12,11 @@ struct ListKitLayoutTests {
             ListSection(0) {
                 Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
             } layout: {
-                ListLayout(itemHeight: .absolute(44))
+                GridLayout(tracks: 1).itemMainAxisSize(.fixed(44)).trackSpacing(0).lineSpacing(0)
             }
         }
 
-        let section = adapter.makeCompositionalSection(for: 0)
+        let section = adapter.makeCompositionalSection(for: 0, environment: TestLayoutEnvironment())
 
         #expect(section?.orthogonalScrollingBehavior == UICollectionLayoutSectionOrthogonalScrollingBehavior.none)
     }
@@ -29,11 +29,11 @@ struct ListKitLayoutTests {
             ListSection(0) {
                 Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
             } layout: {
-                HorizontalLayout(itemWidth: .absolute(92), itemHeight: .absolute(112))
+                GridLayout(tracks: 1).itemMainAxisSize(.fixed(92)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).gridCrossAxisSize(.fixed(112)).orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0)
             }
         }
 
-        let section = adapter.makeCompositionalSection(for: 0)
+        let section = adapter.makeCompositionalSection(for: 0, environment: TestLayoutEnvironment())
 
         #expect(section?.orthogonalScrollingBehavior == .continuous)
     }
@@ -42,10 +42,12 @@ struct ListKitLayoutTests {
         let section = ListSection(0) {
             Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
         } layout: {
-            HorizontalLayout(scrollingBehavior: .groupPagingCentered)
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).gridCrossAxisSize(.estimated(44)).orthogonalScrolling(
+                .groupPagingCentered
+            ).trackSpacing(0).lineSpacing(0)
         }
 
-        #expect(section.makeCompositionalLayoutSection().orthogonalScrollingBehavior == .groupPagingCentered)
+        #expect(section.resolvedForTesting().orthogonalScrollingBehavior == .groupPagingCentered)
     }
 
     @Test func disclosureGroupBuildsHierarchicalRows() {
@@ -66,7 +68,7 @@ struct ListKitLayoutTests {
         #expect(section.outlineRoots.first?.children.count == 1)
         #expect(section.outlineRoots.first?.isExpanded == true)
         #expect(section.rows.first?.showsOutlineDisclosure == true)
-        #expect(section.sectionLayout == .uiKitListConfiguration(.init(appearance: .insetGrouped)))
+        #expect(section.declaredLayout == .uiKitListConfiguration(.init(appearance: .insetGrouped)))
     }
 
     @Test func hierarchicalIndexTitleAlwaysMapsToAnAppliedItem() async {
@@ -139,11 +141,11 @@ struct ListKitLayoutTests {
             ListSection(0) {
                 Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
             } layout: {
-                GridLayout(columns: 2, itemHeight: .absolute(86))
+                GridLayout(tracks: 2).itemMainAxisSize(.fixed(86))
             }
         }
 
-        let section = adapter.makeCompositionalSection(for: 0)
+        let section = adapter.makeCompositionalSection(for: 0, environment: TestLayoutEnvironment())
 
         #expect(section?.orthogonalScrollingBehavior == UICollectionLayoutSectionOrthogonalScrollingBehavior.none)
     }

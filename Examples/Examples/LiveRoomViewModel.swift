@@ -1,5 +1,5 @@
-import UIKit
 import ListKit
+import UIKit
 
 enum LiveRoomCollectionEvent: ListEvent {
     case addMessage
@@ -21,6 +21,11 @@ enum LiveRoomAdminEvent: ListEvent {
 final class LiveRoomViewModel {
     private static let cardBackgroundHorizontalInset: CGFloat = 16
     private static let cardContentHorizontalInset: CGFloat = cardBackgroundHorizontalInset + 8
+
+    private static let sectionHeaderKind = UICollectionView.elementKindSectionHeader
+    private static let cardDecorationKind = "section-decoration"
+    private static let micTitleKind = "mic-title"
+    private static let micCardKind = "mic-card"
 
     private var state: LiveRoomState
     private var selectedStudioModeIndex = 0
@@ -134,7 +139,8 @@ final class LiveRoomViewModel {
     @discardableResult
     func selectMicSeat(_ id: String) -> Bool {
         guard let index = state.micSeats.firstIndex(where: { $0.id == id }),
-              !state.micSeats[index].isSpeaking else { return false }
+            !state.micSeats[index].isSpeaking
+        else { return false }
         for seatIndex in state.micSeats.indices {
             let shouldSpeak = seatIndex == index
             guard state.micSeats[seatIndex].isSpeaking != shouldSpeak else { continue }
@@ -148,7 +154,8 @@ final class LiveRoomViewModel {
     @discardableResult
     func selectGift(_ id: String) -> Bool {
         guard state.gifts.contains(where: { $0.id == id }),
-              state.selectedGiftID != id else { return false }
+            state.selectedGiftID != id
+        else { return false }
         state.selectedGiftID = id
         for index in state.gifts.indices {
             let isSelected = state.gifts[index].id == id
@@ -268,7 +275,8 @@ final class LiveRoomViewModel {
 
     func moveModeration(from source: IndexPath, to destination: IndexPath) {
         guard source.section == destination.section,
-              state.moderationEvents.indices.contains(source.row) else { return }
+            state.moderationEvents.indices.contains(source.row)
+        else { return }
         let event = state.moderationEvents.remove(at: source.row)
         let destinationRow = min(max(destination.row, 0), state.moderationEvents.count)
         state.moderationEvents.insert(event, at: destinationRow)
@@ -294,7 +302,8 @@ final class LiveRoomViewModel {
         state.diagnostics.movedRowCount = summary.movedRowCount
         state.diagnostics.keptRowCount = summary.keptRowCount
         state.diagnostics.rowRefreshIDChangedCount = summary.rowRefreshIDChangedCount
-        state.diagnostics.visibleReconfiguredRowCount = summary.refreshMetrics.visibleReconfiguredRowCount
+        state.diagnostics.visibleReconfiguredRowCount =
+            summary.refreshMetrics.visibleReconfiguredRowCount
         state.diagnostics.contentTransitionCount = summary.animation.contentTransitionCount
         state.diagnostics.anchorCompensation = summary.animation.anchorCompensation
         state.diagnostics.lastCompletionState = String(describing: summary.animation.completionState)
@@ -348,13 +357,14 @@ final class LiveRoomViewModel {
         [
             LiveRoomMenuItem(action: .addMessage, title: "Add Message", symbolName: "text.bubble"),
             LiveRoomMenuItem(action: .sendSelectedGift, title: "Send Selected Gift", symbolName: "gift"),
-            LiveRoomMenuItem(action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise"),
+            LiveRoomMenuItem(
+                action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise"),
             LiveRoomMenuItem(
                 action: .resetDemo,
                 title: "Reset Demo",
                 symbolName: "arrow.counterclockwise",
                 role: .destructive
-            )
+            ),
         ]
     }
 
@@ -369,7 +379,8 @@ final class LiveRoomViewModel {
             )
         }
         items.append(
-            LiveRoomMenuItem(action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise")
+            LiveRoomMenuItem(
+                action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise")
         )
         items.append(
             LiveRoomMenuItem(
@@ -384,14 +395,16 @@ final class LiveRoomViewModel {
 
     private var roomToolkitMenuItems: [LiveRoomMenuItem] {
         [
-            LiveRoomMenuItem(action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise"),
-            LiveRoomMenuItem(action: .addSystemEvent, title: "Add System Event", symbolName: "bolt.horizontal"),
+            LiveRoomMenuItem(
+                action: .refreshStatus, title: "Refresh Status", symbolName: "arrow.clockwise"),
+            LiveRoomMenuItem(
+                action: .addSystemEvent, title: "Add System Event", symbolName: "bolt.horizontal"),
             LiveRoomMenuItem(
                 action: .resetDemo,
                 title: "Reset Demo",
                 symbolName: "arrow.counterclockwise",
                 role: .destructive
-            )
+            ),
         ]
     }
 
@@ -442,34 +455,35 @@ final class LiveRoomViewModel {
     private func makeStudioControlsSection() -> ListSection<LiveRoomSection> {
         let model = studioControlPanelViewModel
         return ListSection(.studioControls) {
-            Row(LiveRoomRowID.studioControls, model: model, cell: StudioControlPanelCell.self) { cell, model, context in
+            Row(LiveRoomRowID.studioControls, model: model, cell: StudioControlPanelCell.self) {
+                cell, model, context in
                 cell.configure(model)
                 cell.onModeChange = { index in
                     context.send(LiveRoomCollectionEvent.studioModeChanged(index))
                 }
             }
             .refreshID(model)
-            .refresh(when: .automatic)
         } layout: {
-            ListLayout(
-                itemHeight: .absolute(274),
-                contentInsets: ListLayoutInsets(top: 12, leading: 16, bottom: 10, trailing: 16)
-            )
+            GridLayout(tracks: 1)
+                .itemMainAxisSize(.fixed(274))
+                .trackSpacing(0).lineSpacing(0)
+                .sectionInsets(.init(top: 12, leading: 16, bottom: 10, trailing: 16))
         }
     }
 
     private func makeRoomMetricsSection() -> ListSection<LiveRoomSection> {
         ListSection(.roomMetrics) {
-            Row(LiveRoomRowID.roomMetrics, model: statusViewModel, cell: RoomMetricStripCell.self) { cell, model, _ in
+            Row(LiveRoomRowID.roomMetrics, model: statusViewModel, cell: RoomMetricStripCell.self) {
+                cell, model, _ in
                 cell.configure(model)
             }
             .refreshID(statusViewModel.refreshVersion)
             .refresh(when: .refreshIDChanges, scope: .allMatching)
         } layout: {
-            ListLayout(
-                itemHeight: .absolute(112),
-                contentInsets: ListLayoutInsets(top: 12, leading: 16, bottom: 14, trailing: 16)
-            )
+            GridLayout(tracks: 1)
+                .itemMainAxisSize(.fixed(112))
+                .trackSpacing(0).lineSpacing(0)
+                .sectionInsets(.init(top: 12, leading: 16, bottom: 14, trailing: 16))
         }
     }
 
@@ -498,10 +512,27 @@ final class LiveRoomViewModel {
                 title: "Native interactions",
                 detail: "Try keyboard focus, Return, a context menu, or swipe this row.",
                 symbolName: "hand.tap"
-            )
+            ),
         ]
 
         return ListSection(.apiGuide) {
+            apiGuideRows(root: root, capabilities: capabilities)
+        } layout: {
+            UIKitListLayout(appearance: .insetGrouped, headerTopPadding: 0)
+        }
+        .selectionMode(.single)
+        .indexTitle("API")
+        .onExpansionChange { [weak self] identity, isExpanded in
+            guard identity.rowID.typed(LiveRoomRowID.self) == .apiGuideRoot else { return }
+            self?.setAPIGuideExpanded(isExpanded)
+        }
+    }
+
+    private func apiGuideRows(
+        root: ListKitCapability,
+        capabilities: [ListKitCapability]
+    ) -> RowGroup {
+        RowGroup {
             DisclosureGroup(
                 Row(root.id, model: root, cell: UICollectionViewListCell.self) { cell, capability, _ in
                     Self.configureCapabilityCell(cell, capability: capability)
@@ -532,17 +563,22 @@ final class LiveRoomViewModel {
                             ])
                         }
                     }
-                    .contextMenuPreview(highlighting: { context, _ in
-                        guard let collectionView = context.collectionViewIfAvailable,
-                              let cell = collectionView.cellForItem(at: context.indexPath),
-                              cell.window != nil else { return nil }
-                        return UITargetedPreview(view: cell)
-                    }, dismissal: { context, _ in
-                        guard let collectionView = context.collectionViewIfAvailable,
-                              let cell = collectionView.cellForItem(at: context.indexPath),
-                              cell.window != nil else { return nil }
-                        return UITargetedPreview(view: cell)
-                    })
+                    .contextMenuPreview(
+                        highlighting: { context, _ in
+                            guard let collectionView = context.collectionViewIfAvailable,
+                                let cell = collectionView.cellForItem(at: context.indexPath),
+                                cell.window != nil
+                            else { return nil }
+                            return UITargetedPreview(view: cell)
+                        },
+                        dismissal: { context, _ in
+                            guard let collectionView = context.collectionViewIfAvailable,
+                                let cell = collectionView.cellForItem(at: context.indexPath),
+                                cell.window != nil
+                            else { return nil }
+                            return UITargetedPreview(view: cell)
+                        }
+                    )
                     .onContextMenuCommit { context, _, animator in
                         animator.addCompletion {
                             context.send(LiveRoomCollectionEvent.activateCapability(capability.title))
@@ -559,14 +595,6 @@ final class LiveRoomViewModel {
                     }
                 }
             }
-        } layout: {
-            UIKitListLayout(appearance: .insetGrouped, headerTopPadding: 0)
-        }
-        .selectionMode(.single)
-        .indexTitle("API")
-        .onExpansionChange { [weak self] identity, isExpanded in
-            guard identity.rowID.typed(LiveRoomRowID.self) == .apiGuideRoot else { return }
-            self?.setAPIGuideExpanded(isExpanded)
         }
     }
 
@@ -591,7 +619,7 @@ final class LiveRoomViewModel {
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor, constant: -20),
-            stack.centerYAnchor.constraint(equalTo: controller.view.centerYAnchor)
+            stack.centerYAnchor.constraint(equalTo: controller.view.centerYAnchor),
         ])
         return controller
     }
@@ -630,51 +658,44 @@ final class LiveRoomViewModel {
     private func makeRoomActivityTitleSection() -> ListSection<LiveRoomSection> {
         let model = roomActivityTitleViewModel
         return ListSection(.roomActivityTitle) {
-            Row(LiveRoomRowID.roomActivityTitle, model: model, cell: RoomActivityTitleCell.self) { cell, model, context in
+            Row(LiveRoomRowID.roomActivityTitle, model: model, cell: RoomActivityTitleCell.self) {
+                cell, model, context in
                 cell.configure(model) { filter in
                     context.send(LiveRoomCollectionEvent.roomActivityFilterChanged(filter))
                 }
             }
             .refreshID(model)
-            .refresh(when: .automatic)
         } layout: {
-            ListLayout(
-                itemHeight: .absolute(42),
-                contentInsets: ListLayoutInsets(top: 4, leading: 16, bottom: 6, trailing: 16)
-            )
+            GridLayout(tracks: 1)
+                .itemMainAxisSize(.fixed(42))
+                .trackSpacing(0).lineSpacing(0)
+                .sectionInsets(.init(top: 4, leading: 16, bottom: 6, trailing: 16))
         }
     }
 
     private func makeRoomActivitySection() -> ListSection<LiveRoomSection> {
         ListSection(.roomActivity) {
-            ForEach(filteredRoomActivityMessages, id: \.id) { message in
-                Row(model: message, cell: LiveMessageCell.self) { cell, message, _ in
-                    cell.configure(message)
-                }
-                .refreshID(message.refreshToken)
-                .refresh(when: .automatic)
-                .contentTransition(.opacity)
-                .selectionDisabled()
-                .contextMenu { _ in
-                    UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-                        UIMenu(children: [
-                            UIAction(title: "Copy text", image: UIImage(systemName: "doc.on.doc")) { _ in }
-                        ])
-                    }
-                }
-            }
-        } layout: {
-            ListLayout(
-                itemHeight: .estimated(106),
-                spacing: 0,
-                contentInsets: Self.cardContentInsets(top: 0, bottom: 28)
-            )
-        } background: {
-            BackgroundDecoration(
-                LiveActivityBackgroundView.self,
-                contentInsets: Self.cardBackgroundInsets(top: 0, bottom: 28)
-            )
+            messageRows(filteredRoomActivityMessages)
         }
+        .layout {
+            roomActivityLayout
+        }
+        .decorations {
+            SectionDecoration(LiveActivityBackgroundView.self, kind: Self.cardDecorationKind)
+        }
+    }
+
+    private var roomActivityLayout: ListSectionGridLayout {
+        GridLayout(tracks: 1)
+            .itemMainAxisSize(.estimated(106))
+            .trackSpacing(0).lineSpacing(0)
+            .sectionInsets(Self.cardContentInsets(top: 0, bottom: 28))
+            .decorationItems {
+                DecorationItemLayout(
+                    kind: Self.cardDecorationKind,
+                    backgroundInsets: Self.cardBackgroundInsets(top: 0, bottom: 28)
+                )
+            }
     }
 
     private func makeStatusSection() -> ListSection<LiveRoomSection> {
@@ -687,255 +708,289 @@ final class LiveRoomViewModel {
             .refresh(when: .refreshIDChanges, scope: .allMatching)
             .selectionDisabled()
         } layout: {
-            ListLayout(
-                itemHeight: .estimated(118),
-                contentInsets: ListLayoutInsets(top: 10, leading: 16, bottom: 8, trailing: 16)
-            )
+            GridLayout(tracks: 1)
+                .itemMainAxisSize(.estimated(118))
+                .trackSpacing(0).lineSpacing(0)
+                .sectionInsets(.init(top: 10, leading: 16, bottom: 8, trailing: 16))
         }
     }
 
     private func makeMicSeatsSection() -> ListSection<LiveRoomSection> {
         ListSection(.micSeats) {
-            ForEach(state.micSeats, id: \.id) { seat in
-                let row = Row(model: seat, cell: MicSeatCell.self) { cell, seat, _ in
-                    cell.configure(seat)
-                }
-                .refreshID(seat.refreshToken)
-                .selected(seat.isSpeaking)
-                .focusable()
-                .selectionFollowsFocus()
-                .onSelect { seat, context in
-                    context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
-                }
-                if #available(iOS 16.0, *) {
-                    row.onPrimaryAction { seat, context in
-                        context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
-                    }
-                } else {
-                    row
-                }
-            }
-        } layout: {
-            HorizontalLayout(
-                itemWidth: .absolute(92),
-                itemHeight: .absolute(112),
-                spacing: 10,
-                contentInsets: Self.cardContentInsets(top: 8, bottom: 12),
-                scrollingBehavior: .continuousGroupLeadingBoundary
-            )
-        } header: {
-            Header(SectionHeaderView.self, id: "mic-header") { view, _ in
-                view.configure(title: "Mic seats", detail: "Tap a seat to move speaking focus")
-            }
-            .layout(height: .absolute(36))
-            .refreshID(state.micSeats.map(\.refreshToken).joined(separator: "|"))
-        } background: {
-            BackgroundDecoration(
-                LiveSectionBackgroundView.self,
-                contentInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
-            )
+            micSeatRows()
+        }
+        .layout {
+            micSeatsLayout
+        }
+        .supplementaries {
+            micSeatsHeader(refreshID: state.micSeats.map(\.refreshToken).joined(separator: "|"))
+        }
+        .decorations {
+            SectionDecoration(LiveSectionBackgroundView.self, kind: Self.micCardKind)
         }
         .selectionMode(.single)
     }
 
-    private func makeMessagesSection() -> ListSection<LiveRoomSection> {
-        let messageCount = state.messages.count
-        return ListSection(.messages) {
-            ForEach(state.messages, id: \.id) { message in
-                Row(model: message, cell: LiveMessageCell.self) { cell, message, _ in
-                    cell.configure(message)
-                }
-                .refreshID(message.refreshToken)
-                .refresh(when: .automatic)
-                .contentTransition(.opacity)
-                .selectionDisabled()
-                .contextMenu { _ in
-                    UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-                        UIMenu(children: [
-                            UIAction(title: "Copy text", image: UIImage(systemName: "doc.on.doc")) { _ in }
-                        ])
-                    }
-                }
+    private func micSeatRows() -> RowGroup {
+        ForEach(state.micSeats, id: \.id) { seat in
+            let row = Row(model: seat, cell: MicSeatCell.self) { cell, seat, _ in
+                cell.configure(seat)
             }
-        } layout: {
-            ListLayout(
-                itemHeight: .estimated(106),
-                spacing: 8,
-                contentInsets: Self.cardContentInsets(top: 8, bottom: 12)
-            )
-        } header: {
-            Header(SectionHeaderView.self, id: "messages-header") { view, _ in
-                view.configure(title: "Live activity", detail: "\(messageCount) messages")
+            .refreshID(seat.refreshToken)
+            .selected(seat.isSpeaking)
+            .focusable()
+            .selectionFollowsFocus()
+            .onSelect { seat, context in
+                context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
             }
-            .layout(height: .absolute(36))
-            .refreshID(messageCount)
-        } background: {
-            BackgroundDecoration(
-                LiveSectionBackgroundView.self,
-                contentInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
-            )
+            if #available(iOS 16.0, *) {
+                row.onPrimaryAction { seat, context in
+                    context.send(LiveRoomCollectionEvent.selectMicSeat(seat.id))
+                }
+            } else {
+                row
+            }
         }
+    }
+
+    private var micSeatsLayout: ListSectionLayoutSource<LiveRoomSection> {
+        EnvironmentLayout(layoutKey: "mic-seats-full-width") { environment in
+            GridLayout(tracks: 1)
+                .itemMainAxisSize(.fixed(92))
+                .lineGrouping(.fitting(mainAxisSize: .fixed(environment.container.effectiveContentSize.width)))
+                .gridCrossAxisSize(.fixed(112))
+                .orthogonalScrolling(.continuousGroupLeadingBoundary)
+                .trackSpacing(10).lineSpacing(10)
+                .sectionInsets(Self.cardContentInsets(top: 8, bottom: 12))
+                .boundarySupplementaries {
+                    BoundarySupplementaryLayout(
+                        kind: Self.micTitleKind,
+                        size: .init(width: .fractionalWidth(1), height: .absolute(36)), alignment: .top
+                    )
+                }
+                .decorationItems {
+                    DecorationItemLayout(
+                        kind: Self.micCardKind,
+                        backgroundInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
+                    )
+                }
+        }
+    }
+
+    private func micSeatsHeader(refreshID: String) -> ListSectionSupplementary<LiveRoomSection> {
+        SectionSupplementary(
+            SectionHeaderView.self,
+            kind: Self.micTitleKind,
+            id: "mic-header"
+        ) { view, _ in
+            view.configure(title: "Mic seats", detail: "Tap a seat to move speaking focus")
+        }
+        .refreshID(refreshID)
+    }
+
+    private func makeMessagesSection() -> ListSection<LiveRoomSection> {
+        ListSection(.messages) {
+            messageRows(state.messages)
+        }
+        .layout {
+            messagesLayout
+        }
+        .supplementaries {
+            messagesHeader(count: state.messages.count)
+        }
+        .decorations {
+            SectionDecoration(LiveSectionBackgroundView.self, kind: Self.cardDecorationKind)
+        }
+    }
+
+    private func messageRows(_ messages: [LiveMessage]) -> RowGroup {
+        ForEach(messages, id: \.id) { message in
+            Row(model: message, cell: LiveMessageCell.self) { cell, message, _ in
+                cell.configure(message)
+            }
+            .refreshID(message.refreshToken)
+            .contentTransition(.opacity)
+            .selectionDisabled()
+            .contextMenu { _ in
+                UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+                    UIMenu(children: [
+                        UIAction(title: "Copy text", image: UIImage(systemName: "doc.on.doc")) { _ in }
+                    ])
+                }
+            }
+        }
+    }
+
+    private var messagesLayout: ListSectionGridLayout {
+        GridLayout(tracks: 1)
+            .itemMainAxisSize(.estimated(106))
+            .trackSpacing(8).lineSpacing(8)
+            .sectionInsets(Self.cardContentInsets(top: 8, bottom: 12))
+            .boundarySupplementaries {
+                BoundarySupplementaryLayout(
+                    kind: Self.sectionHeaderKind,
+                    size: .init(width: .fractionalWidth(1), height: .absolute(36)),
+                    alignment: .top
+                )
+            }
+            .decorationItems {
+                DecorationItemLayout(
+                    kind: Self.cardDecorationKind,
+                    backgroundInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
+                )
+            }
+    }
+
+    private func messagesHeader(count: Int) -> ListSectionSupplementary<LiveRoomSection> {
+        SectionSupplementary(
+            SectionHeaderView.self,
+            kind: Self.sectionHeaderKind,
+            id: "messages-header"
+        ) { view, _ in
+            view.configure(title: "Live activity", detail: "\(count) messages")
+        }
+        .refreshID(count)
     }
 
     private func makeGiftsSection() -> ListSection<LiveRoomSection> {
         ListSection(.gifts) {
-            ForEach(state.gifts, id: \.id) { gift in
-                let row = Row(model: gift, cell: GiftCell.self) { cell, gift, _ in
-                    cell.configure(gift)
-                }
-                .refreshID(gift.refreshToken)
-                .refresh(when: .refreshIDChanges, scope: .allMatching)
-                .selected(gift.isSelected)
-                .focusable()
-                .selectionFollowsFocus()
-                .springLoadingEnabled()
-                .onSelect { gift, context in
-                    context.send(LiveRoomCollectionEvent.selectGift(gift.id))
-                }
-                .onHighlightChange { highlighted, context in
-                    guard let cell = context.collectionViewIfAvailable?.cellForItem(at: context.indexPath) else { return }
-                    UIView.animate(withDuration: 0.15) {
-                        cell.transform = highlighted
-                            ? CGAffineTransform(scaleX: 0.97, y: 0.97)
-                            : .identity
-                    }
-                }
-                .onCellEvent({ cell, trigger in
-                    cell.onSend = trigger
-                }, send: { gift in
-                    LiveRoomCollectionEvent.sendGift(gift.id)
-                })
-                if #available(iOS 16.0, *) {
-                    row.onPrimaryAction { gift, context in
-                        context.send(LiveRoomCollectionEvent.selectGift(gift.id))
-                    }
-                } else {
-                    row
-                }
-            }
-        } layout: {
-            GridLayout(
-                columns: 2,
-                spacing: 10,
-                itemHeight: .absolute(86),
-                contentInsets: Self.cardContentInsets(top: 8, bottom: 12)
-            )
-        } header: {
-            Header(SectionHeaderView.self, id: "gifts-header") { view, _ in
-                view.configure(title: "Gift tray", detail: "Selection uses refreshID reconfigure")
-            }
-            .layout(height: .absolute(36))
-            .refreshID(state.selectedGiftID)
-        } background: {
-            BackgroundDecoration(
-                LiveSectionBackgroundView.self,
-                contentInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
-            )
+            giftRows()
+        }
+        .layout {
+            giftsLayout
+        }
+        .supplementaries {
+            giftsHeader(selectedGiftID: state.selectedGiftID)
+        }
+        .decorations {
+            SectionDecoration(LiveSectionBackgroundView.self, kind: Self.cardDecorationKind)
         }
         .selectionMode(.single)
     }
 
+    private func giftRows() -> RowGroup {
+        ForEach(state.gifts, id: \.id) { gift in
+            let row = Row(model: gift, cell: GiftCell.self) { cell, gift, _ in
+                cell.configure(gift)
+            }
+            .refreshID(gift.refreshToken)
+            .refresh(when: .refreshIDChanges, scope: .allMatching)
+            .selected(gift.isSelected)
+            .focusable()
+            .selectionFollowsFocus()
+            .springLoadingEnabled()
+            .onSelect { gift, context in
+                context.send(LiveRoomCollectionEvent.selectGift(gift.id))
+            }
+            .onHighlightChange { highlighted, context in
+                guard let cell = context.collectionViewIfAvailable?.cellForItem(at: context.indexPath)
+                else { return }
+                UIView.animate(withDuration: 0.15) {
+                    cell.transform =
+                        highlighted
+                        ? CGAffineTransform(scaleX: 0.97, y: 0.97)
+                        : .identity
+                }
+            }
+            .onCellEvent(
+                { cell, trigger in
+                    cell.onSend = trigger
+                },
+                send: { gift in
+                    LiveRoomCollectionEvent.sendGift(gift.id)
+                })
+            if #available(iOS 16.0, *) {
+                row.onPrimaryAction { gift, context in
+                    context.send(LiveRoomCollectionEvent.selectGift(gift.id))
+                }
+            } else {
+                row
+            }
+        }
+    }
+
+    private var giftsLayout: ListSectionGridLayout {
+        GridLayout(tracks: 2)
+            .trackSpacing(10).lineSpacing(10)
+            .itemMainAxisSize(.fixed(86))
+            .sectionInsets(Self.cardContentInsets(top: 8, bottom: 12))
+            .boundarySupplementaries {
+                BoundarySupplementaryLayout(
+                    kind: Self.sectionHeaderKind,
+                    size: .init(width: .fractionalWidth(1), height: .absolute(36)),
+                    alignment: .top
+                )
+            }
+            .decorationItems {
+                DecorationItemLayout(
+                    kind: Self.cardDecorationKind,
+                    backgroundInsets: Self.cardBackgroundInsets(top: 4, bottom: 6)
+                )
+            }
+    }
+
+    private func giftsHeader(selectedGiftID: String) -> ListSectionSupplementary<LiveRoomSection> {
+        SectionSupplementary(
+            SectionHeaderView.self,
+            kind: Self.sectionHeaderKind,
+            id: "gifts-header"
+        ) { view, _ in
+            view.configure(title: "Gift tray", detail: "Selection uses refreshID reconfigure")
+        }
+        .refreshID(selectedGiftID)
+    }
+
     private func makeDiagnosticsSection() -> ListSection<LiveRoomSection> {
         ListSection(.diagnostics) {
-            Row(LiveRoomRowID.diagnostics, model: (), cell: DiagnosticsCell.self) { [weak self] cell, _, _ in
+            Row(LiveRoomRowID.diagnostics, model: (), cell: DiagnosticsCell.self) {
+                [weak self] cell, _, _ in
                 cell.configure(self?.state.diagnostics ?? ApplyDiagnostics())
             }
             .refreshID(state.diagnostics.refreshVersion)
             .refresh(when: .everyApply)
         } layout: {
-            ListLayout(
-                itemHeight: .estimated(58),
-                contentInsets: ListLayoutInsets(top: 4, leading: 16, bottom: 20, trailing: 16)
-            )
+            GridLayout(tracks: 1)
+                .itemMainAxisSize(.estimated(58))
+                .trackSpacing(0).lineSpacing(0)
+                .sectionInsets(.init(top: 4, leading: 16, bottom: 20, trailing: 16))
         }
     }
 
     private func makeConsoleToolbarSection() -> ListSection<LiveRoomSection> {
         let model = toolbarViewModel
         return ListSection(.consoleToolbar) {
-            Row(LiveRoomRowID.consoleToolbar, model: model, cell: LiveConsoleToolbarCell.self) { cell, model, _ in
+            Row(LiveRoomRowID.consoleToolbar, model: model, cell: LiveConsoleToolbarCell.self) {
+                cell, model, _ in
                 cell.configure(model)
             }
             .refreshID(model)
-            .refresh(when: .automatic)
-            .onCellEvent({ cell, trigger in
-                cell.onAddMessage = trigger
-            }, send: { _ in
-                LiveRoomCollectionEvent.addMessage
-            })
-            .onCellEvent({ cell, trigger in
-                cell.onSendGift = trigger
-            }, send: { _ in
-                LiveRoomCollectionEvent.sendSelectedGift
-            })
-        } layout: {
-            ListLayout(
-                itemHeight: .absolute(76),
-                contentInsets: ListLayoutInsets(top: 12, leading: 16, bottom: 6, trailing: 16)
+            .onCellEvent(
+                { cell, trigger in
+                    cell.onAddMessage = trigger
+                },
+                send: { _ in
+                    LiveRoomCollectionEvent.addMessage
+                }
             )
+            .onCellEvent(
+                { cell, trigger in
+                    cell.onSendGift = trigger
+                },
+                send: { _ in
+                    LiveRoomCollectionEvent.sendSelectedGift
+                })
+        } layout: {
+            GridLayout(tracks: 1)
+                .itemMainAxisSize(.fixed(76))
+                .trackSpacing(0).lineSpacing(0)
+                .sectionInsets(.init(top: 12, leading: 16, bottom: 6, trailing: 16))
         }
     }
 
     private func makeModerationSection() -> TableSection<AdminSection> {
         let moderationCount = state.moderationEvents.count
         return TableSection(.moderation) {
-            TableForEach(state.moderationEvents, id: \.id) { [weak self] event in
-                let row = TableRow(model: event, cell: AdminEventTableCell.self) { cell, event, _ in
-                    cell.configure(event)
-                }
-                .height(.fixed(72))
-                .refreshID(event.refreshToken)
-                .contentTransition(.opacity)
-                .selected(event.isSelected)
-                .focusable()
-                .selectionFollowsFocus()
-                .springLoadingEnabled()
-                .indentWhileEditing(false)
-                .onSelect { event, context in
-                    context.send(LiveRoomAdminEvent.select(event.id))
-                }
-                .contextMenu { context in
-                    UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-                        UIMenu(children: [
-                            UIAction(title: "Resolve event", image: UIImage(systemName: "checkmark.circle")) { _ in
-                                context.send(LiveRoomAdminEvent.resolve(event.id))
-                            }
-                        ])
-                    }
-                }
-                .contextMenuPreview(highlighting: { context in
-                    guard let tableView = context.tableViewIfAvailable,
-                          let cell = tableView.cellForRow(at: context.indexPath) else { return nil }
-                    return UITargetedPreview(view: cell)
-                })
-                .editing(.delete) { event, _, context in
-                    context.send(LiveRoomAdminEvent.resolve(event.id))
-                }
-                .onEditingChange { isEditing, context in
-                    context.tableViewIfAvailable?.cellForRow(at: context.indexPath)?.contentView.alpha = isEditing ? 0.82 : 1
-                }
-                .trailingSwipeActions { context in
-                    let action = UIContextualAction(style: .destructive, title: "Mute") { _, _, completion in
-                        context.send(LiveRoomAdminEvent.resolve(event.id))
-                        completion(true)
-                    }
-                    action.image = UIImage(systemName: "mic.slash")
-                    return UISwipeActionsConfiguration(actions: [action])
-                }
-                .moveTarget { source, proposed in
-                    IndexPath(row: proposed.row, section: source.section)
-                }
-                .onMove { _, source, destination in
-                    self?.moveModeration(from: source, to: destination)
-                }
-                if #available(iOS 16.0, *) {
-                    row.onPrimaryAction { event, context in
-                        context.send(LiveRoomAdminEvent.select(event.id))
-                    }
-                } else {
-                    row
-                }
-            }
+            moderationRows()
         } header: {
             TableHeader(AdminHeaderView.self, id: "moderation-header") { view, _ in
                 view.configure(title: "Admin Events", detail: "\(moderationCount)")
@@ -944,6 +999,69 @@ final class LiveRoomViewModel {
             .refreshID(moderationCount)
         }
         .selectionMode(.single)
+    }
+
+    private func moderationRows() -> TableRowGroup {
+        TableForEach(state.moderationEvents, id: \.id) { [weak self] event in
+            let row = TableRow(model: event, cell: AdminEventTableCell.self) { cell, event, _ in
+                cell.configure(event)
+            }
+            .height(.fixed(72))
+            .refreshID(event.refreshToken)
+            .contentTransition(.opacity)
+            .selected(event.isSelected)
+            .focusable()
+            .selectionFollowsFocus()
+            .springLoadingEnabled()
+            .indentWhileEditing(false)
+            .onSelect { event, context in
+                context.send(LiveRoomAdminEvent.select(event.id))
+            }
+            .contextMenu { context in
+                UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+                    UIMenu(children: [
+                        UIAction(title: "Resolve event", image: UIImage(systemName: "checkmark.circle")) {
+                            _ in
+                            context.send(LiveRoomAdminEvent.resolve(event.id))
+                        }
+                    ])
+                }
+            }
+            .contextMenuPreview(highlighting: { context in
+                guard let tableView = context.tableViewIfAvailable,
+                    let cell = tableView.cellForRow(at: context.indexPath)
+                else { return nil }
+                return UITargetedPreview(view: cell)
+            })
+            .editing(.delete) { event, _, context in
+                context.send(LiveRoomAdminEvent.resolve(event.id))
+            }
+            .onEditingChange { isEditing, context in
+                context.tableViewIfAvailable?.cellForRow(at: context.indexPath)?.contentView.alpha =
+                    isEditing ? 0.82 : 1
+            }
+            .trailingSwipeActions { context in
+                let action = UIContextualAction(style: .destructive, title: "Mute") { _, _, completion in
+                    context.send(LiveRoomAdminEvent.resolve(event.id))
+                    completion(true)
+                }
+                action.image = UIImage(systemName: "mic.slash")
+                return UISwipeActionsConfiguration(actions: [action])
+            }
+            .moveTarget { source, proposed in
+                IndexPath(row: proposed.row, section: source.section)
+            }
+            .onMove { _, source, destination in
+                self?.moveModeration(from: source, to: destination)
+            }
+            if #available(iOS 16.0, *) {
+                row.onPrimaryAction { event, context in
+                    context.send(LiveRoomAdminEvent.select(event.id))
+                }
+            } else {
+                row
+            }
+        }
     }
 
     func selectModeration(_ id: String) {
@@ -958,7 +1076,7 @@ final class LiveRoomViewModel {
             "Queue the next guest request.",
             "Moderator action synced.",
             "Audience heat is climbing.",
-            "Pinned notice refreshed."
+            "Pinned notice refreshed.",
         ]
         return messages[state.messageSequence % messages.count]
     }

@@ -52,6 +52,9 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
             self?.performNavigationAction(action)
         }
         navigationItem.rightBarButtonItem = navigationMenuItem
+        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Grid", primaryAction: UIAction { [weak self] _ in
+            self?.navigationController?.pushViewController(LayoutLabViewController(), animated: true)
+        })
     }
 
     override func buildContent() {

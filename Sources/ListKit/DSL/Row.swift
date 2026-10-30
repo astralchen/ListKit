@@ -20,13 +20,13 @@ public struct ListContentTransition: Equatable, Sendable {
     /// 使用 0.2 秒系统淡入淡出更新内容。
     public static let opacity = ListContentTransition(storage: .opacity(duration: 0.2))
 
-    /// 使用指定时长的淡入淡出更新内容。
+    /// 使用指定时长的淡入淡出更新内容，负时长按零处理。
     public static func opacity(duration: TimeInterval) -> ListContentTransition {
         ListContentTransition(storage: .opacity(duration: max(0, duration)))
     }
 }
 
-/// section 选择模式描述。
+/// 分区的条目选择模式。
 public enum ListSelectionMode: Equatable, Sendable {
     /// 根据 Row 或外部 UIKit delegate 的选择意图自动启用 section 内单选。
     case automatic
@@ -65,7 +65,7 @@ extension ListSelectionMode {
 /// `ListSection` 构建阶段转成 `AnyListRow`，再交给 `CollectionListAdapter`
 /// 做 diff、dequeue、可见刷新和事件回调。
 public struct AnyListRow {
-    /// 包含 Section、Row ID 和展示变体的稳定 identity。
+    /// 由分区标识符、条目标识符、展示类型及可选变体组成的稳定身份。
     public let identity: AnyListIdentity
     /// 调用方提供的内容版本；用于 apply 时判断 kept Row 是否需要刷新。
     public let refreshID: AnyListID?
@@ -73,13 +73,13 @@ public struct AnyListRow {
     public let refreshRule: ListRowRefreshRule
     /// controlled selection 的目标状态；`nil` 表示由 UIKit/用户交互维护。
     public let isSelected: Bool?
-    /// 是否禁止当前 Row 进入选择状态。
+    /// 是否禁止用户选择或取消选择当前条目，不覆盖受控选择状态。
     public let isSelectionDisabled: Bool
-    /// 是否允许焦点系统聚焦当前 Row；`nil` 使用 UIKit 默认值。
+    /// 是否允许条目获得焦点；`nil` 时查询外部代理，代理未提供结果时允许聚焦。
     public let isFocusable: Bool?
-    /// 焦点移动是否同步改变选择；`nil` 使用 UIKit 默认值。
+    /// 焦点移动是否同步改变选择；`nil` 时先查询外部代理，再使用列表视图的设置。
     public let selectionFollowsFocus: Bool?
-    /// 是否允许 spring-loading；`nil` 使用 UIKit 默认值。
+    /// 是否允许弹簧加载交互；`nil` 时查询外部代理，代理未提供结果时允许。
     public let isSpringLoadingEnabled: Bool?
     /// outline Row 是否显示系统 disclosure indicator。
     public let showsOutlineDisclosure: Bool
@@ -151,9 +151,9 @@ public protocol ListRowRepresentable {
 }
 
 public extension ListRowRepresentable {
-    /// ForEach 会通过这个入口把当前元素的 id 传给内部 Row。
+    /// 默认忽略继承标识符，调用不带 `inheritedID` 的条目转换方法。
     ///
-    /// 普通 Row 默认忽略 inheritedID；只有 `Row(model:cell:)` 这种“继承身份”的 Row 会读取它。
+    /// 需要继承外层遍历身份的类型应提供自己的实现。
     @MainActor func eraseToAnyListRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -168,7 +168,7 @@ public extension ListRowRepresentable {
         eraseToAnyListRows(sectionID: sectionID).map { AnyListOutlineNode(row: $0) }
     }
 
-    /// 默认先应用继承 identity，再把普通 Row 包装为 outline 节点。
+    /// 将继承标识符传给条目转换方法，再将结果包装为无子节点的层级节点。
     @MainActor func eraseToAnyListOutlineNodes<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -425,7 +425,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
-    /// 禁止当前 Row 被选择，同时保留 section 级选择策略和显式声明的高亮回调。
+    /// 禁用条目的用户选择与取消选择操作，保留显式高亮回调。
+    /// 此设置不清除已有选择，也不覆盖 `selected(_:)` 声明的受控状态。
     public func selectionDisabled(_ disabled: Bool = true) -> Self {
         var copy = self
         copy.rowIsSelectionDisabled = disabled
@@ -757,6 +758,13 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
+    /// 将当前描述转换为指定分区中的类型擦除条目。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 外层遍历提供的标识符；显式声明自身身份的条目忽略此值。
+    /// - Returns: 保留配置与事件处理器的类型擦除条目。
+    /// - Precondition: 使用继承身份的条目必须提供 `inheritedID`。
     @MainActor public func eraseToAnyListRow<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID? = nil
@@ -857,12 +865,20 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         )
     }
 
+    /// 将当前描述转换为指定分区中的类型擦除条目集合。
+    ///
+    /// - Parameter sectionID: 条目所属分区的稳定标识符。
     @MainActor public func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
         where SectionID: Hashable & Sendable
     {
         [eraseToAnyListRow(sectionID: sectionID)]
     }
 
+    /// 将当前描述转换为指定分区中的类型擦除条目集合。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 外层遍历提供的标识符；显式声明自身身份的条目忽略此值。
     @MainActor public func eraseToAnyListRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -915,8 +931,11 @@ public extension Row where Model: Identifiable, ID == Model.ID, Model.ID: Sendab
 ///
 /// 它只描述 UI，不管理数据加载或外部状态机。调用方决定何时展示 empty/loading/failure。
 public enum ListStateRowKind: Hashable, Sendable {
+    /// 表示没有内容的状态行身份。
     case empty
+    /// 表示正在加载的状态行身份。
     case loading
+    /// 表示加载失败的状态行身份。
     case failure
 }
 
@@ -996,12 +1015,20 @@ public struct RowGroup: ListRowRepresentable {
         self.rows = content()
     }
 
+    /// 按声明顺序合并子描述生成的类型擦除条目。
+    ///
+    /// - Parameter sectionID: 条目所属分区的稳定标识符。
     @MainActor public func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
         where SectionID: Hashable & Sendable
     {
         rows.flatMap { $0.eraseToAnyListRows(sectionID: sectionID) }
     }
 
+    /// 按声明顺序合并子描述生成的类型擦除条目。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 外层遍历提供的标识符；显式声明自身身份的条目忽略此值。
     @MainActor public func eraseToAnyListRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -1009,12 +1036,20 @@ public struct RowGroup: ListRowRepresentable {
         rows.flatMap { $0.eraseToAnyListRows(sectionID: sectionID, inheritedID: inheritedID) }
     }
 
+    /// 按声明顺序合并子描述生成的层级节点。
+    ///
+    /// - Parameter sectionID: 条目所属分区的稳定标识符。
     @MainActor public func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
         where SectionID: Hashable & Sendable
     {
         rows.flatMap { $0.eraseToAnyListOutlineNodes(sectionID: sectionID) }
     }
 
+    /// 按声明顺序合并子描述生成的层级节点。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 外层遍历提供的标识符；显式声明自身身份的条目忽略此值。
     @MainActor public func eraseToAnyListOutlineNodes<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -1039,12 +1074,20 @@ public struct ListDisclosureGroup: ListRowRepresentable {
         self.isExpanded = isExpanded
     }
 
+    /// 生成包含父节点及全部后代的扁平条目集合。
+    ///
+    /// - Parameter sectionID: 条目所属分区的稳定标识符。
     @MainActor public func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
         where SectionID: Hashable & Sendable
     {
         eraseToAnyListOutlineNodes(sectionID: sectionID).flatMap(\.flattenedRows)
     }
 
+    /// 生成包含父节点及全部后代的扁平条目集合。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 仅传给父节点的继承标识符；子节点使用各自声明或遍历作用域中的身份。
     @MainActor public func eraseToAnyListRows<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -1052,6 +1095,9 @@ public struct ListDisclosureGroup: ListRowRepresentable {
         eraseToAnyListOutlineNodes(sectionID: sectionID, inheritedID: inheritedID).flatMap(\.flattenedRows)
     }
 
+    /// 生成保留父子关系与展开状态的层级节点。
+    ///
+    /// - Parameter sectionID: 条目所属分区的稳定标识符。
     @MainActor public func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
         where SectionID: Hashable & Sendable
     {
@@ -1061,6 +1107,11 @@ public struct ListDisclosureGroup: ListRowRepresentable {
         )
     }
 
+    /// 生成保留父子关系与展开状态的层级节点。
+    ///
+    /// - Parameters:
+    ///   - sectionID: 条目所属分区的稳定标识符。
+    ///   - inheritedID: 仅传给父节点的继承标识符；子节点使用各自声明或遍历作用域中的身份。
     @MainActor public func eraseToAnyListOutlineNodes<SectionID>(
         sectionID: SectionID,
         inheritedID: AnyListID?
@@ -1101,11 +1152,13 @@ public struct ListDisclosureGroup: ListRowRepresentable {
     DisclosureGroup(parent, isExpanded: isExpanded, children: children)
 }
 
-/// Provider-backed Row escape hatch for migration-heavy or mixed-cell sections.
+/// 使用自定义单元格提供者的条目描述。
 ///
-/// Normal pages should prefer strongly typed `Row(model:cell:)`. This type exists for cases where
-/// an existing page already owns cell dequeue/configuration logic and still needs to participate in
-/// ListKit identity, diff, refresh, and event handling.
+/// 适用于已有单元格出队与配置逻辑的页面，可接入 ListKit 的身份、差异更新、刷新与事件处理。
+/// 常规页面可使用强类型的 `Row(model:cell:)` 声明条目。
+/// 提供者负责返回与声明展示身份一致的单元格。
+/// 默认可见刷新只调用 `configureVisibleCell`，该闭包的默认实现为空；
+/// 需要原地更新内容时应提供此闭包，或选择重载动作重新执行单元格提供者。
 public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendable {
     private let id: ID
     private let presentationID: ObjectIdentifier
@@ -1127,7 +1180,7 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     ///   - cellType: 用于 presentation identity 和默认注册的 cell 类型。
     ///   - register: 可选的自定义注册闭包。
     ///   - cellProvider: 创建或 dequeue cell 的闭包。
-    ///   - configureVisibleCell: 轻量重配可见 cell 时调用的闭包。
+    ///   - configureVisibleCell: 原地重配可见单元格的闭包，默认不执行操作。
     /// - Important: 这是迁移兼容入口；新接入代码应优先使用强类型 `Row`。
     public init<Cell>(
         _ id: ID,
@@ -1152,7 +1205,7 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     ///   - presentationID: 自定义展示身份。
     ///   - register: 注册 cell 或相关 reusable view 的闭包。
     ///   - cellProvider: 创建或 dequeue cell 的闭包。
-    ///   - configureVisibleCell: 轻量重配可见 cell 时调用的闭包。
+    ///   - configureVisibleCell: 原地重配可见单元格的闭包，默认不执行操作。
     /// - Important: 仅用于无法用具体 cell 类型表达 presentation identity 的迁移场景。
     public init(
         _ id: ID,
@@ -1253,6 +1306,9 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
         return copy
     }
 
+    /// 将当前描述转换为指定分区中的类型擦除条目集合。
+    ///
+    /// - Parameter sectionID: 条目所属分区的稳定标识符。
     @MainActor public func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
         where SectionID: Hashable & Sendable
     {

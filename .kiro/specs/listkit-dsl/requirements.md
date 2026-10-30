@@ -43,7 +43,7 @@
 ### Acceptance Criteria
 
 1. WHEN Row 被选中、展示、结束展示、预取或取消预取 THE SYSTEM SHALL 提供对应 modifier。
-2. WHEN Header/Footer 需要点击事件 THE SYSTEM SHALL 通过 `.onTap` 或 section 级 `.onHeaderTap` / `.onFooterTap` 处理。
+- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTap；具体契约见 Documentation/Layout-API.md。
 3. WHEN cell 内部按钮触发自定义动作 THE SYSTEM SHALL 允许通过 `context.send(Event)` 发送类型安全事件。
 4. WHEN 页面监听自定义事件 THE SYSTEM SHALL 支持 `.onEvent(Event.self) { event, context in ... }`。
 5. WHEN 页面需要 UIKit 高级交互 THE SYSTEM SHALL 支持 context menu 和 swipe actions。

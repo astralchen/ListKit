@@ -5,14 +5,13 @@ private struct InheritedIDRowScope: ListRowRepresentable {
     let inheritedID: AnyListID
 
     @MainActor func eraseToAnyListRows<SectionID>(sectionID: SectionID) -> [AnyListRow]
-        where SectionID: Hashable & Sendable
-    {
+    where SectionID: Hashable & Sendable {
         row.eraseToAnyListRows(sectionID: sectionID, inheritedID: inheritedID)
     }
 
-    @MainActor func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID) -> [AnyListOutlineNode]
-        where SectionID: Hashable & Sendable
-    {
+    @MainActor func eraseToAnyListOutlineNodes<SectionID>(sectionID: SectionID)
+        -> [AnyListOutlineNode]
+    where SectionID: Hashable & Sendable {
         row.eraseToAnyListOutlineNodes(sectionID: sectionID, inheritedID: inheritedID)
     }
 }
@@ -38,10 +37,11 @@ private struct InheritedIDRowScope: ListRowRepresentable {
     id: KeyPath<Data.Element, ID>,
     @ListRowBuilder content: (Data.Element) -> [any ListRowRepresentable]
 ) -> RowGroup where Data: Sequence, ID: Hashable & Sendable {
-    RowGroup(data.flatMap { element in
-        let inheritedID = AnyListID(element[keyPath: id])
-        return content(element).map { InheritedIDRowScope(row: $0, inheritedID: inheritedID) }
-    })
+    RowGroup(
+        data.flatMap { element in
+            let inheritedID = AnyListID(element[keyPath: id])
+            return content(element).map { InheritedIDRowScope(row: $0, inheritedID: inheritedID) }
+        })
 }
 
 /// 使用闭包生成遍历元素 id。
@@ -56,268 +56,325 @@ private struct InheritedIDRowScope: ListRowRepresentable {
     id: (Data.Element) -> ID,
     @ListRowBuilder content: (Data.Element) -> [any ListRowRepresentable]
 ) -> RowGroup where Data: Sequence, ID: Hashable & Sendable {
-    RowGroup(data.flatMap { element in
-        let inheritedID = AnyListID(id(element))
-        return content(element).map { InheritedIDRowScope(row: $0, inheritedID: inheritedID) }
-    })
+    RowGroup(
+        data.flatMap { element in
+            let inheritedID = AnyListID(id(element))
+            return content(element).map { InheritedIDRowScope(row: $0, inheritedID: inheritedID) }
+        })
 }
 
-/// `ListSection` rows 的 result builder。
+/// 按声明顺序组合分区条目的结果构建器。
 ///
 /// 支持 `if`、`if/else`、`for`、数组和空分支，让调用方以声明式方式 rebuild rows。
 @resultBuilder
 public enum ListRowBuilder {
-    public static func buildExpression(_ expression: any ListRowRepresentable) -> [any ListRowRepresentable] {
+    /// 将表达式转换为构建器的元素集合。
+    public static func buildExpression(_ expression: any ListRowRepresentable)
+        -> [any ListRowRepresentable]
+    {
         [expression]
     }
 
-    public static func buildExpression(_ expression: [any ListRowRepresentable]) -> [any ListRowRepresentable] {
+    /// 按原顺序接收表达式数组。
+    public static func buildExpression(_ expression: [any ListRowRepresentable])
+        -> [any ListRowRepresentable]
+    {
         expression
     }
 
+    /// 将不产生值的表达式转换为空集合。
     public static func buildExpression(_ expression: ()) -> [any ListRowRepresentable] {
         []
     }
 
-    public static func buildBlock(_ components: [any ListRowRepresentable]...) -> [any ListRowRepresentable] {
+    /// 按声明顺序合并构建块中的元素集合。
+    public static func buildBlock(_ components: [any ListRowRepresentable]...)
+        -> [any ListRowRepresentable]
+    {
         components.flatMap { $0 }
     }
 
-    public static func buildArray(_ components: [[any ListRowRepresentable]]) -> [any ListRowRepresentable] {
+    /// 按迭代顺序合并循环各次生成的元素集合。
+    public static func buildArray(_ components: [[any ListRowRepresentable]])
+        -> [any ListRowRepresentable]
+    {
         components.flatMap { $0 }
     }
 
-    public static func buildEither(first component: [any ListRowRepresentable]) -> [any ListRowRepresentable] {
+    /// 返回条件表达式第一个分支的构建结果。
+    public static func buildEither(first component: [any ListRowRepresentable])
+        -> [any ListRowRepresentable]
+    {
         component
     }
 
-    public static func buildEither(second component: [any ListRowRepresentable]) -> [any ListRowRepresentable] {
+    /// 返回条件表达式第二个分支的构建结果。
+    public static func buildEither(second component: [any ListRowRepresentable])
+        -> [any ListRowRepresentable]
+    {
         component
     }
 
-    public static func buildOptional(_ component: [any ListRowRepresentable]?) -> [any ListRowRepresentable] {
+    /// 返回可选分支的元素；分支不存在时返回空集合。
+    public static func buildOptional(_ component: [any ListRowRepresentable]?)
+        -> [any ListRowRepresentable]
+    {
         component ?? []
     }
 
-    public static func buildLimitedAvailability(_ component: [any ListRowRepresentable]) -> [any ListRowRepresentable] {
+    /// 传递通过系统可用性检查的分支结果。
+    public static func buildLimitedAvailability(_ component: [any ListRowRepresentable])
+        -> [any ListRowRepresentable]
+    {
         component
     }
 }
 
-/// `CollectionListAdapter.apply` 的 section result builder。
+/// 按声明顺序组合集合视图分区的结果构建器。
 @resultBuilder
 public enum ListSectionBuilder<SectionID> where SectionID: Hashable & Sendable {
-    public static func buildExpression(_ expression: ListSection<SectionID>) -> [ListSection<SectionID>] {
+    /// 将表达式转换为构建器的元素集合。
+    public static func buildExpression(_ expression: ListSection<SectionID>) -> [ListSection<
+        SectionID
+    >] {
         [expression]
     }
 
-    public static func buildExpression(_ expression: [ListSection<SectionID>]) -> [ListSection<SectionID>] {
+    /// 按原顺序接收表达式数组。
+    public static func buildExpression(_ expression: [ListSection<SectionID>]) -> [ListSection<
+        SectionID
+    >] {
         expression
     }
 
+    /// 将不产生值的表达式转换为空集合。
     public static func buildExpression(_ expression: ()) -> [ListSection<SectionID>] {
         []
     }
 
-    public static func buildBlock(_ components: [ListSection<SectionID>]...) -> [ListSection<SectionID>] {
+    /// 按声明顺序合并构建块中的元素集合。
+    public static func buildBlock(_ components: [ListSection<SectionID>]...) -> [ListSection<
+        SectionID
+    >] {
         components.flatMap { $0 }
     }
 
-    public static func buildArray(_ components: [[ListSection<SectionID>]]) -> [ListSection<SectionID>] {
+    /// 按迭代顺序合并循环各次生成的元素集合。
+    public static func buildArray(_ components: [[ListSection<SectionID>]]) -> [ListSection<
+        SectionID
+    >] {
         components.flatMap { $0 }
     }
 
-    public static func buildEither(first component: [ListSection<SectionID>]) -> [ListSection<SectionID>] {
+    /// 返回条件表达式第一个分支的构建结果。
+    public static func buildEither(first component: [ListSection<SectionID>]) -> [ListSection<
+        SectionID
+    >] {
         component
     }
 
-    public static func buildEither(second component: [ListSection<SectionID>]) -> [ListSection<SectionID>] {
+    /// 返回条件表达式第二个分支的构建结果。
+    public static func buildEither(second component: [ListSection<SectionID>]) -> [ListSection<
+        SectionID
+    >] {
         component
     }
 
-    public static func buildOptional(_ component: [ListSection<SectionID>]?) -> [ListSection<SectionID>] {
+    /// 返回可选分支的元素；分支不存在时返回空集合。
+    public static func buildOptional(_ component: [ListSection<SectionID>]?) -> [ListSection<
+        SectionID
+    >] {
         component ?? []
     }
 
-    public static func buildLimitedAvailability(_ component: [ListSection<SectionID>]) -> [ListSection<SectionID>] {
+    /// 传递通过系统可用性检查的分支结果。
+    public static func buildLimitedAvailability(_ component: [ListSection<SectionID>])
+        -> [ListSection<SectionID>]
+    {
         component
     }
 }
 
-/// Header/Footer/custom supplementary 的 result builder。
+/// 组合分区附属视图内容的结果构建器。
 @resultBuilder
 public enum ListSectionSupplementaryBuilder<SectionID> where SectionID: Hashable & Sendable {
-    public static func buildExpression(_ expression: ListSectionSupplementary<SectionID>) -> [ListSectionSupplementary<SectionID>] {
+    /// 将表达式转换为构建器的元素集合。
+    public static func buildExpression(_ expression: ListSectionSupplementary<SectionID>)
+        -> [ListSectionSupplementary<SectionID>]
+    {
         [expression]
     }
 
-    public static func buildExpression(_ expression: [ListSectionSupplementary<SectionID>]) -> [ListSectionSupplementary<SectionID>] {
+    /// 将表达式转换为构建器的元素集合。可选值为 `nil` 时返回空集合。
+    public static func buildExpression(_ expression: ListSectionSupplementary<SectionID>?)
+        -> [ListSectionSupplementary<SectionID>]
+    {
+        expression.map { [$0] } ?? []
+    }
+
+    /// 按原顺序接收表达式数组。
+    public static func buildExpression(_ expression: [ListSectionSupplementary<SectionID>])
+        -> [ListSectionSupplementary<SectionID>]
+    {
         expression
     }
 
+    /// 将不产生值的表达式转换为空集合。
     public static func buildExpression(_ expression: ()) -> [ListSectionSupplementary<SectionID>] {
         []
     }
 
-    public static func buildBlock(_ components: [ListSectionSupplementary<SectionID>]...) -> [ListSectionSupplementary<SectionID>] {
+    /// 按声明顺序合并构建块中的元素集合。
+    public static func buildBlock(_ components: [ListSectionSupplementary<SectionID>]...)
+        -> [ListSectionSupplementary<SectionID>]
+    {
         components.flatMap { $0 }
     }
 
-    public static func buildArray(_ components: [[ListSectionSupplementary<SectionID>]]) -> [ListSectionSupplementary<SectionID>] {
+    /// 按迭代顺序合并循环各次生成的元素集合。
+    public static func buildArray(_ components: [[ListSectionSupplementary<SectionID>]])
+        -> [ListSectionSupplementary<SectionID>]
+    {
         components.flatMap { $0 }
     }
 
-    public static func buildEither(first component: [ListSectionSupplementary<SectionID>]) -> [ListSectionSupplementary<SectionID>] {
+    /// 返回条件表达式第一个分支的构建结果。
+    public static func buildEither(first component: [ListSectionSupplementary<SectionID>])
+        -> [ListSectionSupplementary<SectionID>]
+    {
         component
     }
 
-    public static func buildEither(second component: [ListSectionSupplementary<SectionID>]) -> [ListSectionSupplementary<SectionID>] {
+    /// 返回条件表达式第二个分支的构建结果。
+    public static func buildEither(second component: [ListSectionSupplementary<SectionID>])
+        -> [ListSectionSupplementary<SectionID>]
+    {
         component
     }
 
-    public static func buildOptional(_ component: [ListSectionSupplementary<SectionID>]?) -> [ListSectionSupplementary<SectionID>] {
+    /// 返回可选分支的元素；分支不存在时返回空集合。
+    public static func buildOptional(_ component: [ListSectionSupplementary<SectionID>]?)
+        -> [ListSectionSupplementary<SectionID>]
+    {
         component ?? []
     }
 
-    public static func buildLimitedAvailability(_ component: [ListSectionSupplementary<SectionID>]) -> [ListSectionSupplementary<SectionID>] {
+    /// 传递通过系统可用性检查的分支结果。
+    public static func buildLimitedAvailability(_ component: [ListSectionSupplementary<SectionID>])
+        -> [ListSectionSupplementary<SectionID>]
+    {
         component
     }
 }
 
-/// Section 主布局的 result builder。
+/// 选择单个完整分区布局的结果构建器。
 ///
-/// 多个分支同时产出布局时，最后一个非空配置生效。
+/// 零或一个布局；多个并列值在编译期被拒绝。支持 if/else 和可选分支。
+/// 空 builder 或 nil 交给 Section / EnvironmentLayout 解析为默认单轨道估算布局，不表示隐藏或保留旧布局。
 @resultBuilder
 public enum ListSectionLayoutBuilder<SectionID> where SectionID: Hashable & Sendable {
-    public static func buildExpression(_ expression: ListSectionLayout) -> ListSectionLayoutConfiguration<SectionID>? {
-        ListSectionLayoutConfiguration(sectionLayout: expression)
+    /// 将布局声明转换为分区布局来源。
+    public static func buildExpression(_ value: ListCustomLayout<SectionID>)
+        -> ListSectionLayoutSource<SectionID>?
+    { .custom(value) }
+    /// 将布局声明转换为分区布局来源。可选值为 `nil` 时不提供布局。
+    public static func buildExpression(_ value: ListCustomLayout<SectionID>?)
+        -> ListSectionLayoutSource<SectionID>?
+    { value.map { .custom($0) } }
+
+    /// 将布局声明转换为分区布局来源。可选值为 `nil` 时不提供布局。
+    public static func buildExpression(_ expression: ListSectionGridLayout?)
+        -> ListSectionLayoutSource<SectionID>?
+    {
+        expression.map { .builtIn(.gridConfiguration($0)) }
     }
 
-    public static func buildExpression(_ expression: ListCustomSectionLayout<SectionID>) -> ListSectionLayoutConfiguration<SectionID>? {
-        ListSectionLayoutConfiguration(customSectionLayout: expression)
+    /// 将布局声明转换为分区布局来源。
+    public static func buildExpression(_ expression: ListSectionGridLayout)
+        -> ListSectionLayoutSource<SectionID>?
+    {
+        .builtIn(.gridConfiguration(expression))
     }
 
-    public static func buildExpression(_ expression: ListSectionLayoutConfiguration<SectionID>) -> ListSectionLayoutConfiguration<SectionID>? {
+    /// 将布局声明转换为分区布局来源。可选值为 `nil` 时不提供布局。
+    public static func buildExpression(_ expression: ListUIKitListLayout?) -> ListSectionLayoutSource<
+        SectionID
+    >? {
+        expression.map { .builtIn(.uiKitListConfiguration($0)) }
+    }
+
+    /// 将布局声明转换为分区布局来源。
+    public static func buildExpression(_ expression: ListUIKitListLayout) -> ListSectionLayoutSource<
+        SectionID
+    >? {
+        .builtIn(.uiKitListConfiguration(expression))
+    }
+
+    /// 将布局声明转换为分区布局来源。可选值为 `nil` 时不提供布局。
+    public static func buildExpression(_ expression: ListSectionLayout?) -> ListSectionLayoutSource<
+        SectionID
+    >? {
+        expression.map { .builtIn($0) }
+    }
+
+    /// 将布局声明转换为分区布局来源。
+    public static func buildExpression(_ expression: ListSectionLayout) -> ListSectionLayoutSource<
+        SectionID
+    >? {
+        .builtIn(expression)
+    }
+
+    /// 将布局声明转换为分区布局来源。
+    public static func buildExpression(_ expression: ListSectionLayoutSource<SectionID>)
+        -> ListSectionLayoutSource<SectionID>?
+    {
         expression
     }
 
-    public static func buildExpression(_ expression: ListSectionLayoutConfiguration<SectionID>?) -> ListSectionLayoutConfiguration<SectionID>? {
+    /// 将布局声明转换为分区布局来源。可选值为 `nil` 时不提供布局。
+    public static func buildExpression(_ expression: ListSectionLayoutSource<SectionID>?)
+        -> ListSectionLayoutSource<SectionID>?
+    {
         expression
     }
 
-    public static func buildExpression(_ expression: ()) -> ListSectionLayoutConfiguration<SectionID>? {
+    /// 将不产生值的表达式转换为空布局结果。
+    public static func buildExpression(_ expression: ()) -> ListSectionLayoutSource<SectionID>? {
         nil
     }
 
-    public static func buildBlock(
-        _ components: ListSectionLayoutConfiguration<SectionID>?...
-    ) -> ListSectionLayoutConfiguration<SectionID>? {
-        components.compactMap { $0 }.last
-    }
+    /// 为空构建块返回未指定布局的结果。
+    public static func buildBlock() -> ListSectionLayoutSource<SectionID>? { nil }
+    /// 返回构建块中的唯一布局来源。
+    public static func buildBlock(_ component: ListSectionLayoutSource<SectionID>?)
+        -> ListSectionLayoutSource<SectionID>?
+    { component }
 
+    /// 返回条件表达式第一个分支的构建结果。
     public static func buildEither(
-        first component: ListSectionLayoutConfiguration<SectionID>?
-    ) -> ListSectionLayoutConfiguration<SectionID>? {
+        first component: ListSectionLayoutSource<SectionID>?
+    ) -> ListSectionLayoutSource<SectionID>? {
         component
     }
 
+    /// 返回条件表达式第二个分支的构建结果。
     public static func buildEither(
-        second component: ListSectionLayoutConfiguration<SectionID>?
-    ) -> ListSectionLayoutConfiguration<SectionID>? {
+        second component: ListSectionLayoutSource<SectionID>?
+    ) -> ListSectionLayoutSource<SectionID>? {
         component
     }
 
+    /// 返回可选分支的布局来源；分支不存在时返回 `nil`。
     public static func buildOptional(
-        _ component: ListSectionLayoutConfiguration<SectionID>??
-    ) -> ListSectionLayoutConfiguration<SectionID>? {
+        _ component: ListSectionLayoutSource<SectionID>??
+    ) -> ListSectionLayoutSource<SectionID>? {
         component ?? nil
     }
 
+    /// 传递通过系统可用性检查的分支结果。
     public static func buildLimitedAvailability(
-        _ component: ListSectionLayoutConfiguration<SectionID>?
-    ) -> ListSectionLayoutConfiguration<SectionID>? {
-        component
-    }
-}
-
-/// Supplementary layout 的 result builder。
-@resultBuilder
-public enum ListSupplementaryLayoutBuilder {
-    public static func buildExpression(_ expression: ListSupplementaryLayout) -> [ListSupplementaryLayout] {
-        [expression]
-    }
-
-    public static func buildExpression(_ expression: [ListSupplementaryLayout]) -> [ListSupplementaryLayout] {
-        expression
-    }
-
-    public static func buildExpression(_ expression: ()) -> [ListSupplementaryLayout] {
-        []
-    }
-
-    public static func buildBlock(_ components: [ListSupplementaryLayout]...) -> [ListSupplementaryLayout] {
-        components.flatMap { $0 }
-    }
-
-    public static func buildArray(_ components: [[ListSupplementaryLayout]]) -> [ListSupplementaryLayout] {
-        components.flatMap { $0 }
-    }
-
-    public static func buildEither(first component: [ListSupplementaryLayout]) -> [ListSupplementaryLayout] {
-        component
-    }
-
-    public static func buildEither(second component: [ListSupplementaryLayout]) -> [ListSupplementaryLayout] {
-        component
-    }
-
-    public static func buildOptional(_ component: [ListSupplementaryLayout]?) -> [ListSupplementaryLayout] {
-        component ?? []
-    }
-
-    public static func buildLimitedAvailability(_ component: [ListSupplementaryLayout]) -> [ListSupplementaryLayout] {
-        component
-    }
-}
-
-/// Section 背景装饰的 result builder。
-///
-/// 多个分支同时产出背景时，最后一个非空配置生效。
-@resultBuilder
-public enum ListSectionBackgroundBuilder {
-    public static func buildExpression(_ expression: ListBackgroundDecoration) -> ListBackgroundDecoration? {
-        expression
-    }
-
-    public static func buildExpression(_ expression: ListBackgroundDecoration?) -> ListBackgroundDecoration? {
-        expression
-    }
-
-    public static func buildExpression(_ expression: ()) -> ListBackgroundDecoration? {
-        nil
-    }
-
-    public static func buildBlock(_ components: ListBackgroundDecoration?...) -> ListBackgroundDecoration? {
-        components.compactMap { $0 }.last
-    }
-
-    public static func buildArray(_ components: [ListBackgroundDecoration?]) -> ListBackgroundDecoration? {
-        components.compactMap { $0 }.last
-    }
-
-    public static func buildEither(first component: ListBackgroundDecoration?) -> ListBackgroundDecoration? {
-        component
-    }
-
-    public static func buildEither(second component: ListBackgroundDecoration?) -> ListBackgroundDecoration? {
-        component
-    }
-
-    public static func buildOptional(_ component: ListBackgroundDecoration??) -> ListBackgroundDecoration? {
-        component ?? nil
-    }
-
-    public static func buildLimitedAvailability(_ component: ListBackgroundDecoration?) -> ListBackgroundDecoration? {
+        _ component: ListSectionLayoutSource<SectionID>?
+    ) -> ListSectionLayoutSource<SectionID>? {
         component
     }
 }

@@ -6,7 +6,7 @@ ListKit should expose modern UICollectionView registration helpers in ListKit's 
 
 ## Requirements
 
-- WHEN a page uses standard ListKit DSL THE SYSTEM SHALL keep the current `Row(... cell:)`, `Header(...)`, `Footer(...)`, and `SectionSupplementary(...)` APIs unchanged.
+- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTap；具体契约见 Documentation/Layout-API.md。
 - WHEN collection code needs a `UICollectionView.CellRegistration` THE SYSTEM SHALL provide a ListKit-named helper from `collectionView.lk`.
 - WHEN collection code needs a `UICollectionView.SupplementaryRegistration` THE SYSTEM SHALL provide a ListKit-named helper from `collectionView.lk`.
 - WHEN a same-name nib exists for the registered reusable type THE SYSTEM SHALL use the nib-backed UIKit registration initializer; otherwise it SHALL use class-backed registration.

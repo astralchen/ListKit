@@ -59,33 +59,31 @@ private final class SectionSeparatorColorStorage: @unchecked Sendable {
     }
 }
 
-/// 支持轻量分隔线 decoration 的 compositional layout。
+/// 为单元格与附属视图添加底部分隔线的组合布局。
 ///
-/// - Note: 这是 CellKit 迁移期保留的 UIKit 工具能力。新接入代码如果只需要普通 ListKit DSL，
-/// 优先使用 `adapter.makeCompositionalLayout()`；只有确实需要布局层自动画分隔线时
-/// 才使用这个 layout 子类。
+/// 分隔线通过装饰视图绘制，包含最后一个单元格，始终沿水平方向延伸。
 open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewCompositionalLayout {
-    /// 分隔线相对 item frame 的显式 inset，默认不额外缩进。
-    ///
-    /// item frame 已经包含 compositional layout、safe area 和 Section content inset
-    /// 的解析结果，因此这里不提供含义不明确的“自动 inset”哨兵值。
+    /// cell 底部分隔线的水平缩进，默认零；supplementary 的分隔线始终使用零 inset。
+    /// 当前实现仅使用 leading / trailing，并分别映射为物理 left / right；不自动按 RTL 交换。
+    /// top / bottom 当前不参与分隔线计算。
     open var separatorInsets: NSDirectionalEdgeInsets = .zero {
         didSet { invalidateLayout() }
     }
 
-    /// 当前 layout 实例的分隔线颜色。修改后会自动刷新 decoration view。
+    /// 分隔线颜色，默认为系统分隔线色；修改后使布局失效，供后续布局更新读取。
     open var separatorColor: UIColor = .separator {
         didSet { invalidateLayout() }
     }
 
-    /// 分隔线高度，默认一像素。
+    /// 分隔线高度，单位为点；初始化时默认取 `1 / UIScreen.main.scale`。
+    /// 默认值不会随后续窗口或显示器 scale 变化自动重算。
     open var separatorHeight: CGFloat = 1.0 / UIScreen.main.scale {
         didSet { invalidateLayout() }
     }
 
     /// 使用单个 section 创建 layout。
     ///
-    /// - Parameter section: compositional layout section。
+    /// - Parameter section: 组合布局使用的分区。
     public override init(section: NSCollectionLayoutSection) {
         super.init(section: section)
         commonInit()
@@ -94,7 +92,7 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
     /// 使用单个 section 和配置创建 layout。
     ///
     /// - Parameters:
-    ///   - section: compositional layout section。
+    ///   - section: 组合布局使用的分区。
     ///   - configuration: compositional layout 配置。
     public override init(section: NSCollectionLayoutSection, configuration: UICollectionViewCompositionalLayoutConfiguration) {
         super.init(section: section, configuration: configuration)
@@ -103,7 +101,7 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
 
     /// 使用 section provider 创建 layout。
     ///
-    /// - Parameter sectionProvider: compositional layout section provider。
+    /// - Parameter sectionProvider: 根据分区索引和布局环境创建分区的闭包。
     public override init(sectionProvider: @escaping UICollectionViewCompositionalLayoutSectionProvider) {
         super.init(sectionProvider: sectionProvider)
         commonInit()
@@ -112,7 +110,7 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
     /// 使用 section provider 和配置创建 layout。
     ///
     /// - Parameters:
-    ///   - sectionProvider: compositional layout section provider。
+    ///   - sectionProvider: 根据分区索引和布局环境创建分区的闭包。
     ///   - configuration: compositional layout 配置。
     public override init(
         sectionProvider: @escaping UICollectionViewCompositionalLayoutSectionProvider,
@@ -122,6 +120,9 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
         commonInit()
     }
 
+    /// 从归档创建布局，并注册分隔线装饰视图。
+    ///
+    /// - Parameter coder: 包含布局配置的解码器。
     required public init?(coder: NSCoder) {
         super.init(coder: coder)
         commonInit()
@@ -131,6 +132,10 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
         register(SectionSeparatorDecorationView.self, forDecorationViewOfKind: UICollectionView.elementKindSectionSeparatorDecoration)
     }
 
+    /// 返回指定区域内的布局属性，并为单元格与附属视图追加底部分隔线属性。
+    ///
+    /// - Parameter rect: 集合视图内容坐标系中的查询区域。
+    /// - Returns: 原始布局属性与分隔线属性；父类没有布局结果或集合视图不可用时返回 `nil`。
     open override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
         guard
             let baseAttributes = super.layoutAttributesForElements(in: rect),
@@ -156,6 +161,14 @@ open class UICollectionViewCompositionalSeparatorLayout: UICollectionViewComposi
         return attributes
     }
 
+    /// 返回指定装饰视图的布局属性。
+    ///
+    /// 分隔线使用当前颜色、高度和集合视图宽度创建基础属性，其他元素种类交由父类处理。
+    ///
+    /// - Parameters:
+    ///   - elementKind: UIKit 装饰视图的元素种类。
+    ///   - indexPath: 装饰视图的索引路径。
+    /// - Returns: 对应的布局属性；其他元素种类沿用父类的返回值。
     open override func layoutAttributesForDecorationView(
         ofKind elementKind: String,
         at indexPath: IndexPath

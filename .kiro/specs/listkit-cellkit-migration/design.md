@@ -2,7 +2,7 @@
 
 ## Architecture
 
-迁移保持现有 UIKit 页面结构，只替换列表数据源层。每个旧 CellKit 页面持有 `CollectionListAdapter<Section>`，数据变化时 rebuild `ListSection` 描述树。布局优先用 ListKit layout DSL；旧页面已有高度定制的 compositional layout 时使用 `.layout(.custom(id:) { ... })` 或保留显式 layout provider。
+迁移保持现有 UIKit 页面结构，只替换列表数据源层。每个旧 CellKit 页面持有 `CollectionListAdapter<Section>`，数据变化时 rebuild `ListSection` 描述树。布局优先用 ListKit layout DSL；旧页面已有高度定制的 compositional layout 时使用 `.layout { CustomLayout(layoutKey: version) { context in ... } }` 或保留显式 layout provider。
 
 ## ListKit Additions
 

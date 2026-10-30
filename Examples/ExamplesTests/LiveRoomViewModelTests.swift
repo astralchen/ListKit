@@ -1,16 +1,23 @@
 import Testing
 import UIKit
-@testable import ListKit
+
 @testable import Examples
+@testable import ListKit
 
 @MainActor
 struct LiveRoomViewModelTests {
     @Test func builderOutputsContainExpectedCollectionAndTableSections() {
         let viewModel = LiveRoomViewModel()
 
-        #expect(viewModel.liveConsoleSections.map(\.id) == [.consoleToolbar, .status, .micSeats, .messages, .gifts, .diagnostics])
+        #expect(
+            viewModel.liveConsoleSections.map(\.id) == [
+                .consoleToolbar, .status, .micSeats, .messages, .gifts, .diagnostics,
+            ])
         #expect(viewModel.tableSections.map(\.id) == [.moderation])
-        #expect(viewModel.roomToolkitSections.map(\.id) == [.roomMetrics, .apiGuide, .roomActivityTitle, .roomActivity])
+        #expect(
+            viewModel.roomToolkitSections.map(\.id) == [
+                .roomMetrics, .apiGuide, .roomActivityTitle, .roomActivity,
+            ])
         #expect(viewModel.studioControlSections.map(\.id) == [.studioControls, .messages])
         #expect(viewModel.messageCount == 4)
         #expect(viewModel.pendingModerationCount == 7)
@@ -64,7 +71,8 @@ struct LiveRoomViewModelTests {
     @Test func collectionScreensPreserveUIKitInsetDefaults() {
         let viewController = LiveConsoleDesignViewController()
         guard let collectionView = viewController.view as? UICollectionView,
-              let layout = collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout else {
+            let layout = collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout
+        else {
             Issue.record("Live Console should install a compositional collection view")
             return
         }
@@ -94,10 +102,11 @@ struct LiveRoomViewModelTests {
         viewController.viewDidLayoutSubviews()
 
         guard let tableView = viewController.view as? UITableView,
-              let header = tableView.tableHeaderView,
-              let summary = header.subviews.first(where: {
-                  $0.accessibilityIdentifier == "admin-table-summary"
-              }) else {
+            let header = tableView.tableHeaderView,
+            let summary = header.subviews.first(where: {
+                $0.accessibilityIdentifier == "admin-table-summary"
+            })
+        else {
             Issue.record("Admin Table should install its safe-area-aware summary header")
             return
         }
@@ -118,12 +127,19 @@ struct LiveRoomViewModelTests {
     @Test func sendingMessageAppendsMessageAndRequestsScroll() {
         let viewModel = LiveRoomViewModel()
         let initialCount = viewModel.messageCount
+        let initialHeader = viewModel.liveConsoleSections.first { $0.id == .messages }?
+            .supplementaries.first
 
         viewModel.sendMessage()
 
         #expect(viewModel.messageCount == initialCount + 1)
         #expect(viewModel.pendingScrollMessageID == viewModel.latestMessageID)
-        #expect(viewModel.liveConsoleSections.first { $0.id == .messages }?.rows.count == initialCount + 1)
+        #expect(
+            viewModel.liveConsoleSections.first { $0.id == .messages }?.rows.count == initialCount + 1)
+        let updatedSection = viewModel.liveConsoleSections.first { $0.id == .messages }
+        #expect(updatedSection?.supplementaries.first?.identity == initialHeader?.identity)
+        #expect(initialHeader?.refreshID == AnyListID(initialCount))
+        #expect(updatedSection?.supplementaries.first?.refreshID == AnyListID(initialCount + 1))
     }
 
     @Test func headerMenuActionsUpdateRoomStateAndResetDemo() {
@@ -176,7 +192,9 @@ struct LiveRoomViewModelTests {
         let micVersions = viewModel.liveConsoleSections
             .first { $0.id == .micSeats }?.rows.map(\.refreshID)
         #expect(viewModel.selectMicSeat("guest-1") == false)
-        #expect(viewModel.liveConsoleSections.first { $0.id == .micSeats }?.rows.map(\.refreshID) == micVersions)
+        #expect(
+            viewModel.liveConsoleSections.first { $0.id == .micSeats }?.rows.map(\.refreshID)
+                == micVersions)
 
         #expect(viewModel.selectGift("rocket") == false)
         #expect(viewModel.selectGift("missing") == false)
@@ -184,7 +202,9 @@ struct LiveRoomViewModelTests {
         let giftVersions = viewModel.liveConsoleSections
             .first { $0.id == .gifts }?.rows.map(\.refreshID)
         #expect(viewModel.selectGift("rose") == false)
-        #expect(viewModel.liveConsoleSections.first { $0.id == .gifts }?.rows.map(\.refreshID) == giftVersions)
+        #expect(
+            viewModel.liveConsoleSections.first { $0.id == .gifts }?.rows.map(\.refreshID) == giftVersions
+        )
     }
 
     @Test func sendGiftPayloadSelectsAndSendsInOneMutation() {
@@ -220,17 +240,22 @@ struct LiveRoomViewModelTests {
         #expect(section?.rows.first?.selectHandler == nil)
         #expect(section?.rows.dropFirst().allSatisfy { $0.isFocusable == true } == true)
         #expect(section?.indexTitle == "API")
-        #expect(section?.sectionLayout == .uiKitListConfiguration(.init(appearance: .insetGrouped, headerTopPadding: 0)))
+        #expect(
+            section?.declaredLayout
+                == .uiKitListConfiguration(.init(appearance: .insetGrouped, headerTopPadding: 0)))
     }
 
     @Test func apiGuideSelectionDoesNotActivateOrScroll() {
         let viewModel = LiveRoomViewModel()
         let section = viewModel.roomToolkitSections.first { $0.id == .apiGuide }
-        let capabilityIDs: Set<LiveRoomRowID> = [.apiAsyncApply, .apiStableIdentity, .apiNativeInteractions]
-        let capabilityRows = section?.rows.filter {
-            guard let rowID = $0.identity.rowID.typed(LiveRoomRowID.self) else { return false }
-            return capabilityIDs.contains(rowID)
-        } ?? []
+        let capabilityIDs: Set<LiveRoomRowID> = [
+            .apiAsyncApply, .apiStableIdentity, .apiNativeInteractions,
+        ]
+        let capabilityRows =
+            section?.rows.filter {
+                guard let rowID = $0.identity.rowID.typed(LiveRoomRowID.self) else { return false }
+                return capabilityIDs.contains(rowID)
+            } ?? []
 
         #expect(capabilityRows.count == 3)
         #expect(capabilityRows.allSatisfy { $0.selectHandler == nil })
@@ -243,17 +268,23 @@ struct LiveRoomViewModelTests {
         let viewModel = LiveRoomViewModel()
 
         #expect(viewModel.isAPIGuideExpanded == true)
-        #expect(viewModel.roomToolkitSections.first { $0.id == .apiGuide }?.outlineRoots.first?.isExpanded == true)
+        #expect(
+            viewModel.roomToolkitSections.first { $0.id == .apiGuide }?.outlineRoots.first?.isExpanded
+                == true)
 
         viewModel.setAPIGuideExpanded(false)
 
         #expect(viewModel.isAPIGuideExpanded == false)
-        #expect(viewModel.roomToolkitSections.first { $0.id == .apiGuide }?.outlineRoots.first?.isExpanded == false)
+        #expect(
+            viewModel.roomToolkitSections.first { $0.id == .apiGuide }?.outlineRoots.first?.isExpanded
+                == false)
 
         viewModel.setAPIGuideExpanded(true)
 
         #expect(viewModel.isAPIGuideExpanded == true)
-        #expect(viewModel.roomToolkitSections.first { $0.id == .apiGuide }?.outlineRoots.first?.isExpanded == true)
+        #expect(
+            viewModel.roomToolkitSections.first { $0.id == .apiGuide }?.outlineRoots.first?.isExpanded
+                == true)
     }
 
     @Test func roomActivityFilterUpdatesOnlyMatchingRowsWithoutRequestingScroll() {
@@ -288,11 +319,19 @@ struct LiveRoomViewModelTests {
         let viewModel = LiveRoomViewModel()
         let section = viewModel.liveConsoleSections.first { $0.id == .micSeats }
 
-        guard case .horizontalConfiguration(let layout) = section?.sectionLayout else {
+        guard let layout = section?.resolvedForTesting() else {
             Issue.record("Expected horizontal mic-seat layout")
             return
         }
-        #expect(layout.scrollingBehavior == .continuousGroupLeadingBoundary)
+        #expect(layout.orthogonalScrollingBehavior == .continuousGroupLeadingBoundary)
+        guard case .environment(let selector) = section?.layoutSource,
+            case .builtIn(.gridConfiguration(let grid)) = selector.resolve(TestLayoutEnvironment())
+        else {
+            Issue.record("Expected environment-resolved mic-seat grid")
+            return
+        }
+        let geometry = try? grid.geometry(in: TestLayoutEnvironment(), scrollDirection: .vertical)
+        #expect(geometry?.groupExtent == 390)
         #expect(section?.rows.allSatisfy { $0.isFocusable == true } == true)
     }
 
@@ -319,16 +358,25 @@ struct LiveRoomViewModelTests {
 
     @Test func sectionContentKeepsDefaultPaddingInsideBackground() {
         let viewModel = LiveRoomViewModel()
-        let sections = viewModel.liveConsoleSections + viewModel.studioControlSections + viewModel.roomToolkitSections
+        let sections =
+            viewModel.liveConsoleSections + viewModel.studioControlSections
+            + viewModel.roomToolkitSections
 
         for section in sections {
-            guard let backgroundInsets = section.backgroundDecorationItem?.contentInsets,
-                  let contentInsets = section.sectionLayout?.contentInsets else {
-                continue
+            var source = section.layoutSource
+            if case .environment(let selector) = source {
+                guard let resolved = selector.resolve(TestLayoutEnvironment()) else {
+                    Issue.record("Expected a complete environment layout")
+                    continue
+                }
+                source = resolved
             }
+            guard let backgroundInsets = source.options?.decorations?.first?.backgroundInsets,
+                case .builtIn(let layout) = source else { continue }
+            let sectionInsets = layout.sectionInsets
 
-            #expect(contentInsets.leading - backgroundInsets.leading == 8)
-            #expect(contentInsets.trailing - backgroundInsets.trailing == 8)
+            #expect(sectionInsets.leading - backgroundInsets.leading == 8)
+            #expect(sectionInsets.trailing - backgroundInsets.trailing == 8)
         }
     }
 
@@ -336,7 +384,7 @@ struct LiveRoomViewModelTests {
         let viewModel = LiveRoomViewModel()
         let statusSection = viewModel.liveConsoleSections.first { $0.id == .status }
 
-        #expect(statusSection?.backgroundDecorationItem == nil)
+        #expect(statusSection?.decorations.isEmpty == true)
     }
 
     @Test func consoleCardsUseCompactSystemSpacing() throws {
@@ -347,48 +395,37 @@ struct LiveRoomViewModelTests {
         let statusSection = try #require(
             viewModel.liveConsoleSections.first { $0.id == .status }
         )
-        let toolbarLayout = try #require(toolbarSection.sectionLayout)
-        let statusLayout = try #require(statusSection.sectionLayout)
+        let toolbarLayout = try #require(toolbarSection.declaredLayout)
+        let statusLayout = try #require(statusSection.declaredLayout)
 
-        let spacing = toolbarLayout.contentInsets.bottom
-            + statusLayout.contentInsets.top
+        let spacing =
+            toolbarLayout.sectionInsets.bottom
+            + statusLayout.sectionInsets.top
 
         #expect(spacing == 16)
     }
 
     @Test func contentSectionHeadersDoNotPinOverRows() {
         let viewModel = LiveRoomViewModel()
-        let sections = viewModel.liveConsoleSections.filter { [.micSeats, .messages, .gifts].contains($0.id) }
+        let sections = viewModel.liveConsoleSections.filter {
+            [.micSeats, .messages, .gifts].contains($0.id)
+        }
 
         for section in sections {
-            let headerLayout = section.supplementaryLayouts[UICollectionView.elementKindSectionHeader]
-
-            #expect(headerLayout?.pinsToVisibleBounds == false)
+            let boundary = section.resolvedForTesting().boundarySupplementaryItems.first
+            #expect(boundary?.pinToVisibleBounds == false)
         }
     }
 
 }
 
-private extension ListSectionLayout {
-    var contentInsets: ListLayoutInsets {
+extension ListSectionLayout {
+    fileprivate var sectionInsets: ListLayoutInsets {
         switch self {
-        case .listConfiguration(let configuration):
-            return configuration.contentInsets
         case .gridConfiguration(let configuration):
-            return configuration.contentInsets
-        case .horizontalConfiguration(let configuration):
-            return configuration.contentInsets
+            return configuration.sectionInsets
         case .uiKitListConfiguration:
             return .zero
         }
-    }
-}
-
-private extension ListSupplementaryLayout {
-    var pinsToVisibleBounds: Bool {
-        guard case .boundary(_, _, let pinToVisibleBounds, _) = placement else {
-            return false
-        }
-        return pinToVisibleBounds
     }
 }

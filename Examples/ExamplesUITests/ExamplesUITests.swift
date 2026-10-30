@@ -59,10 +59,9 @@ final class ExamplesUITests: XCTestCase {
 
     @MainActor
     func testLiveConsoleLandscapeKeepsPrimaryContentInsideSafeHorizontalBounds() throws {
-        XCUIDevice.shared.orientation = .landscapeLeft
-
         let app = XCUIApplication()
         app.launch()
+        rotateToLandscape(app)
 
         let window = app.windows.firstMatch
         let collection = app.collectionViews["live-console-collection"]
@@ -95,10 +94,9 @@ final class ExamplesUITests: XCTestCase {
 
     @MainActor
     func testAdminTableLandscapeKeepsHeaderAndRowsInsideSafeHorizontalBounds() throws {
-        XCUIDevice.shared.orientation = .landscapeLeft
-
         let app = XCUIApplication()
         app.launch()
+        rotateToLandscape(app)
 
         let window = app.windows.firstMatch
         let tabBar = app.tabBars["design-scheme-tabs"]
@@ -140,6 +138,21 @@ final class ExamplesUITests: XCTestCase {
         let dragEnd = table.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35))
         dragStart.press(forDuration: 0.1, thenDragTo: dragEnd)
         XCTAssertEqual(summary.frame.minX, summaryMinX, accuracy: 1)
+    }
+
+    /// 自动化会话建立时可能重置设备方向，因此在启动后旋转，并等待窗口完成切换。
+    @MainActor
+    private func rotateToLandscape(_ app: XCUIApplication) {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let window = app.windows.firstMatch
+        let landscape = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                window.exists && window.frame.width > window.frame.height
+            },
+            object: window
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [landscape], timeout: 5), .completed,
+                       "Window must enter landscape before checking horizontal safe-area bounds")
     }
 
     @MainActor

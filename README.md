@@ -110,6 +110,7 @@ collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
 
 ```swift
 func render(users: [User]) {
+    let title = "users-title"
     adapter.apply {
         ListSection(.users) {
             ForEach(users, id: \.id) { user in
@@ -117,20 +118,66 @@ func render(users: [User]) {
                     cell.configure(with: user)
                 }
                 .refreshID(user.version)
-                .onSelect { user, _ in
-                    openProfile(user)
-                }
+                .onSelect { user, _ in openProfile(user) }
+            }
+        } layout: {
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(8).lineSpacing(8).boundarySupplementaries {
+                BoundarySupplementaryLayout(
+                    kind: title,
+                    size: .init(width: .fractionalWidth(1), height: .estimated(44)),
+                    alignment: .top
+                )
+            }
+        } supplementaries: {
+            SectionSupplementary(UsersHeaderView.self, kind: title, id: "users-title") { view, _ in
+                view.titleLabel.text = "Users"
             }
         }
-        .header(UsersHeaderView.self, id: "users-header") { header, _ in
-            header.titleLabel.text = "Users"
-        }
-        .layout(.list(spacing: 8))
     }
 }
 ```
 
 `ForEach` 会把自己的 ID 传给内部 `Row`，因此上例不需要在 `Row` 上重复写 `id`。
+
+### Section 组合方式
+
+保留上面的多闭包写法，也可以用对称的链式入口组织同一份 Section：
+
+```swift
+let titleKind = "title"
+let section = ListSection(0) {
+    Row(0, model: "Hello", cell: UICollectionViewCell.self) { _, _, _ in }
+}
+.layout {
+    GridLayout(tracks: 1)
+        .itemMainAxisSize(.estimated(44))
+        .boundarySupplementaries {
+            BoundarySupplementaryLayout(
+                kind: titleKind,
+                size: .init(width: .fractionalWidth(1), height: .absolute(36)),
+                alignment: .top
+            )
+        }
+}
+.supplementaries {
+    SectionSupplementary(
+        UICollectionReusableView.self, kind: titleKind, id: "title"
+    ) { view, _ in
+        view.accessibilityLabel = "Messages"
+    }
+}
+.decorations {
+    SectionDecoration(UICollectionReusableView.self, kind: "card")
+}
+```
+
+- `.layout { }` 替换完整布局；`.supplementaries { }`、`.decorations { }` 替换对应集合。
+- `.addingSupplementaries { }`、`.addingDecorations { }` 按顺序追加；重复 kind 仍会诊断，不静默覆盖。
+- 空的集合设置清空集合，空的追加保留集合；内容改变不改写显式布局，缺失必需绑定仍会诊断。
+- 可将 rows 提取为返回 `RowGroup` 的方法，将布局提取为值，将 header 提取为接收当前数据的方法。消息列表示例展示了这种组合。
+- `whenContentExists()` 判断对应内容／注册声明是否存在，不判断 rows 是否为空。无条件绑定时无需添加。
+
+迁移：旧的 `.addingSectionSupplementaries { }` 已移除，请改用 `.addingSupplementaries { }`。详见 [Section 组合规则](Documentation/Layout-API.md#section-的三种组合方式)。
 
 ### 完整 View Controller 骨架
 
@@ -192,8 +239,7 @@ final class UsersViewController: UIViewController {
                         self?.showUser(user)
                     }
                 }
-            }
-            .layout(.list(itemHeight: .estimated(64), spacing: 8))
+            } layout: { GridLayout(tracks: 1).itemMainAxisSize(.estimated(64)).trackSpacing(8).lineSpacing(8) }
         }
     }
 }
@@ -321,9 +367,11 @@ iOS 13.0 引入、iOS 16.0 弃用；显示与结束通知从 iOS 13.2 引入。a
 使用新的多项配置及逐项预览入口，Row DSL 跨版本保持一致，无需由调用方分支选择。
 
 **转发顺序：** iOS 15 配置请求依次查询 Row、原生旧代理；iOS 16+ 依次查询
-`contextMenuForItems`、首个目标 Row、原生新代理、原生旧代理。只有前一级返回 `nil`
-才查询下一级。空白区域没有 Row，仅查询多项 provider 和原生新代理。预览先查询匹配 Row，
-然后查询对应的原生代理；iOS 16+ 新预览代理返回 `nil` 时继续回退旧预览代理。
+`contextMenuForItems`、首个目标 Row、原生代理。DSL provider 返回 `nil` 时继续查询下一级。
+原生代理实现新版回调时，其返回值（包括 `nil`）直接生效；仅在未实现对应新版回调时，
+才回退旧版回调。菜单配置返回 `nil` 阻止菜单交互，预览返回 `nil` 交由系统处理。
+空白区域没有 Row，仅查询多项 provider 和原生新代理。预览先查询匹配 Row，
+未提供预览时按上述规则查询原生代理。
 显示、结束和 commit 通知先调用 Row，再调用 `collectionDelegate`。多项菜单的逐项预览
 各自分发，生命周期和 commit 仅通知首个目标 Row。
 
@@ -678,249 +726,46 @@ Section 默认使用 `.automatic`：声明了 `.onSelect(...)`、`.onDeselect(..
 
 ## Layout 与 Supplementary
 
-Collection section 可以直接声明常见布局：
+布局返回一个完整值，由主体与 `.sectionInsets`、`.boundarySupplementaries`、`.itemSupplementaries`、`.decorationItems` 组合。补充视图内容统一使用 `SectionSupplementary`，装饰注册使用 `SectionDecoration`；supplementary 通过实际 kind 关联布局，decoration 通过逻辑 kind 关联布局，内容均不携带几何。通用 Header/Footer 与 background 专用入口已移除，TableHeader/TableFooter 保留。
+
+| 布局入口 | 适用场景与默认行为 |
+| --- | --- |
+| `GridLayout(tracks: 1)` | 单行或单列；默认主轴 `.estimated(44)`、间距 0、`.trackGroupAlignment(.start)` |
+| `GridLayout(tracks: n)` | n 条等分轨道，自动适配方向 |
+| `GridLayout(tracks: [ListGridTrack])` | fixed / flexible / adaptive 混合轨道 |
+| `UIKitListLayout(...)` | UIKit 原生列表、分隔线和 swipe actions |
+| `CustomLayout(layoutKey:)` | 根据真实 context 构建自定义 UIKit section |
+| `EnvironmentLayout(layoutKey:)` | 按环境返回完整布局 |
+
+Grid 未开启正交滚动时跟随外层方向，开启后沿垂直于外层的方向展开。纵向内容中 tracks 表示列宽，横向内容中表示行高；单轨道替代普通 ListLayout，正交修饰替代 HorizontalLayout。columns:/rows: 入口已移除。
+
+固定 gridCrossAxisSize 完整预留交叉轴区域；估算 gridCrossAxisSize 不支持宽高比。带 badge 的 estimated/uniform 支持多基本行／列 group；业务 kind 只声明一次，框架负责实际 kind/indexPath 映射。自定义 provider 与 UIKit 查询迁移见[自适应徽标实现与验证](Documentation/Measured-Grid-Badges.md)。估算主轴 group 的精确吸附仍有 UIKit 实测偏差，动态内容示例使用连续滚动；精确分页使用确定尺寸。旧 Horizontal 整宽 group 与 fractionalViewport 的 inset 参考不同，精确迁移见[布局文档](Documentation/Layout-API.md#从旧布局迁移)。
 
 ```swift
-ListSection(.photos) {
-    ForEach(photos, id: \.id) { photo in
-        Row(model: photo, cell: PhotoCell.self) { cell, photo, _ in
-            cell.configure(with: photo)
-        }
-    }
-}
-.layout(.grid(
-    columns: 2,
-    spacing: 12,
-    itemHeight: .estimated(180),
-    contentInsets: .init(12)
-))
+// 纵向页面中的两行横向分页，每组 3 列，共 6 个 item。
+GridLayout(tracks: 2)
+    .itemMainAxisSize(.fillGroup).trackSpacing(10).lineSpacing(10)
+    .gridCrossAxisSize(.fixed(220))
+    .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1)))
+    .groupSpacing(16)
+    .orthogonalScrolling(.groupPaging)
 ```
 
-内置布局包括：
+itemMainAxisSize 控制内容主轴尺寸；轨道控制交叉尺寸；gridCrossAxisSize 设置所有轨道共同占用的交叉轴区域；lineGrouping 配置基本行／列数量与主轴长度。gridCrossAxisSize 不含 section inset，随内容方向解释。`.gridCrossAxisSize(.estimated(...))` 支持单轨道估算交叉尺寸；estimated/uniform 主轴使用内容推导的 group，不能与 fitting 或显式 group 长度混用。
 
-- `.list(...)`：纵向列表。
-- `.grid(...)`：固定列数网格。
-- `.horizontal(...)`：横向滚动 section。
-- `UIKitListLayout(...)`：原生 `UICollectionLayoutListConfiguration`，适合 swipe 与 outline。
-- `.custom(...)`：直接生成 `NSCollectionLayoutSection` 的逃生口。
+`.trackGroupAlignment(.start/.center/.end)` 对齐整组轨道，默认 start；不控制 cell 内部内容或分页。trackSpacing 控制轨道间距，lineSpacing 控制内容方向的组内与默认组间距，两者默认 0。groupSpacing 为可选覆盖，默认 nil 跟随当前 lineSpacing；显式值（包括 0）只覆盖组间距，调用 `.groupSpacing(nil)` 恢复跟随。
 
-Header、footer 和自定义 supplementary 都属于 section 描述的一部分：
+布局使用以下替换与默认规则：
 
-```swift
-ListSection(.users) {
-    makeUserRows()
-}
-.header(UsersHeaderView.self, id: "header") { view, _ in
-    view.titleLabel.text = "Users"
-}
-.footer(LoadingFooterView.self, id: "footer") { view, _ in
-    view.isLoading = isLoadingMore
-}
-.stickyHeader()
-```
+- 重复调用布局集合修饰方法会完整替换，不追加。Section 的 `.layout { ... }` 替换主体及其修饰配置，保留内容和注册声明。
+- 空 layout builder、nil 或 `EnvironmentLayout` 的空分支均回退到默认 `GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)`，不会保留旧布局或隐藏 Section。
+- 省略 `decorationItems` 时，为已有装饰注册生成零 inset、zIndex -1 的默认背景；显式 `.decorationItems(.none)` 关闭框架生成的背景，保留注册和 provider 自有几何。
+- `.whenContentExists()` 判断当前 Section 是否存在对应内容或注册声明，不判断屏幕可见性，也不跳过尺寸与唯一性校验。
+- 边界位置由 alignment 决定，leading/trailing 不是固定左右，top/bottom 不随滚动轴互换。原生 List 省略 inset 修饰时保留系统值；CustomLayout 显式声明 inset 时须由 provider 使用并返回同值。
 
-### 横向滚动 Section
+装饰的 `SectionDecoration.kind` 是逻辑名称；`SectionDecoration.elementKind` 才是 UIKit 实际注册标识。自定义 provider 使用 `context.decorationElementKind(for:)`，手动注册入口使用 `SectionDecoration(kind:elementKind:)`。不同 Section 可以复用逻辑名称并采用不同视图类型。
 
-标签、推荐卡片和最近访问记录可以使用横向布局：
-
-```swift
-ListSection(.recentSearches) {
-    ForEach(keywords, id: \.self) { keyword in
-        Row(model: keyword, cell: KeywordCell.self) { cell, keyword, _ in
-            cell.titleLabel.text = keyword
-        }
-    }
-}
-.layout(.horizontal(
-    itemWidth: .estimated(80),
-    itemHeight: .absolute(36),
-    spacing: 8,
-    contentInsets: .init(top: 0, leading: 16, bottom: 0, trailing: 16),
-    scrollingBehavior: .continuous
-))
-```
-
-### 条件 Layout、Header 与背景
-
-需要让布局元数据和视图状态一起变化时，可以使用 `ListSection` 的 builders：
-
-```swift
-ListSection(.dashboard) {
-    ForEach(items, id: \.id) { item in
-        Row(model: item, cell: DashboardCell.self) { cell, item, _ in
-            cell.configure(with: item)
-        }
-    }
-} layout: {
-    if isGrid {
-        GridLayout(columns: 2, spacing: 12)
-    } else {
-        ListLayout(itemHeight: .estimated(64), spacing: 8)
-    }
-} header: {
-    if showHeader {
-        Header(DashboardHeaderView.self, id: "dashboard-header") { view, _ in
-            view.titleLabel.text = title
-        }
-        .layout(height: .estimated(52), pinned: true)
-    }
-} background: {
-    if showBackground {
-        BackgroundDecoration(
-            CardBackgroundView.self,
-            contentInsets: .init(top: 8, leading: 12, bottom: 8, trailing: 12)
-        )
-    }
-}
-```
-
-Typed background decoration 会由 adapter 自动注册。使用 raw decoration kind 时，需要调用方先向 compositional layout 注册对应 view。
-
-### Supplementary 的刷新与事件
-
-Header/footer 也可以拥有独立的 `refreshID`、Supplementary 刷新规则和点击事件：
-
-```swift
-let header = Supplementary(
-    UICollectionView.elementKindSectionHeader,
-    id: "users-header",
-    view: UsersHeaderView.self
-) { view, _ in
-    view.configure(title: title, onlineCount: onlineCount)
-}
-.refreshID(headerVersion)
-.refresh(
-    when: .refreshIDChanges,
-    action: .reconfigureVisible(layout: .invalidate)
-)
-.onTap { _ in
-    showAllUsers()
-}
-
-ListSection(.users) {
-    makeUserRows()
-}
-.supplementary(header)
-```
-
-Supplementary 不是 diffable item，因此不公开 Row 的 `scope`。默认动作
-`.reconfigureVisible(layout: .none)` 直接配置现有 view；确实需要重新进入 provider 生命周期时，
-使用 `.reloadSection`。后者通过 snapshot `reloadSections` 执行，并会连带重载所属 Section 的 Row：
-
-```swift
-header.refresh(when: .refreshIDChanges, action: .reloadSection)
-```
-
-自定义 kind 默认可以作为 boundary supplementary；下面把角标挂到每个 item 的右上角：
-
-```swift
-ListSection(.users) {
-    makeUserRows()
-} supplementaries: {
-    SectionSupplementary("online-badge", OnlineBadgeView.self, id: "online") { view, context in
-        let user = users[context.indexPath.item]
-        view.isOnline = user.isOnline
-    }
-    .refreshID(presenceVersion)
-    .itemSupplementaryLayout(
-        anchor: .topTrailing,
-        width: .absolute(16),
-        height: .absolute(16),
-        fractionalOffset: CGPoint(x: 0.25, y: -0.25),
-        zIndex: 2
-    )
-}
-```
-
-### 原生 UIKit List
-
-Collection swipe actions、sidebar appearance 和 outline 应使用原生 list layout：
-
-```swift
-ListSection(.inbox) {
-    ForEach(messages, id: \.id) { message in
-        Row(model: message, cell: MessageListCell.self) { cell, message, _ in
-            cell.configure(with: message)
-        }
-        .trailingSwipeActions { _ in
-            let delete = UIContextualAction(style: .destructive, title: "删除") { _, _, finish in
-                deleteMessage(id: message.id)
-                finish(true)
-            }
-            return UISwipeActionsConfiguration(actions: [delete])
-        }
-    }
-} layout: {
-    UIKitListLayout(appearance: .insetGrouped, showsSeparators: true)
-}
-```
-
-### 接入已有 Layout Provider
-
-现有接入代码可以继续用 `.layout("legacy-id")` 保存布局标识，并在 fallback 中返回原来的 `NSCollectionLayoutSection`：
-
-```swift
-adapter.apply {
-    ListSection(.products) {
-        makeProductRows()
-    }
-    .layout("two-column-products")
-}
-
-collectionView.collectionViewLayout = adapter.makeCompositionalLayout { section, _, environment in
-    switch section.layoutID?.typed(String.self) {
-    case "two-column-products":
-        return makeProductLayout(environment: environment)
-    default:
-        return nil
-    }
-}
-```
-
-新接入代码优先使用 `.list(...)`、`.grid(...)`、`.horizontal(...)` 或 `.custom(...)`；fallback 主要用于渐进迁移。
-
-### 安全区域与系统 Content Insets
-
-`makeCompositionalLayout()` 默认保留 UIKit 的 `scrollDirection`、`interSectionSpacing` 和
-`contentInsetsReference`，Collection View 也应保留 `contentInsetAdjustmentBehavior` 的系统默认值。
-layout 与 scroll view 两侧共同决定可用内容区域以及如何避让导航栏、Tab Bar 与安全区域；默认接入不需要
-写任何配置：
-
-```swift
-collectionView.collectionViewLayout = adapter.makeCompositionalLayout()
-```
-
-只有调用方提供的属性才会写入 UIKit：
-
-```swift
-collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
-    configuration: .init(interSectionSpacing: 4)
-)
-```
-
-`scrollDirection` 和 `interSectionSpacing` 默认是 `nil`；`contentInsetsReference` 默认是
-`.systemDefault`。它们都表示 ListKit 不写入对应 UIKit 属性。`.systemDefault` 不等同于显式
-`.automatic`。只有页面确实要接管 inset 时，才同时检查 layout 与 scroll view 两侧的策略。例如全屏画布
-明确不使用系统 inset：
-
-```swift
-collectionView.contentInsetAdjustmentBehavior = .never
-collectionView.collectionViewLayout = adapter.makeCompositionalLayout(
-    configuration: .init(contentInsetsReference: .none)
-)
-```
-
-不要把 `.none` 与 `.always` 组合在普通页面中：横屏有左右安全区域时，scroll view 会移动内容原点，
-layout 却仍按未扣除安全区域的宽度生成 Section，可能造成右侧越界和非预期横向滚动指示器。
-
-`UIKitListLayout(..., showsSeparators: nil)` 同样保留当前 appearance 的 UIKit 默认值；只有传入
-`true` 或 `false` 时才显式覆盖。`UICollectionViewCompositionalSeparatorLayout` 是 ListKit 自绘
-decoration 工具，没有可继承的系统 separator inset：其 `separatorInsets` 明确相对已经完成 safe-area
-解析的 item frame 计算，默认 `.zero`。每个 layout 实例独立持有颜色，不会影响其他列表。
-
-`UITableView.tableHeaderView` 不属于 Section/Cell 的系统 inset 布局。自定义 Header 应保持 Table View
-完整宽度，只把内部内容约束到随旋转更新的安全区域或动态 layout margins；不要用固定 20pt 直接约束到
-Header 物理边缘。
+完整 API、默认值、Grid 规则、自定义 UIKit 接口与诊断见 [布局 API](Documentation/Layout-API.md)。[上游审查](Documentation/UIKitGridLayouts-Review.md)记录内部算法整合与 MIT 署名；[历史验证记录](Documentation/Layout-Validation.md)与[统一 Grid 验证](Documentation/Unified-Grid-Validation.md)分别记录各阶段的编译、模型和真实渲染证据。示例首页的 **Grid** 打开 [Layout Lab](Documentation/Layout-Lab.md)：切换方向、轨道、场景和容器尺寸，通过右上角 **参数 / 代码** 调整主轴尺寸、分组、轨道／行间距、组间距覆盖与对齐，并查看当前配置实时生成的布局代码。单元格显示实际宽高；支持增加内容观察 self-sizing，以及 Cards、Tags、Banner、Measured badges、Centered、2×3、Mixed sections 与 Native list 场景。
 
 ## 事件
 
@@ -1196,7 +1041,7 @@ Arguments → Arguments Passed On Launch 中添加并勾选 `-ListKitLogApplySum
 Table 和 Collection 共用此开关，summary 数据仍照常生成和返回。
 诊断警告不受该启动参数控制，仍按 diagnostics 配置处理。
 
-默认配置会在 diffable apply 前检查重复 identity 和无效布局，问题存在时打印诊断并跳过本次提交，避免 UIKit 用难以定位的异常崩溃：
+默认配置会在 diffable apply 前检查重复 identity 和可静态确定的无效布局，问题存在时打印诊断并跳过本次提交。依赖实际容器、外层方向或 provider 返回值的问题，在 Section 解析阶段另行检查：
 
 ```swift
 let options = ListApplyOptions(
@@ -1216,12 +1061,13 @@ for issue in summary.diagnosticsIssues {
 
 - 重复 section ID、Row identity 或 supplementary identity。
 - 同一 section 内重复的 supplementary kind。
-- supplementary layout 没有匹配的 view。
-- 同一个 kind 同时声明 boundary 与 item-level layout。
-- grid 列数小于 1、负 spacing、非正尺寸。
-- legacy layout ID 没有被 fallback 解析。
+- 自定义 UIKit boundary 与 Section 声明的 kind 冲突。
+- 无效 grid 数量、轨道上下限、非有限/非正尺寸或负 spacing/inset。
+- Grid 滚动轴与外层布局不匹配，原生 UIKit List 使用 item supplementary。
 
-调试期希望立即停在问题现场时使用 `.assertion`；完全关闭检查可以使用 `.disabled`。
+调试期希望在诊断处调用 `assertionFailure` 时使用 `.assertion`。`.disabled` 不能理解为允许任意无效布局：即使不记录解析诊断，Section 解析仍会拒绝尺寸约束不满足等无效配置。
+
+`makeCompositionalSection` 的 `scrollDirection` 必须与外层 layout 实际方向一致；Grid 尺寸约束不满足时返回 nil，不自动改为正交滚动。此类解析诊断通过 `lastLayoutDiagnostics` 观测，不能仅从 apply 返回值判断。`makeCompositionalLayout` 的 provider 在解析返回 nil 时使用默认 List 布局回退；自行创建外层 layout 时由调用方处理 nil。详见[解析诊断与回退](Documentation/Layout-API.md#解析诊断与回退)。
 
 ## 自动注册与手写 Data Source
 
@@ -1293,6 +1139,14 @@ open ListKit.xcworkspace
 
 `Examples/` 包含 collection 与 table 两套完整示例，演示 layout、selection、事件、刷新、swipe、context menu 和 reordering。
 
+可按需要参考不同的 API 组合方式：
+
+| 示例源码 | 组合方式 |
+| --- | --- |
+| [LiveRoomViewModel](Examples/Examples/LiveRoomViewModel.swift) | 简单 Section 内联；麦位、消息、礼物使用链式入口与独立布局／内容方法；房间动态复用消息 RowGroup；管理列表保留 TableHeader 专用入口。 |
+| [ContextMenuDemoViewController](Examples/Examples/ContextMenuDemoViewController.swift) | Section builder 负责组装，`menuRow(for:)` 集中展示单行菜单与生命周期 API。 |
+| [LayoutLabViewController](Examples/Examples/LayoutLabViewController.swift) | 从同一份配置快照组合 rows、完整布局和补充内容；“参数 / 代码”面板同步展示链式调用及补充视图绑定。 |
+
 ListKit 是 iOS/UIKit 框架，有效验收项是 iOS Simulator 或 generic iOS Simulator 的
 `xcodebuild`。裸跑 `swift test` 会走 macOS SwiftPM 构建路径，macOS target 没有
 UIKit，因此 `no such module 'UIKit'` 不作为 ListKit 的有效失败信号。
@@ -1344,6 +1198,8 @@ Sources/ListKit/
 
 ## License
 
+Grid 算法及部分测试改编自 UIKitGridLayouts；来源版本与适配见 [审查记录](Documentation/UIKitGridLayouts-Review.md)，随附 [MIT 许可证](ThirdPartyNotices/UIKitGridLayouts-LICENSE.txt)。
+
 ListKit 基于 MIT License 发布，详见 [LICENSE](LICENSE)。
 
 
@@ -1375,3 +1231,30 @@ adapter.apply(transaction: .disabled) {
 不选择联系人、不触发 Row 动作。VoiceOver 使用可调整控件逐项定位，值为当前标题。
 数据更新后通过行 identity 解析当前位置；snapshot 提交期间忽略定位，避免陈旧 IndexPath。
 绑定自定义索引时关闭原生索引数据返回，解除绑定后恢复原生路径。控件由页面持有，adapter 弱持有。
+
+## 布局 API 语义与迁移
+
+布局尺寸按内容轴解释：`ListGridTrack` 定义交叉轴轨道，`itemMainAxisSize` 定义 cell 的主轴尺寸，`gridCrossAxisSize` 定义所有轨道共同占用的交叉轴区域。`lineGrouping(.count(lines:mainAxisSize:))` 的数量单位是基本行／列，不是 item。
+
+```swift
+// 外层纵向时：两行、每组三列，最多六个 item。
+GridLayout(tracks: 2)
+    .gridCrossAxisSize(.fixed(220))
+    .trackSpacing(10)
+    .lineSpacing(12)
+    .groupSpacing(20)
+    .itemMainAxisSize(.fillGroup)
+    .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1)))
+    .trackGroupAlignment(.start)
+    .orthogonalScrolling(.groupPaging)
+```
+
+`gridSpacing` 已删除；统一间距使用 `.trackSpacing(value).lineSpacing(value)`。`lineSpacing` 不覆盖显式 groupSpacing，二者调用顺序无关；`.groupSpacing(nil)` 清除覆盖。`.orthogonalScrolling(nil)` 关闭正交滚动；`.gridCrossAxisSize(nil)` 恢复环境尺寸。背景可以显式使用 `.decorationItems(.none)` 关闭，或 `.decorationItems(.registeredBackgrounds)` 恢复默认生成。 本轮验证见[统一行间距验证](Documentation/Layout-Spacing-Validation.md)。
+
+本次不兼容旧 frame、itemSize、ListGridItem、无单位 group count 等入口；完整改名表、layoutKey 捕获状态规则、CustomLayout 输入与边界所有权规则见 [布局 API 与迁移](Documentation/Layout-API.md)。历史验证报告保留旧名称与当时的结果。
+
+布局 DSL 的 `.sectionInsets(...)` 明确作用于当前 Section，CustomLayout 使用同名构造参数与 `context.sectionInsets`。它映射到 UIKit Section.contentInsets，不替代 collection view 的 contentInset、cell padding 或 DecorationItemLayout.backgroundInsets。详见[Section 内边距语义](Documentation/Layout-API.md#section-内边距)。
+
+其余布局修饰方法同样明确作用对象：`gridCrossAxisSize`、`trackSpacing`、`lineSpacing`、`groupSpacing`、`lineGrouping`、`trackGroupAlignment`；轨道使用 `spacingAfter`，背景使用 `backgroundInsets`，补充视图区分 `absoluteOffset` 与 `anchorFractionalOffset`。完整说明见[名称与作用对象](Documentation/Layout-API.md#名称与作用对象)。
+
+Grid 默认 item 主轴尺寸为 `.estimated(44)`：纵向估算高度、横向估算宽度，44 不是固定尺寸，最终由 cell 的 self-sizing 决定。需要正方形时显式设置 `.itemMainAxisSize(.aspectRatio(1))`。

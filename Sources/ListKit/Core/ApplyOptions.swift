@@ -13,11 +13,11 @@ public enum ListAnimationPolicy: Equatable, Sendable {
     case disabled
 }
 
-/// 连续列表 mutation 的调度方式。
+/// 连续列表更新的调度策略。
 public enum ListUpdatePolicy: Equatable, Sendable {
-    /// 合并兼容的 pending mutation，并让被更新请求取代的旧请求以 `.superseded` 结束。
+    /// 合并兼容的待执行更新，被后续请求取代的旧请求以 `superseded` 状态结束。
     case coalesceLatest
-    /// 等待前一个 mutation 完成后再严格按调用顺序提交。
+    /// 等待前一个更新完成后，严格按调用顺序提交。
     case serial
 }
 
@@ -26,13 +26,13 @@ public struct ListScrollTarget: Hashable, Sendable {
     let rowID: AnyListID
     let sectionID: AnyListID?
 
-    /// 使用 Row id 创建刷新目标。
+    /// 使用条目标识符创建滚动目标。
     public init<RowID>(_ rowID: RowID) where RowID: Hashable & Sendable {
         self.rowID = AnyListID(rowID)
         self.sectionID = nil
     }
 
-    /// 使用 Row id 和 section id 创建无歧义的刷新目标。
+    /// 使用条目与分区标识符创建限定分区的滚动目标。
     public init<RowID, SectionID>(
         _ rowID: RowID,
         in sectionID: SectionID
@@ -42,11 +42,13 @@ public struct ListScrollTarget: Hashable, Sendable {
     }
 }
 
-/// apply 后目标在 viewport 中的位置。
+/// 更新完成后，滚动目标在视口中的对齐位置。
+///
+/// 顶部、居中与底部均沿垂直方向解释，不随集合视图的滚动轴自动交换。
 public enum ListScrollPosition: Equatable, Sendable {
     /// 将目标对齐到 viewport 顶部。
     case top
-    /// 将目标对齐到 viewport 中心。
+    /// 将目标对齐到视口的垂直中心。
     case center
     /// 将目标对齐到 viewport 底部。
     case bottom
@@ -54,7 +56,7 @@ public enum ListScrollPosition: Equatable, Sendable {
     case nearest
 }
 
-/// apply 期间的声明式滚动行为。
+/// 列表更新期间采用的声明式滚动行为。
 public struct ListScrollBehavior: Equatable, Sendable {
     enum Storage: Equatable, Sendable {
         case none
@@ -72,14 +74,17 @@ public struct ListScrollBehavior: Equatable, Sendable {
     /// 不主动改变滚动位置。
     public static let none = ListScrollBehavior(storage: .none)
 
-    /// 保持当前可见 Row 在 viewport 中的位置。
+    /// 保持首个匹配可见条目相对于视口顶部的距离。
+    ///
+    /// 通过调整垂直偏移并在必要时补偿底部内边距实现，同时恢复原水平偏移。
+    /// 目标更新前不可见或更新后不存在时不执行位置恢复；不跟踪横向条目的相对位移。
     public static func preserveVisiblePosition(
         of target: ListScrollTarget
     ) -> ListScrollBehavior {
         ListScrollBehavior(storage: .preserveVisiblePosition(target))
     }
 
-    /// apply 后滚动到指定 Row。
+    /// 更新后滚动到快照中首个匹配的条目；未匹配时不发起滚动。
     public static func scrollTo(
         _ target: ListScrollTarget,
         position: ListScrollPosition = .nearest
@@ -103,10 +108,10 @@ public struct ListScrollBehavior: Equatable, Sendable {
     }
 }
 
-/// 一次列表更新的动画、调度和滚动语义。
+/// 控制一次列表更新的动画、调度和滚动行为的事务。
 ///
-/// `ListTransaction` 只暴露 UIKit 能稳定兑现的系统动画开关；diffable 的 duration 和
-/// curve 仍由 UIKit 决定。Row 自身内容过渡通过 `contentTransition(_:)` 单独描述。
+/// 事务控制各类系统动画是否启用；差异快照动画的持续时间和
+/// 曲线由 UIKit 决定。条目的内容过渡通过 `contentTransition(_:)` 单独配置。
 public struct ListTransaction: Equatable, Sendable {
     /// diffable snapshot 提交是否请求动画。
     public var snapshotAnimation: ListAnimationPolicy
@@ -305,7 +310,7 @@ public enum ListRefreshTrigger: Equatable, Sendable {
     case never
 }
 
-/// 主动 Row 刷新的目标范围。
+/// 自动或主动条目刷新的目标范围。
 public enum ListRefreshScope: Equatable, Sendable {
     /// 刷新当前已提交 snapshot 中所有匹配的展示身份。
     case allMatching
@@ -323,18 +328,29 @@ public enum ListRefreshLayoutPolicy: Equatable, Sendable {
 
 /// Row 内容刷新时使用的 UIKit 生命周期。
 public enum ListRowRefreshAction: Equatable, Sendable {
-    /// 使用 diffable reconfigure 保留现有 Cell，不进入 `prepareForReuse`，并按需请求布局失效。
+    /// 重配内容，并按指定策略决定是否额外使布局失效。
+    /// 可见范围直接调用现有单元格的配置闭包，全部匹配范围使用差异快照重配。
+    /// 单独执行重配不调用 `prepareForReuse`；与其他请求合并后可能升级为重载。
     case reconfigure(layout: ListRefreshLayoutPolicy)
     /// 请求完整 reload/configuration 路径；UIKit 不保证最终 Cell 对象地址发生变化。
     case reload
 }
 
-/// Row 的刷新触发、目标范围和执行动作。
+/// 条目内容刷新的触发条件、目标范围与执行动作。
 public struct ListRowRefreshRule: Equatable, Sendable {
+    /// 应用列表更新时触发内容刷新的条件，默认为 `automatic`。
     public var trigger: ListRefreshTrigger
+    /// 满足刷新条件后参与更新的条目范围，默认为当前可见条目。
     public var scope: ListRefreshScope
+    /// 刷新条目所采用的生命周期，默认重配内容而不额外使布局失效。
     public var action: ListRowRefreshAction
 
+    /// 创建条目的内容刷新规则。
+    ///
+    /// - Parameters:
+    ///   - trigger: 刷新触发条件，默认为 `automatic`。
+    ///   - scope: 刷新范围，默认为 `visible`。
+    ///   - action: 执行动作，默认重配内容且不额外使布局失效。
     public init(
         trigger: ListRefreshTrigger = .automatic,
         scope: ListRefreshScope = .visible,
@@ -345,6 +361,7 @@ public struct ListRowRefreshRule: Equatable, Sendable {
         self.action = action
     }
 
+    /// 使用自动触发、可见范围和无额外布局失效的内容重配规则。
     public static let automatic = ListRowRefreshRule()
 }
 
@@ -356,11 +373,18 @@ public enum ListSupplementaryRefreshAction: Equatable, Sendable {
     case reloadSection
 }
 
-/// Supplementary 的刷新触发和可兑现执行动作。
+/// 附属视图内容刷新的触发条件与执行动作。
 public struct ListSupplementaryRefreshRule: Equatable, Sendable {
+    /// 应用列表更新时触发附属视图刷新的条件，默认为 `automatic`。
     public var trigger: ListRefreshTrigger
+    /// 刷新附属视图所采用的生命周期，默认重配当前可见视图。
     public var action: ListSupplementaryRefreshAction
 
+    /// 创建附属视图的内容刷新规则。
+    ///
+    /// - Parameters:
+    ///   - trigger: 刷新触发条件，默认为 `automatic`。
+    ///   - action: 执行动作，默认重配可见视图且不额外使布局失效。
     public init(
         trigger: ListRefreshTrigger = .automatic,
         action: ListSupplementaryRefreshAction = .reconfigureVisible(layout: .none)
@@ -369,6 +393,7 @@ public struct ListSupplementaryRefreshRule: Equatable, Sendable {
         self.action = action
     }
 
+    /// 使用自动触发和可见视图内容重配的规则，不额外使布局失效。
     public static let automatic = ListSupplementaryRefreshRule()
 }
 
@@ -408,26 +433,40 @@ public struct ListApplyOptions: Sendable {
 
 // MARK: - Apply Diagnostics
 
-/// 一次 apply summary 的提交/完成状态。
+/// 列表更新摘要中的提交与完成状态。
 public enum ListApplyCompletionState: Equatable, Sendable {
-    /// 同步 `apply` 已提交更新请求，但 snapshot、可见刷新、layout 或滚动处理尚未全部完成。
+    /// 请求已接受或进入队列，尚未返回最终处理结果。
     case submitted
-    /// ListKit 已完成本次 apply 负责的 snapshot、可见刷新、layout、滚动和内容过渡处理。
+    /// 请求已处理结束，包括因诊断问题而跳过提交的情况。
+    /// 正常提交时等待快照、布局和内容过渡处理，但不等待已发起的滚动动画结束。
     case completed
-    /// 本次 apply 被之后的 `.coalesceLatest` apply 取代。
+    /// 请求被后续可合并的更新取代，未作为独立请求执行完成。
     case superseded
-    /// async 任务在提交更新前已经取消。
+    /// 请求在提交前取消，例如异步任务取消，或列表及适配器已释放。
     case cancelledBeforeCommit
 }
 
-/// ListKit 在一次 mutation 中实际规划或执行的刷新动作。
+/// 一次列表更新中规划或执行的刷新动作计数。
 public struct ListRefreshMetrics: Equatable, Sendable {
+    /// 通过差异快照请求重配的条目数量。
     public let snapshotReconfiguredRowCount: Int
+    /// 直接重配可见单元格的条目数量。
     public let visibleReconfiguredRowCount: Int
+    /// 请求重新加载的条目数量。
     public let reloadedRowCount: Int
+    /// 重配的可见附属视图数量。
     public let visibleReconfiguredSupplementaryCount: Int
+    /// 请求重新加载的分区数量。
     public let reloadedSectionCount: Int
 
+    /// 使用各类刷新动作的计数创建指标。
+    ///
+    /// - Parameters:
+    ///   - snapshotReconfiguredRowCount: 通过差异快照请求重配的条目数量。默认值为 0。
+    ///   - visibleReconfiguredRowCount: 直接重配可见单元格的条目数量。默认值为 0。
+    ///   - reloadedRowCount: 请求重新加载的条目数量。默认值为 0。
+    ///   - visibleReconfiguredSupplementaryCount: 重配的可见附属视图数量。默认值为 0。
+    ///   - reloadedSectionCount: 请求重新加载的分区数量。默认值为 0。
     public init(
         snapshotReconfiguredRowCount: Int = 0,
         visibleReconfiguredRowCount: Int = 0,
@@ -442,6 +481,7 @@ public struct ListRefreshMetrics: Equatable, Sendable {
         self.reloadedSectionCount = reloadedSectionCount
     }
 
+    /// 所有刷新动作计数均为零的指标。
     public static let zero = ListRefreshMetrics()
 }
 
@@ -458,7 +498,7 @@ public struct ListAnimationSummary: Equatable, Sendable {
     public let animatedSectionCount: Int
     /// Collection outline hierarchy 发生变化并请求动画的 Section 数量；Table 始终为 0。
     public let outlineAnimatedSectionCount: Int
-    /// 可见 Row 内容过渡动画数量。
+    /// 内容过渡计数；条目过渡或可见条目重载按条目计数，全量淡入淡出按整列表一次计数。
     public let contentTransitionCount: Int
     /// 本次 apply 是否触发布局失效或重新计算。
     public let layoutInvalidated: Bool
@@ -466,7 +506,7 @@ public struct ListAnimationSummary: Equatable, Sendable {
     public let layoutAnimated: Bool
     /// ListKit 是否请求了滚动动画。
     public let scrollAnimated: Bool
-    /// 为保持可见锚点位置而补偿的 content inset/offset 距离。
+    /// 为维持可见锚点而额外保留的底部内容内边距，单位为点，不是滚动偏移变化量。
     public let anchorCompensation: CGFloat
     /// 是否因为系统 Reduce Motion 设置关闭了动画。
     public let reduceMotionApplied: Bool
@@ -501,7 +541,8 @@ public struct ListAnimationSummary: Equatable, Sendable {
 ///
 /// 同步 `apply` 立即返回的 summary 描述本次提交计划，`animation.completionState`
 /// 通常为 `.submitted`。completion、async `apply` 和完成后的 `lastApplySummary`
-/// 返回最终状态，才包含实际执行的可见刷新、layout、滚动和内容过渡统计。
+/// 返回最终状态，并补充可见刷新、布局、滚动请求和内容过渡统计。
+/// 插入、删除和移动计数描述新旧声明的差异；即使诊断阻止提交，也可能非零。
 ///
 /// 这些字段用于 diagnostics、日志、性能观察和测试断言；不应作为数据源状态的唯一依据。
 public struct ListApplySummary: Equatable, Sendable {
@@ -509,7 +550,7 @@ public struct ListApplySummary: Equatable, Sendable {
     public let insertedSectionCount: Int
     /// 被删除的 Section 数量。
     public let deletedSectionCount: Int
-    /// 保持 identity、但顺序发生变化的 Section 数量。
+    /// 由新旧分区顺序的差异推断出的移动数量，不统计因前方插入或删除而产生的索引平移。
     public let movedSectionCount: Int
     /// 新旧 snapshot 中都存在的 Section 数量。
     public let keptSectionCount: Int
@@ -517,7 +558,7 @@ public struct ListApplySummary: Equatable, Sendable {
     public let insertedRowCount: Int
     /// 被删除的 Row 数量。
     public let deletedRowCount: Int
-    /// 在同一 Section 内发生移动的 Row 数量；跨 Section 迁移按删除 + 插入统计。
+    /// 差异算法推断出的分区内条目移动数量；跨分区迁移按删除和插入统计。
     public let movedRowCount: Int
     /// 新旧 snapshot 中都存在的 Row 数量。
     public let keptRowCount: Int
@@ -586,13 +627,25 @@ extension ListApplySummary {
     }
 }
 
-/// 一次主动 Row 或 Section 刷新的提交与完成摘要。
+/// 一次主动条目或分区刷新的提交与完成摘要。
 public struct ListRefreshSummary: Equatable, Sendable {
+    /// 请求中去重后的业务条目标识符或分区标识符数量。
     public let requestedTargetCount: Int
+    /// 在执行时的快照与刷新范围内匹配到的展示身份或分区数量。
+    /// 一个业务条目标识符可匹配多个展示身份，因此此值可能大于请求目标数。
     public let matchedTargetCount: Int
+    /// 本次刷新规划或执行的各类动作计数。
     public let refreshMetrics: ListRefreshMetrics
+    /// 本次刷新的提交状态与动画执行摘要。
     public let animation: ListAnimationSummary
 
+    /// 创建一次主动刷新的结果摘要。
+    ///
+    /// - Parameters:
+    ///   - requestedTargetCount: 请求目标数量，默认为 0。
+    ///   - matchedTargetCount: 匹配目标数量，默认为 0。
+    ///   - refreshMetrics: 刷新动作计数，默认全部为零。
+    ///   - animation: 提交状态与动画摘要，默认使用空摘要。
     public init(
         requestedTargetCount: Int = 0,
         matchedTargetCount: Int = 0,

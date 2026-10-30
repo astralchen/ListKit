@@ -22,7 +22,8 @@ import UIKit
 /// }
 /// ```
 @MainActor
-public final class CollectionListAdapter<SectionID>: NSObject, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UICollectionViewDataSourcePrefetching
+public final class CollectionListAdapter<SectionID>: NSObject, UICollectionViewDataSource,
+    UICollectionViewDelegateFlowLayout, UICollectionViewDataSourcePrefetching
 where SectionID: Hashable & Sendable {
     /// 滚动回调转发对象。
     ///
@@ -73,7 +74,7 @@ where SectionID: Hashable & Sendable {
     /// 和滚动处理完成后，会再次更新为最终摘要。DEBUG 下 ListKit 也会输出同一份
     /// summary，便于定位 diff、refreshID 和可见刷新问题。
     public private(set) var lastApplySummary = ListApplySummary()
-    /// 最近一次 compositional layout provider/helper 产生的 diagnostics。
+    /// 最近一次 compositional layout provider/helper 解析的 diagnostics；每次调用替换，成功时为空。
     public private(set) var lastLayoutDiagnostics: [ListDiagnosticsIssue] = []
     private(set) var layoutInvalidationGeneration = 0
     private(set) var outlineAnimationGeneration = 0
@@ -83,7 +84,22 @@ where SectionID: Hashable & Sendable {
     /// 最近一次已接受 apply 的声明式 Section 描述树。
     private var sections: [ListSection<SectionID>] = []
     /// 用于判断 compositional layout 元数据是否变化的轻量签名。
-    private var layoutSignature: [ListSectionLayoutSignature] = []
+    // 实际 kind 按模板位置稳定复用；旧地址保留到 Section 移除，保证结束展示回调可解析。
+    private var supplementaryAliasKinds: [ListSupplementaryAliasKey: String] = [:]
+    private var supplementaryAliases: [String: ListSupplementaryAliasKey] = [:]
+    private var activeSupplementaryAliases: [AnyListID: [String: [String]]] = [:]
+    private var displayedSupplementaryIndexPaths: [ObjectIdentifier: IndexPath] = [:]
+    private var activeItemSupplementaryKinds: [AnyListID: Set<String>] = [:]
+    /// 最近一次成功解析的实际元素种类，包含自定义边界几何。
+    private var activeSupplementaryKinds: [AnyListID: Set<String>] = [:]
+    /// 最近一次实际 UIKit 布局环境，每次提供者解析此分区时更新。
+    private var layoutEnvironments: [AnyListID: any NSCollectionLayoutEnvironment] = [:]
+    private weak var resolvedCollectionLayout: UICollectionViewCompositionalLayout?
+    private var orthogonalSectionIDs: Set<AnyListID> = []
+    private var orthogonalScrollStates: [AnyListID: ListOrthogonalScrollState] = [:]
+    private var pendingOrthogonalOffsets: [AnyListID: CGPoint] = [:]
+    private var isOrthogonalRestorationScheduled = false
+    private var layoutSignature: [ListSectionLayoutSignature<SectionID>] = []
     /// 实际持有并提交 diffable snapshot 的 data source。
     private var dataSource: CollectionDiffableDataSource<SectionID>!
     /// 测试和内部生命周期用于判断全局 snapshot 是否仍在提交。
@@ -134,16 +150,17 @@ where SectionID: Hashable & Sendable {
             guard let self, let row = self.rowsByIdentity[identity] else {
                 return UICollectionViewCell()
             }
-            return row.cellProvider(collectionView, indexPath, self.context(for: indexPath, identity: identity))
+            return row.cellProvider(
+                collectionView, indexPath, self.context(for: indexPath, identity: identity))
         }
         dataSource.adapter = self
 
         dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
             guard let self else { return nil }
-            let sectionID = self.sectionID(at: indexPath.section)
-            let key = SupplementaryKey(kind: kind, sectionID: sectionID)
-            guard let supplementary = self.supplementariesByKindAndSection[key] else { return nil }
-            return supplementary.viewProvider(collectionView, indexPath, self.context(for: indexPath, identity: supplementary.identity))
+            guard let supplementary = self.supplementary(kind: kind, at: indexPath) else { return nil }
+            let itemPath = self.supplementaryItemIndexPath(kind: kind, at: indexPath)
+            return supplementary.viewProvider(
+                collectionView, kind, indexPath, self.context(for: itemPath, identity: supplementary.identity))
         }
 
         dataSource.reorderingHandlers.canReorderItem = { [weak self] identity in
@@ -188,14 +205,17 @@ where SectionID: Hashable & Sendable {
     }
 
     private var forwardingDelegates: [AnyObject] {
-        [collectionDelegate, scrollDelegate, layoutDelegate, displayDelegate].compactMap { $0 as AnyObject? }
+        [collectionDelegate, scrollDelegate, layoutDelegate, displayDelegate].compactMap {
+            $0 as AnyObject?
+        }
     }
 
     private var resolvedLayoutDelegate: UICollectionViewDelegateFlowLayout? {
         layoutDelegate ?? (collectionDelegate as? UICollectionViewDelegateFlowLayout)
     }
 
-    /// 提交一次列表更新。需要等待所有动画和可见刷新完成时使用 async 重载。
+    /// 提交一次列表更新；需要等待快照、布局和内容过渡处理时使用完成回调或异步重载。
+    /// 滚动动画发起后不等待其停止。
     @discardableResult
     public func apply(
         options: ListApplyOptions,
@@ -261,11 +281,11 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用当前已提交的描述树和 snapshot 强制重新加载整个列表。
+    /// 将全量重载请求加入更新队列，执行时使用最新已提交的描述树和快照。
     ///
     /// 此方法不依赖 Row 或 supplementary 的 `identity`、`refreshID` 和刷新策略，
-    /// 并始终同步失效布局。适用于语言、LTR/RTL、Dynamic Type、主题等未进入
-    /// 刷新标识的全局环境变化。
+    /// 实际执行重载时会重新计算布局。请求可能等待前一个更新或 UIKit 未提交的更新完成，
+    /// 因此同步返回不代表重载已经执行。可用于未纳入刷新标识的语言、布局方向或主题变化。
     ///
     /// - Important: 此方法不会重建描述树。配置闭包应在执行时读取最新环境；
     ///   如果本地化文案已作为值保存在旧 model 中，请先更新数据并使用 `apply`。
@@ -282,7 +302,8 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 使用当前已提交状态强刷整个列表，并在过渡和布局完成后回调。
+    /// 提交全量重载请求，同步返回初始摘要，并通过完成回调交付最终状态。
+    /// 请求执行完成、被替代或在提交前取消时均调用完成回调。
     @discardableResult
     public func reloadAll(
         transaction: ListTransaction = .automatic,
@@ -325,7 +346,9 @@ where SectionID: Hashable & Sendable {
         return summary
     }
 
-    /// 强制刷新当前已提交列表，并等待内容过渡和布局完成。
+    /// 提交全量重载请求，等待队列处理并返回最终摘要。
+    ///
+    /// 正常完成时等待内容过渡与布局处理；提交前取消或被替代时返回对应状态。
     @discardableResult
     public func reloadAll(
         transaction: ListTransaction = .automatic,
@@ -334,25 +357,30 @@ where SectionID: Hashable & Sendable {
         let resolved = transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
-        let cancelled = ListApplySummary(animation: ListAnimationSummary(
-            completionState: .cancelledBeforeCommit,
-            reduceMotionApplied: resolved.reduceMotionApplied
-        ))
+        let cancelled = ListApplySummary(
+            animation: ListAnimationSummary(
+                completionState: .cancelledBeforeCommit,
+                reduceMotionApplied: resolved.reduceMotionApplied
+            ))
         let bridge = ListAsyncMutationBridge(cancelledResult: cancelled)
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 let subscriberID = UUID()
-                guard bridge.register(continuation, cancellation: { [weak self] in
-                    Task { @MainActor in
-                        guard let self else {
-                            bridge.resume(returning: cancelled)
-                            return
-                        }
-                        if self.mutationScheduler.cancelSubscriber(subscriberID) {
-                            self.performNextPendingMutationIfNeeded()
-                        }
-                    }
-                }) else { return }
+                guard
+                    bridge.register(
+                        continuation,
+                        cancellation: { [weak self] in
+                            Task { @MainActor in
+                                guard let self else {
+                                    bridge.resume(returning: cancelled)
+                                    return
+                                }
+                                if self.mutationScheduler.cancelSubscriber(subscriberID) {
+                                    self.performNextPendingMutationIfNeeded()
+                                }
+                            }
+                        })
+                else { return }
                 _ = _reloadAll(
                     transaction: transaction,
                     transition: transition,
@@ -591,13 +619,17 @@ where SectionID: Hashable & Sendable {
         let subscriberID = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                guard bridge.register(continuation, cancellation: { [weak self] in
-                    Task { @MainActor in
-                        guard let self else { return }
-                        _ = self.mutationScheduler.cancelSubscriber(subscriberID)
-                        self.performNextPendingMutationIfNeeded()
-                    }
-                }) else { return }
+                guard
+                    bridge.register(
+                        continuation,
+                        cancellation: { [weak self] in
+                            Task { @MainActor in
+                                guard let self else { return }
+                                _ = self.mutationScheduler.cancelSubscriber(subscriberID)
+                                self.performNextPendingMutationIfNeeded()
+                            }
+                        })
+                else { return }
                 _ = refreshSections(
                     ids,
                     transaction: transaction,
@@ -625,13 +657,17 @@ where SectionID: Hashable & Sendable {
         let subscriberID = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                guard bridge.register(continuation, cancellation: { [weak self] in
-                    Task { @MainActor in
-                        guard let self else { return }
-                        _ = self.mutationScheduler.cancelSubscriber(subscriberID)
-                        self.performNextPendingMutationIfNeeded()
-                    }
-                }) else { return }
+                guard
+                    bridge.register(
+                        continuation,
+                        cancellation: { [weak self] in
+                            Task { @MainActor in
+                                guard let self else { return }
+                                _ = self.mutationScheduler.cancelSubscriber(subscriberID)
+                                self.performNextPendingMutationIfNeeded()
+                            }
+                        })
+                else { return }
                 _ = refreshRows(
                     matching: rowIDs,
                     in: sectionID,
@@ -675,76 +711,107 @@ where SectionID: Hashable & Sendable {
             )
             lastApplySummary = deferredSummary
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
-            enqueuePendingMutation(ListPendingMutationRequest(
-                kind: .apply,
-                updatePolicy: resolvedTransaction.updatePolicy,
-                subscriberID: subscriberID,
-                onCancel: {
-                    completion?(deferredSummary.replacingAnimation(
-                        ListAnimationSummary(
-                            completionState: .cancelledBeforeCommit,
-                            reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                        )
-                    ))
-                },
-                start: { [weak self] in
-                    guard let self else {
-                        completion?(deferredSummary.replacingAnimation(
-                            ListAnimationSummary(
-                                completionState: .cancelledBeforeCommit,
-                                reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                            )
-                        ))
-                        return
+            enqueuePendingMutation(
+                ListPendingMutationRequest(
+                    kind: .apply,
+                    updatePolicy: resolvedTransaction.updatePolicy,
+                    subscriberID: subscriberID,
+                    onCancel: {
+                        completion?(
+                            deferredSummary.replacingAnimation(
+                                ListAnimationSummary(
+                                    completionState: .cancelledBeforeCommit,
+                                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                                )
+                            ))
+                    },
+                    start: { [weak self] in
+                        guard let self else {
+                            completion?(
+                                deferredSummary.replacingAnimation(
+                                    ListAnimationSummary(
+                                        completionState: .cancelledBeforeCommit,
+                                        reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                                    )
+                                ))
+                            return
+                        }
+                        _ = self._apply(options: options, completion: completion) { newSections }
+                    },
+                    supersede: {
+                        completion?(
+                            deferredSummary.replacingAnimation(
+                                ListAnimationSummary(
+                                    completionState: .superseded,
+                                    reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                                )
+                            ))
                     }
-                    _ = self._apply(options: options, completion: completion) { newSections }
-                },
-                supersede: {
-                    completion?(deferredSummary.replacingAnimation(
-                        ListAnimationSummary(
-                            completionState: .superseded,
-                            reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                        )
-                    ))
-                }
-            ))
+                ))
             return deferredSummary
         }
 
         let newLayoutSignature = Self.makeLayoutSignature(from: newSections)
-        var shouldInvalidateLayout = options.applicationMode == .reloadData
+        var shouldInvalidateLayout =
+            options.applicationMode == .reloadData
             || layoutSignature != newLayoutSignature
+        // UIKit 通过元素种类与索引路径定位附属视图，无法直接识别 ListKit 的内容身份。
+        // 几何未变化时，仅使布局失效可能留下旧视图或旧内容。只重载保留的分区中
+        // 已有元素种类改为表示其他业务身份或展示类型的分区。
+        // 比较元素种类前，先根据当前描述树解析尚未处理的边界或环境变化。
+        if let resolvedCollectionLayout, resolvedCollectionLayout !== collectionView.collectionViewLayout {
+            clearResolvedLayoutState()
+        }
+        collectionView.layoutIfNeeded()
+        let supplementaryReplacementSections = newSections.compactMap { section -> AnyListID? in
+            let sectionID = AnyListID(section.id)
+            let replacesIdentity = section.supplementaries.contains { supplementary in
+                let key = SupplementaryKey(kind: supplementary.kind, sectionID: sectionID)
+                guard let previous = supplementariesByKindAndSection[key] else { return false }
+                return previous.identity != supplementary.identity
+                    && supplementaryIsEnabled(supplementary.kind, in: section)
+            }
+            return replacesIdentity ? sectionID : nil
+        }
         let applyPlan = ListApplyPlanner.makePlan(
             old: Self.makeCoreSnapshots(from: sections),
             new: Self.makeCoreSnapshots(from: newSections),
             options: options,
-            diagnosticsIssues: diagnosticsIssues
+            diagnosticsIssues: diagnosticsIssues,
+            supplementaryReplacementSections: supplementaryReplacementSections
         )
-        shouldInvalidateLayout = shouldInvalidateLayout
+        shouldInvalidateLayout =
+            shouldInvalidateLayout
             || !applyPlan.snapshotLayoutInvalidationItems.isEmpty
         let previousDataSourceSnapshot = dataSource.snapshot()
         let previousOutlineStates: [AnyListID: ListOutlineExpansionState] = Dictionary(
-            uniqueKeysWithValues: newSections.compactMap { section -> (AnyListID, ListOutlineExpansionState)? in
-            let sectionID = AnyListID(section.id)
-            guard section.hasOutlineHierarchy,
-                  previousDataSourceSnapshot.sectionIdentifiers.contains(sectionID) else { return nil }
-            let snapshot = dataSource.snapshot(for: sectionID)
-            return (sectionID, ListOutlineExpansionState(
-                existingItems: Set(snapshot.items),
-                expandedItems: Set(snapshot.items.filter { snapshot.isExpanded($0) })
-            ))
+            uniqueKeysWithValues: newSections.compactMap {
+                section -> (AnyListID, ListOutlineExpansionState)? in
+                let sectionID = AnyListID(section.id)
+                guard section.hasOutlineHierarchy,
+                    previousDataSourceSnapshot.sectionIdentifiers.contains(sectionID)
+                else { return nil }
+                let snapshot = dataSource.snapshot(for: sectionID)
+                return (
+                    sectionID,
+                    ListOutlineExpansionState(
+                        existingItems: Set(snapshot.items),
+                        expandedItems: Set(snapshot.items.filter { snapshot.isExpanded($0) })
+                    )
+                )
             }
         )
-        let outlineSectionsNeedingAnimation = Set(newSections.compactMap { section -> AnyListID? in
-            guard section.hasOutlineHierarchy else { return nil }
-            let sectionID = AnyListID(section.id)
-            guard previousDataSourceSnapshot.sectionIdentifiers.contains(sectionID) else {
-                return sectionID
-            }
-            let previousOutline = dataSource.snapshot(for: sectionID)
-            let nextOutline = Self.makeOutlineSnapshot(from: section.outlineRoots)
-            return Self.outlineSnapshotsAreEquivalent(previousOutline, nextOutline) ? nil : sectionID
-        })
+        let outlineSectionsNeedingAnimation = Set(
+            newSections.compactMap { section -> AnyListID? in
+                guard section.hasOutlineHierarchy else { return nil }
+                let sectionID = AnyListID(section.id)
+                guard previousDataSourceSnapshot.sectionIdentifiers.contains(sectionID) else {
+                    return sectionID
+                }
+                let previousOutline = dataSource.snapshot(for: sectionID)
+                let nextOutline = Self.makeOutlineSnapshot(from: section.outlineRoots)
+                return Self.outlineSnapshotsAreEquivalent(previousOutline, nextOutline) ? nil : sectionID
+            })
 
         if !applyPlan.shouldApplyDiffable {
             let summary = applyPlan.initialSummary.replacingAnimation(
@@ -772,13 +839,27 @@ where SectionID: Hashable & Sendable {
             cancelTemporaryAnchorReservation()
         }
         let selectedItemIdentities = captureSelectedItemIdentities()
+        let replacementSectionIDs = Set(supplementaryReplacementSections)
+        bindOrthogonalScrollViews()
+        let orthogonalOffsets = orthogonalScrollStates.mapValues(\.offset)
+            .filter { replacementSectionIDs.contains($0.key) }
 
         applyGeneration += 1
         let generation = applyGeneration
         sections = newSections
+        let activeSectionIDs = Set(newSections.map { AnyListID($0.id) })
+        activeSupplementaryAliases = activeSupplementaryAliases.filter { activeSectionIDs.contains($0.key) }
+        supplementaryAliasKinds = supplementaryAliasKinds.filter { activeSectionIDs.contains($0.key.sectionID) }
+        supplementaryAliases = supplementaryAliases.filter { activeSectionIDs.contains($0.value.sectionID) }
+        activeItemSupplementaryKinds = activeItemSupplementaryKinds.filter { activeSectionIDs.contains($0.key) }
+        activeSupplementaryKinds = activeSupplementaryKinds.filter { activeSectionIDs.contains($0.key) }
+        layoutEnvironments = layoutEnvironments.filter { activeSectionIDs.contains($0.key) }
+        orthogonalSectionIDs.formIntersection(activeSectionIDs)
+        orthogonalScrollStates = orthogonalScrollStates.filter { activeSectionIDs.contains($0.key) }
+        pendingOrthogonalOffsets = pendingOrthogonalOffsets.filter { activeSectionIDs.contains($0.key) }
         layoutSignature = newLayoutSignature
         rebuildLookupTables(in: collectionView)
-        registerBackgroundDecorationsIfNeeded()
+        registerDecorationsIfNeeded()
         configureSelectionBehavior()
 
         var snapshot = NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>()
@@ -788,7 +869,8 @@ where SectionID: Hashable & Sendable {
             if section.hasOutlineHierarchy {
                 guard previousDataSourceSnapshot.sectionIdentifiers.contains(sectionID) else { continue }
                 let newIdentities = Set(section.rows.map(\.identity))
-                let retainedIdentities = previousDataSourceSnapshot
+                let retainedIdentities =
+                    previousDataSourceSnapshot
                     .itemIdentifiers(inSection: sectionID)
                     .filter(newIdentities.contains)
                 if !retainedIdentities.isEmpty {
@@ -863,7 +945,8 @@ where SectionID: Hashable & Sendable {
                     finishAsSuperseded()
                     return
                 }
-                let snapshotAnimated = options.applicationMode == .differences
+                let snapshotAnimated =
+                    options.applicationMode == .differences
                     && resolvedTransaction.snapshotAnimation
                     && applyPlan.hasSnapshotChanges
                 let completedSummary = applyPlan.completedSummary(
@@ -911,11 +994,19 @@ where SectionID: Hashable & Sendable {
                 metrics.visibleReloadedRowCount = refresh.reloadedCount
                 metrics.contentTransitionCount = refresh.transitionCount
                 metrics.visibleReconfiguredSupplementaryCount = supplementaryRefresh.reconfiguredCount
-                metrics.layoutInvalidated = metrics.layoutInvalidated
+                metrics.layoutInvalidated =
+                    metrics.layoutInvalidated
                     || refresh.needsLayoutInvalidation
                     || supplementaryRefresh.needsLayoutInvalidation
             }
             let performFinalScroll = {
+                guard self.applyGeneration == generation, !mutationToken.isSuperseded else { return }
+                self.restoreOrthogonalOffsets(orthogonalOffsets)
+                // 显式滚动请求优先于不可见分区的延迟偏移恢复。
+                switch resolvedTransaction.scrollBehavior.storage {
+                case .scrollTo, .scrollToLast: self.pendingOrthogonalOffsets.removeAll()
+                case .none, .preserveVisiblePosition: break
+                }
                 metrics.scrollOutcome = self.performScrollBehavior(
                     resolvedTransaction.scrollBehavior,
                     visibleAnchor: visibleAnchor,
@@ -998,7 +1089,8 @@ where SectionID: Hashable & Sendable {
     ) -> ListRefreshSummary {
         let requestedTargetCount = Set(rowIDs).count
         guard collectionView != nil else {
-            return cancelRefreshBeforeCommit(requestedTargetCount: requestedTargetCount, completion: completion)
+            return cancelRefreshBeforeCommit(
+                requestedTargetCount: requestedTargetCount, completion: completion)
         }
         let subscriber = ListRowRefreshSubscriber(
             id: subscriberID,
@@ -1007,32 +1099,34 @@ where SectionID: Hashable & Sendable {
             completion: completion
         )
         if mutationCoordinator.isExecuting {
-            enqueuePendingMutation(ListPendingMutationRequest(
-                rowIDs: rowIDs,
-                sectionID: sectionID,
-                scope: scope,
-                action: action,
-                transaction: transaction,
-                subscriberID: subscriberID,
-                completion: completion,
-                execute: { [weak self] subscribers, sectionID, scope, transaction in
-                    guard let self else {
-                        subscribers.forEach { subscriber in
-                            subscriber.completion?(ListRefreshSummary(
-                                requestedTargetCount: subscriber.rowIDs.count,
-                                animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
-                            ))
+            enqueuePendingMutation(
+                ListPendingMutationRequest(
+                    rowIDs: rowIDs,
+                    sectionID: sectionID,
+                    scope: scope,
+                    action: action,
+                    transaction: transaction,
+                    subscriberID: subscriberID,
+                    completion: completion,
+                    execute: { [weak self] subscribers, sectionID, scope, transaction in
+                        guard let self else {
+                            subscribers.forEach { subscriber in
+                                subscriber.completion?(
+                                    ListRefreshSummary(
+                                        requestedTargetCount: subscriber.rowIDs.count,
+                                        animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+                                    ))
+                            }
+                            return
                         }
-                        return
+                        _ = self.refreshRows(
+                            subscribers,
+                            in: sectionID,
+                            scope: scope,
+                            transaction: transaction
+                        )
                     }
-                    _ = self.refreshRows(
-                        subscribers,
-                        in: sectionID,
-                        scope: scope,
-                        transaction: transaction
-                    )
-                }
-            ))
+                ))
             return ListRefreshSummary(requestedTargetCount: requestedTargetCount)
         }
 
@@ -1047,30 +1141,34 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction
     ) -> ListRefreshSummary {
         var snapshot = dataSource.snapshot()
-        let visibleIdentities = Set(collectionView?.indexPathsForVisibleItems.compactMap { row(at: $0)?.identity } ?? [])
+        let visibleIdentities = Set(
+            collectionView?.indexPathsForVisibleItems.compactMap { row(at: $0)?.identity } ?? [])
         var matchedBySubscriber: [Set<AnyListIdentity>] = []
         var resolvedActions: [AnyListIdentity: ListRowRefreshAction] = [:]
         for subscriber in subscribers {
-            let matched = Set(snapshot.itemIdentifiers.filter { identity in
-                subscriber.rowIDs.contains(identity.rowID)
-                    && (sectionID.map { identity.sectionID == $0 } ?? true)
-                    && rowsByIdentity[identity] != nil
-                    && (scope == .allMatching || visibleIdentities.contains(identity))
-            })
+            let matched = Set(
+                snapshot.itemIdentifiers.filter { identity in
+                    subscriber.rowIDs.contains(identity.rowID)
+                        && (sectionID.map { identity.sectionID == $0 } ?? true)
+                        && rowsByIdentity[identity] != nil
+                        && (scope == .allMatching || visibleIdentities.contains(identity))
+                })
             matchedBySubscriber.append(matched)
             for identity in matched {
-                resolvedActions[identity] = resolvedActions[identity].map {
-                    ListRowRefreshAction.stronger($0, subscriber.action)
-                } ?? subscriber.action
+                resolvedActions[identity] =
+                    resolvedActions[identity].map {
+                        ListRowRefreshAction.stronger($0, subscriber.action)
+                    } ?? subscriber.action
             }
         }
         guard !resolvedActions.isEmpty else {
             ListMainActorCallbackBox { [weak self] in
                 subscribers.forEach { subscriber in
-                    subscriber.completion?(ListRefreshSummary(
-                        requestedTargetCount: subscriber.rowIDs.count,
-                        animation: ListAnimationSummary(completionState: .completed)
-                    ))
+                    subscriber.completion?(
+                        ListRefreshSummary(
+                            requestedTargetCount: subscriber.rowIDs.count,
+                            animation: ListAnimationSummary(completionState: .completed)
+                        ))
                 }
                 self?.performNextPendingMutationIfNeeded()
             }.schedule()
@@ -1107,14 +1205,15 @@ where SectionID: Hashable & Sendable {
         let finish = { [weak self] in
             guard let self else {
                 subscribers.enumerated().forEach { index, subscriber in
-                    subscriber.completion?(Self.makeRefreshSummary(
-                        subscriber: subscriber,
-                        matched: matchedBySubscriber[index],
-                        resolvedActions: resolvedActions,
-                        scope: scope,
-                        layoutInvalidated: invalidatesLayout,
-                        completionState: .completed
-                    ))
+                    subscriber.completion?(
+                        Self.makeRefreshSummary(
+                            subscriber: subscriber,
+                            matched: matchedBySubscriber[index],
+                            resolvedActions: resolvedActions,
+                            scope: scope,
+                            layoutInvalidated: invalidatesLayout,
+                            completionState: .completed
+                        ))
                 }
                 return
             }
@@ -1122,14 +1221,15 @@ where SectionID: Hashable & Sendable {
             // 下一次刷新不会与当前 UIKit mutation 重叠。
             self.mutationCoordinator.finish(mutationToken)
             subscribers.enumerated().forEach { index, subscriber in
-                subscriber.completion?(Self.makeRefreshSummary(
-                    subscriber: subscriber,
-                    matched: matchedBySubscriber[index],
-                    resolvedActions: resolvedActions,
-                    scope: scope,
-                    layoutInvalidated: invalidatesLayout,
-                    completionState: .completed
-                ))
+                subscriber.completion?(
+                    Self.makeRefreshSummary(
+                        subscriber: subscriber,
+                        matched: matchedBySubscriber[index],
+                        resolvedActions: resolvedActions,
+                        scope: scope,
+                        layoutInvalidated: invalidatesLayout,
+                        completionState: .completed
+                    ))
             }
             self.performNextPendingMutationIfNeeded()
         }
@@ -1181,7 +1281,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 定向 `.visible` 刷新直接操作当前 Cell，不构造虚假的 diffable item mutation。
+    /// 可见范围的重配直接配置现有单元格；重载仍通过差异快照提交。
     private func refreshVisibleRows(
         _ subscribers: [ListRowRefreshSubscriber],
         matchedBySubscriber: [Set<AnyListIdentity>],
@@ -1190,10 +1290,11 @@ where SectionID: Hashable & Sendable {
     ) -> ListRefreshSummary {
         guard let collectionView else {
             subscribers.forEach { subscriber in
-                subscriber.completion?(ListRefreshSummary(
-                    requestedTargetCount: subscriber.rowIDs.count,
-                    animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
-                ))
+                subscriber.completion?(
+                    ListRefreshSummary(
+                        requestedTargetCount: subscriber.rowIDs.count,
+                        animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+                    ))
             }
             return ListRefreshSummary(requestedTargetCount: subscribers.first?.rowIDs.count ?? 0)
         }
@@ -1224,21 +1325,22 @@ where SectionID: Hashable & Sendable {
                     let subscriberInvalidatesLayout = matched.contains {
                         resolvedActions[$0] == .reconfigure(layout: .invalidate)
                     }
-                    subscriber.completion?(ListRefreshSummary(
-                        requestedTargetCount: subscriber.rowIDs.count,
-                        matchedTargetCount: matched.count,
-                        refreshMetrics: ListRefreshMetrics(
-                            visibleReconfiguredRowCount: reconfigured,
-                            reloadedRowCount: reloaded
-                        ),
-                        animation: ListAnimationSummary(
-                            completionState: .completed,
-                            contentTransitionCount: contentTransitionCount,
-                            layoutInvalidated: subscriberInvalidatesLayout,
-                            layoutAnimated: subscriberInvalidatesLayout && layoutAnimated,
-                            reduceMotionApplied: resolvedTransaction.reduceMotionApplied
-                        )
-                    ))
+                    subscriber.completion?(
+                        ListRefreshSummary(
+                            requestedTargetCount: subscriber.rowIDs.count,
+                            matchedTargetCount: matched.count,
+                            refreshMetrics: ListRefreshMetrics(
+                                visibleReconfiguredRowCount: reconfigured,
+                                reloadedRowCount: reloaded
+                            ),
+                            animation: ListAnimationSummary(
+                                completionState: .completed,
+                                contentTransitionCount: contentTransitionCount,
+                                layoutInvalidated: subscriberInvalidatesLayout,
+                                layoutAnimated: subscriberInvalidatesLayout && layoutAnimated,
+                                reduceMotionApplied: resolvedTransaction.reduceMotionApplied
+                            )
+                        ))
                 }
                 self.performNextPendingMutationIfNeeded()
             }
@@ -1257,8 +1359,9 @@ where SectionID: Hashable & Sendable {
                     row.configureVisibleCell(cell, self.context(for: indexPath, identity: identity))
                 }
                 if resolvedTransaction.contentAnimation,
-                   case .opacity(let duration) = row.contentTransition.storage,
-                   duration > 0 {
+                    case .opacity(let duration) = row.contentTransition.storage,
+                    duration > 0
+                {
                     animationCoordinator.enter()
                     UIView.transition(
                         with: cell.contentView,
@@ -1308,7 +1411,8 @@ where SectionID: Hashable & Sendable {
         completion: ((ListRefreshSummary) -> Void)?
     ) -> ListRefreshSummary {
         guard collectionView != nil else {
-            return cancelRefreshBeforeCommit(requestedTargetCount: Set(sectionIDs).count, completion: completion)
+            return cancelRefreshBeforeCommit(
+                requestedTargetCount: Set(sectionIDs).count, completion: completion)
         }
         let subscriber = ListSectionReloadSubscriber(
             id: subscriberID,
@@ -1316,24 +1420,26 @@ where SectionID: Hashable & Sendable {
             completion: completion
         )
         if mutationCoordinator.isExecuting {
-            enqueuePendingMutation(ListPendingMutationRequest(
-                sectionIDs: sectionIDs,
-                transaction: transaction,
-                subscriberID: subscriberID,
-                completion: completion,
-                execute: { [weak self] subscribers, transaction in
-                    guard let self else {
-                        subscribers.forEach { subscriber in
-                            subscriber.completion?(ListRefreshSummary(
-                                requestedTargetCount: subscriber.sectionIDs.count,
-                                animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
-                            ))
+            enqueuePendingMutation(
+                ListPendingMutationRequest(
+                    sectionIDs: sectionIDs,
+                    transaction: transaction,
+                    subscriberID: subscriberID,
+                    completion: completion,
+                    execute: { [weak self] subscribers, transaction in
+                        guard let self else {
+                            subscribers.forEach { subscriber in
+                                subscriber.completion?(
+                                    ListRefreshSummary(
+                                        requestedTargetCount: subscriber.sectionIDs.count,
+                                        animation: ListAnimationSummary(completionState: .cancelledBeforeCommit)
+                                    ))
+                            }
+                            return
                         }
-                        return
+                        _ = self.refreshSections(subscribers, transaction: transaction)
                     }
-                    _ = self.refreshSections(subscribers, transaction: transaction)
-                }
-            ))
+                ))
             return ListRefreshSummary(requestedTargetCount: subscriber.sectionIDs.count)
         }
         return refreshSections([subscriber], transaction: transaction)
@@ -1350,10 +1456,11 @@ where SectionID: Hashable & Sendable {
         guard !refreshSectionIDs.isEmpty else {
             ListMainActorCallbackBox { [weak self] in
                 subscribers.forEach { subscriber in
-                    subscriber.completion?(ListRefreshSummary(
-                        requestedTargetCount: subscriber.sectionIDs.count,
-                        animation: ListAnimationSummary(completionState: .completed)
-                    ))
+                    subscriber.completion?(
+                        ListRefreshSummary(
+                            requestedTargetCount: subscriber.sectionIDs.count,
+                            animation: ListAnimationSummary(completionState: .completed)
+                        ))
                 }
                 self?.performNextPendingMutationIfNeeded()
             }.schedule()
@@ -1361,10 +1468,13 @@ where SectionID: Hashable & Sendable {
         }
         let orderedRefreshSectionIDs = snapshot.sectionIdentifiers.filter(refreshSectionIDs.contains)
 
-        let outlineApplications = orderedRefreshSectionIDs.compactMap { sectionID -> ListOutlineSnapshotApplication? in
-            guard sections.contains(where: {
-                AnyListID($0.id) == sectionID && $0.hasOutlineHierarchy
-            }) else { return nil }
+        let outlineApplications = orderedRefreshSectionIDs.compactMap {
+            sectionID -> ListOutlineSnapshotApplication? in
+            guard
+                sections.contains(where: {
+                    AnyListID($0.id) == sectionID && $0.hasOutlineHierarchy
+                })
+            else { return nil }
             return ListOutlineSnapshotApplication(
                 sectionID: sectionID,
                 snapshot: dataSource.snapshot(for: sectionID),
@@ -1382,7 +1492,26 @@ where SectionID: Hashable & Sendable {
         let finishRefresh: @MainActor () -> Void = { [weak self] in
             guard let self else {
                 subscribers.enumerated().forEach { index, subscriber in
-                    subscriber.completion?(ListRefreshSummary(
+                    subscriber.completion?(
+                        ListRefreshSummary(
+                            requestedTargetCount: subscriber.sectionIDs.count,
+                            matchedTargetCount: matchedBySubscriber[index].count,
+                            refreshMetrics: ListRefreshMetrics(
+                                reloadedSectionCount: matchedBySubscriber[index].count
+                            ),
+                            animation: ListAnimationSummary(
+                                completionState: .completed,
+                                layoutInvalidated: true
+                            )
+                        ))
+                }
+                return
+            }
+            self.mutationCoordinator.finish(mutationToken)
+            self.rebindVisibleSupplementaryTapHandlers()
+            subscribers.enumerated().forEach { index, subscriber in
+                subscriber.completion?(
+                    ListRefreshSummary(
                         requestedTargetCount: subscriber.sectionIDs.count,
                         matchedTargetCount: matchedBySubscriber[index].count,
                         refreshMetrics: ListRefreshMetrics(
@@ -1393,23 +1522,6 @@ where SectionID: Hashable & Sendable {
                             layoutInvalidated: true
                         )
                     ))
-                }
-                return
-            }
-            self.mutationCoordinator.finish(mutationToken)
-            self.rebindVisibleSupplementaryTapHandlers()
-            subscribers.enumerated().forEach { index, subscriber in
-                subscriber.completion?(ListRefreshSummary(
-                    requestedTargetCount: subscriber.sectionIDs.count,
-                    matchedTargetCount: matchedBySubscriber[index].count,
-                    refreshMetrics: ListRefreshMetrics(
-                        reloadedSectionCount: matchedBySubscriber[index].count
-                    ),
-                    animation: ListAnimationSummary(
-                        completionState: .completed,
-                        layoutInvalidated: true
-                    )
-                ))
             }
             self.performNextPendingMutationIfNeeded()
         }
@@ -1607,29 +1719,32 @@ where SectionID: Hashable & Sendable {
         )
         let supersededSummary = makeReloadAllPlan(transaction: request.transaction)
             .initialSummary
-            .replacingAnimation(ListAnimationSummary(
-                completionState: .superseded,
+            .replacingAnimation(
+                ListAnimationSummary(
+                    completionState: .superseded,
+                    reduceMotionApplied: resolved.reduceMotionApplied
+                ))
+        let cancelledSummary = ListApplySummary(
+            animation: ListAnimationSummary(
+                completionState: .cancelledBeforeCommit,
                 reduceMotionApplied: resolved.reduceMotionApplied
             ))
-        let cancelledSummary = ListApplySummary(animation: ListAnimationSummary(
-            completionState: .cancelledBeforeCommit,
-            reduceMotionApplied: resolved.reduceMotionApplied
-        ))
-        mutationScheduler.enqueue(ListPendingMutationRequest(
-            kind: .reloadAll,
-            updatePolicy: request.transaction.updatePolicy,
-            requiresCommittedUpdates: true,
-            subscriberID: request.subscriberID,
-            onCancel: { request.completion?(cancelledSummary) },
-            start: { [weak self] in
-                guard let self else {
-                    request.completion?(cancelledSummary)
-                    return
-                }
-                self.performReloadAll(request)
-            },
-            supersede: { request.completion?(supersededSummary) }
-        ))
+        mutationScheduler.enqueue(
+            ListPendingMutationRequest(
+                kind: .reloadAll,
+                updatePolicy: request.transaction.updatePolicy,
+                requiresCommittedUpdates: true,
+                subscriberID: request.subscriberID,
+                onCancel: { request.completion?(cancelledSummary) },
+                start: { [weak self] in
+                    guard let self else {
+                        request.completion?(cancelledSummary)
+                        return
+                    }
+                    self.performReloadAll(request)
+                },
+                supersede: { request.completion?(supersededSummary) }
+            ))
         performNextPendingMutationIfNeeded()
     }
 
@@ -1638,12 +1753,13 @@ where SectionID: Hashable & Sendable {
         transaction: ListTransaction,
         completion: ((ListApplySummary) -> Void)?
     ) -> ListApplySummary {
-        let summary = ListApplySummary(animation: ListAnimationSummary(
-            completionState: .cancelledBeforeCommit,
-            reduceMotionApplied: transaction.resolved(
-                reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
-            ).reduceMotionApplied
-        ))
+        let summary = ListApplySummary(
+            animation: ListAnimationSummary(
+                completionState: .cancelledBeforeCommit,
+                reduceMotionApplied: transaction.resolved(
+                    reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
+                ).reduceMotionApplied
+            ))
         lastApplySummary = summary
         mutationScheduler.cancelPendingRequests()
         completion?(summary)
@@ -1673,8 +1789,9 @@ where SectionID: Hashable & Sendable {
         let hasUncommittedUpdates = collectionView.hasUncommittedUpdates
         if mutationScheduler.startNext(hasUncommittedUpdates: hasUncommittedUpdates) { return }
         if !mutationScheduler.isExecuting,
-           mutationScheduler.hasPendingRequests,
-           hasUncommittedUpdates {
+            mutationScheduler.hasPendingRequests,
+            hasUncommittedUpdates
+        {
             scheduleReloadAllRetry()
         }
     }
@@ -1705,25 +1822,30 @@ where SectionID: Hashable & Sendable {
         let resolved = options.transaction.resolved(
             reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled
         )
-        let cancelled = ListApplySummary(animation: ListAnimationSummary(
-            completionState: .cancelledBeforeCommit,
-            reduceMotionApplied: resolved.reduceMotionApplied
-        ))
+        let cancelled = ListApplySummary(
+            animation: ListAnimationSummary(
+                completionState: .cancelledBeforeCommit,
+                reduceMotionApplied: resolved.reduceMotionApplied
+            ))
         let bridge = ListAsyncMutationBridge(cancelledResult: cancelled)
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 let subscriberID = UUID()
-                guard bridge.register(continuation, cancellation: { [weak self] in
-                    Task { @MainActor in
-                        guard let self else {
-                            bridge.resume(returning: cancelled)
-                            return
-                        }
-                        if self.mutationScheduler.cancelSubscriber(subscriberID) {
-                            self.performNextPendingMutationIfNeeded()
-                        }
-                    }
-                }) else { return }
+                guard
+                    bridge.register(
+                        continuation,
+                        cancellation: { [weak self] in
+                            Task { @MainActor in
+                                guard let self else {
+                                    bridge.resume(returning: cancelled)
+                                    return
+                                }
+                                if self.mutationScheduler.cancelSubscriber(subscriberID) {
+                                    self.performNextPendingMutationIfNeeded()
+                                }
+                            }
+                        })
+                else { return }
                 _ = _apply(
                     options: options,
                     subscriberID: subscriberID,
@@ -1772,7 +1894,9 @@ where SectionID: Hashable & Sendable {
 
     /// 监听 UIKit 一次批量取消预取请求。
     @discardableResult
-    public func onCancelPrefetchingItems(_ handler: @escaping @MainActor ([ListContext]) -> Void) -> Self {
+    public func onCancelPrefetchingItems(_ handler: @escaping @MainActor ([ListContext]) -> Void)
+        -> Self
+    {
         cancelPrefetchingItemsHandler = handler
         return self
     }
@@ -1798,16 +1922,26 @@ where SectionID: Hashable & Sendable {
         sections.count
     }
 
-    public func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+    /// 返回当前分区的条目数量；分区索引无效时返回 0。
+    public func collectionView(
+        _ collectionView: UICollectionView, numberOfItemsInSection section: Int
+    ) -> Int {
         sections[safe: section]?.rows.count ?? 0
     }
 
-    public func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+    /// 通过条目提供者创建并配置单元格，配置上下文包含条目的稳定身份。
+    public func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath)
+        -> UICollectionViewCell
+    {
         guard let row = row(at: indexPath) else { return UICollectionViewCell() }
-        return row.cellProvider(collectionView, indexPath, context(for: indexPath, identity: row.identity))
+        return row.cellProvider(
+            collectionView, indexPath, context(for: indexPath, identity: row.identity))
     }
 
-    public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    /// 处理条目选择，协调单选或层级展开状态，并分发条目事件与代理通知。
+    public func collectionView(
+        _ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath
+    ) {
         guard let row = row(at: indexPath) else { return }
         if toggleOutlineDisclosureIfNeeded(for: row, at: indexPath) {
             collectionView.deselectItem(at: indexPath, animated: false)
@@ -1825,7 +1959,10 @@ where SectionID: Hashable & Sendable {
         collectionDelegate?.collectionView?(collectionView, didSelectItemAt: indexPath)
     }
 
-    public func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
+    /// 通知条目取消选择并更新选择状态回调，然后转发代理通知。
+    public func collectionView(
+        _ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath
+    ) {
         guard let row = row(at: indexPath) else { return }
         let context = context(for: indexPath, identity: row.identity)
         row.deselectHandler?(context)
@@ -1833,73 +1970,107 @@ where SectionID: Hashable & Sendable {
         collectionDelegate?.collectionView?(collectionView, didDeselectItemAt: indexPath)
     }
 
-    public func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
-        guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true else {
+    /// 根据分区选择模式、条目禁用状态和外部代理判断是否允许选择。
+    public func collectionView(
+        _ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath
+    ) -> Bool {
+        guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true
+        else {
             return false
         }
-        return collectionDelegate?.collectionView?(collectionView, shouldSelectItemAt: indexPath) ?? true
+        return collectionDelegate?.collectionView?(collectionView, shouldSelectItemAt: indexPath)
+            ?? true
     }
 
-    public func collectionView(_ collectionView: UICollectionView, shouldDeselectItemAt indexPath: IndexPath) -> Bool {
-        guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true else {
+    /// 根据分区选择模式、条目禁用状态和外部代理判断是否允许取消选择。
+    public func collectionView(
+        _ collectionView: UICollectionView, shouldDeselectItemAt indexPath: IndexPath
+    ) -> Bool {
+        guard selectionMode(at: indexPath) != .none, row(at: indexPath)?.isSelectionDisabled != true
+        else {
             return false
         }
-        return collectionDelegate?.collectionView?(collectionView, shouldDeselectItemAt: indexPath) ?? true
+        return collectionDelegate?.collectionView?(collectionView, shouldDeselectItemAt: indexPath)
+            ?? true
     }
 
-    public func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
+    /// 根据条目的交互配置与外部代理判断是否允许高亮。
+    public func collectionView(
+        _ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath
+    ) -> Bool {
         guard let row = row(at: indexPath) else { return false }
-        let allowsListKitHighlight = row.hasAutomaticHighlightIntent
+        let allowsListKitHighlight =
+            row.hasAutomaticHighlightIntent
             || (!row.isSelectionDisabled && selectionMode(at: indexPath) != .none)
         guard allowsListKitHighlight || collectionDelegateHasHighlightIntent else { return false }
-        return collectionDelegate?.collectionView?(collectionView, shouldHighlightItemAt: indexPath) ?? true
+        return collectionDelegate?.collectionView?(collectionView, shouldHighlightItemAt: indexPath)
+            ?? true
     }
 
-    public func collectionView(_ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath) {
+    /// 将高亮状态通知条目，并转发外部代理。
+    public func collectionView(
+        _ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath
+    ) {
         if let row = row(at: indexPath) {
             row.highlightChangeHandler?(true, context(for: indexPath, identity: row.identity))
         }
         collectionDelegate?.collectionView?(collectionView, didHighlightItemAt: indexPath)
     }
 
-    public func collectionView(_ collectionView: UICollectionView, didUnhighlightItemAt indexPath: IndexPath) {
+    /// 将取消高亮状态通知条目，并转发外部代理。
+    public func collectionView(
+        _ collectionView: UICollectionView, didUnhighlightItemAt indexPath: IndexPath
+    ) {
         if let row = row(at: indexPath) {
             row.highlightChangeHandler?(false, context(for: indexPath, identity: row.identity))
         }
         collectionDelegate?.collectionView?(collectionView, didUnhighlightItemAt: indexPath)
     }
 
+    /// 执行条目的主要操作处理器，并转发外部代理。
     @available(iOS 16.0, tvOS 16.0, *)
-    public func collectionView(_ collectionView: UICollectionView, performPrimaryActionForItemAt indexPath: IndexPath) {
+    public func collectionView(
+        _ collectionView: UICollectionView, performPrimaryActionForItemAt indexPath: IndexPath
+    ) {
         if let row = row(at: indexPath) {
             row.primaryActionHandler?(context(for: indexPath, identity: row.identity))
         }
         collectionDelegate?.collectionView?(collectionView, performPrimaryActionForItemAt: indexPath)
     }
 
-    public func collectionView(_ collectionView: UICollectionView, canFocusItemAt indexPath: IndexPath) -> Bool {
+    /// 优先使用条目的焦点配置，再查询外部代理；未指定时允许获取焦点。
+    public func collectionView(
+        _ collectionView: UICollectionView, canFocusItemAt indexPath: IndexPath
+    ) -> Bool {
         row(at: indexPath)?.isFocusable
             ?? collectionDelegate?.collectionView?(collectionView, canFocusItemAt: indexPath)
             ?? true
     }
 
+    /// 按条目配置、外部代理和集合视图设置的顺序解析焦点是否带动选择。
     @available(iOS 15.0, tvOS 15.0, *)
-    public func collectionView(_ collectionView: UICollectionView, selectionFollowsFocusForItemAt indexPath: IndexPath) -> Bool {
+    public func collectionView(
+        _ collectionView: UICollectionView, selectionFollowsFocusForItemAt indexPath: IndexPath
+    ) -> Bool {
         row(at: indexPath)?.selectionFollowsFocus
-            ?? collectionDelegate?.collectionView?(collectionView, selectionFollowsFocusForItemAt: indexPath)
+            ?? collectionDelegate?.collectionView?(
+                collectionView, selectionFollowsFocusForItemAt: indexPath)
             ?? collectionView.selectionFollowsFocus
     }
 
+    /// 优先使用条目的弹簧加载配置，再查询外部代理；未指定时返回 `true`。
     public func collectionView(
         _ collectionView: UICollectionView,
         shouldSpringLoadItemAt indexPath: IndexPath,
         with context: any UISpringLoadedInteractionContext
     ) -> Bool {
         row(at: indexPath)?.isSpringLoadingEnabled
-            ?? collectionDelegate?.collectionView?(collectionView, shouldSpringLoadItemAt: indexPath, with: context)
+            ?? collectionDelegate?.collectionView?(
+                collectionView, shouldSpringLoadItemAt: indexPath, with: context)
             ?? true
     }
 
+    /// 检查分区是否启用多选交互、处于多选模式且条目可选，再查询外部代理。
     public func collectionView(
         _ collectionView: UICollectionView,
         shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath
@@ -1915,22 +2086,27 @@ where SectionID: Hashable & Sendable {
         ) ?? true
     }
 
+    /// 向外部代理转发多选交互开始通知。
     public func collectionView(
         _ collectionView: UICollectionView,
         didBeginMultipleSelectionInteractionAt indexPath: IndexPath
     ) {
-        collectionDelegate?.collectionView?(collectionView, didBeginMultipleSelectionInteractionAt: indexPath)
+        collectionDelegate?.collectionView?(
+            collectionView, didBeginMultipleSelectionInteractionAt: indexPath)
     }
 
+    /// 向外部代理转发多选交互结束通知。
     public func collectionViewDidEndMultipleSelectionInteraction(_ collectionView: UICollectionView) {
         collectionDelegate?.collectionViewDidEndMultipleSelectionInteraction?(collectionView)
     }
 
+    /// 保存正在显示的条目描述，并分发显示事件。
     public func collectionView(
         _ collectionView: UICollectionView,
         willDisplay cell: UICollectionViewCell,
         forItemAt indexPath: IndexPath
     ) {
+        scheduleOrthogonalOffsetRestoration()
         if let row = row(at: indexPath) {
             displayedRowsByCell[ObjectIdentifier(cell)] = row
             row.displayHandler?(cell, context(for: indexPath, identity: row.identity))
@@ -1941,6 +2117,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 优先使用显示时保存的条目描述分发结束显示事件，避免位置变化后关联到其他条目。
     public func collectionView(
         _ collectionView: UICollectionView,
         didEndDisplaying cell: UICollectionViewCell,
@@ -1952,10 +2129,14 @@ where SectionID: Hashable & Sendable {
         }
         displayDelegate?.collectionView?(collectionView, didEndDisplaying: cell, forItemAt: indexPath)
         if !sameObject(displayDelegate, collectionDelegate) {
-            collectionDelegate?.collectionView?(collectionView, didEndDisplaying: cell, forItemAt: indexPath)
+            collectionDelegate?.collectionView?(
+                collectionView, didEndDisplaying: cell, forItemAt: indexPath)
         }
     }
 
+    /// 保存附属视图的描述与业务条目位置，并分发显示事件。
+    ///
+    /// 业务回调使用所属条目的位置，UIKit 代理继续收到实际附属视图地址。
     public func collectionView(
         _ collectionView: UICollectionView,
         willDisplaySupplementaryView view: UICollectionReusableView,
@@ -1964,7 +2145,9 @@ where SectionID: Hashable & Sendable {
     ) {
         if let supplementary = supplementary(kind: elementKind, at: indexPath) {
             displayedSupplementariesByView[ObjectIdentifier(view)] = supplementary
-            supplementary.displayHandler?(view, context(for: indexPath, identity: supplementary.identity))
+            let itemPath = supplementaryItemIndexPath(kind: elementKind, at: indexPath)
+            displayedSupplementaryIndexPaths[ObjectIdentifier(view)] = itemPath
+            supplementary.displayHandler?(view, context(for: itemPath, identity: supplementary.identity))
         }
         displayDelegate?.collectionView?(
             collectionView,
@@ -1982,16 +2165,21 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 使用显示时保存的附属视图描述和业务位置分发结束显示事件，并清理记录。
     public func collectionView(
         _ collectionView: UICollectionView,
         didEndDisplayingSupplementaryView view: UICollectionReusableView,
         forElementOfKind elementKind: String,
         at indexPath: IndexPath
     ) {
-        let supplementary = displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
+        let supplementary =
+            displayedSupplementariesByView.removeValue(forKey: ObjectIdentifier(view))
             ?? supplementary(kind: elementKind, at: indexPath)
+        let itemPath = displayedSupplementaryIndexPaths.removeValue(forKey: ObjectIdentifier(view))
+            ?? supplementaryItemIndexPath(kind: elementKind, at: indexPath)
         if let supplementary {
-            supplementary.endDisplayHandler?(view, context(for: indexPath, identity: supplementary.identity))
+            supplementary.endDisplayHandler?(
+                view, context(for: itemPath, identity: supplementary.identity))
         }
         displayDelegate?.collectionView?(
             collectionView,
@@ -2009,6 +2197,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 保存预取条目的描述，并依次调用条目级与批量预取处理器。
     public func collectionView(
         _ collectionView: UICollectionView,
         prefetchItemsAt indexPaths: [IndexPath]
@@ -2024,13 +2213,15 @@ where SectionID: Hashable & Sendable {
         if !contexts.isEmpty { prefetchItemsHandler?(contexts) }
     }
 
+    /// 使用预取时保存的条目描述分发取消事件，并清理对应记录。
     public func collectionView(
         _ collectionView: UICollectionView,
         cancelPrefetchingForItemsAt indexPaths: [IndexPath]
     ) {
         var contexts: [ListContext] = []
         for indexPath in indexPaths {
-            guard let row = prefetchedRowsByIndexPath.removeValue(forKey: indexPath) ?? row(at: indexPath) else {
+            guard let row = prefetchedRowsByIndexPath.removeValue(forKey: indexPath) ?? row(at: indexPath)
+            else {
                 continue
             }
             let rowContext = context(for: indexPath, identity: row.identity)
@@ -2040,6 +2231,7 @@ where SectionID: Hashable & Sendable {
         if !contexts.isEmpty { cancelPrefetchingItemsHandler?(contexts) }
     }
 
+    /// 优先使用条目的菜单配置，再查询外部代理，并记录菜单关联的条目身份。
     @available(iOS, introduced: 13.0, deprecated: 16.0)
     public func collectionView(
         _ collectionView: UICollectionView,
@@ -2047,16 +2239,24 @@ where SectionID: Hashable & Sendable {
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
         pruneContextMenuSessions()
-        let target = row(at: indexPath).map { CollectionContextMenuTarget(row: $0, indexPath: indexPath) }
-        let configuration = target.flatMap {
-            $0.row.contextMenuProvider?(context(for: indexPath, identity: $0.row.identity), point)
-        } ?? collectionDelegate?.collectionView?(
-            collectionView, contextMenuConfigurationForItemAt: indexPath, point: point
-        )
+        let target = row(at: indexPath).map {
+            CollectionContextMenuTarget(row: $0, indexPath: indexPath)
+        }
+        let configuration =
+            target.flatMap {
+                $0.row.contextMenuProvider?(context(for: indexPath, identity: $0.row.identity), point)
+            }
+            ?? collectionDelegate?.collectionView?(
+                collectionView, contextMenuConfigurationForItemAt: indexPath, point: point
+            )
         registerContextMenu(configuration, targets: target.map { [$0] } ?? [])
         return configuration
     }
 
+    /// 依次尝试批量菜单提供者、首个条目提供者及外部代理，并记录菜单会话。
+    ///
+    /// 外部代理实现多项配置回调时，保留其返回值，包括用于阻止菜单交互的 `nil`。
+    /// 仅在未实现该回调且存在目标位置时，查询旧版单项配置回调。
     @available(iOS 16.0, tvOS 17.0, *)
     public func collectionView(
         _ collectionView: UICollectionView,
@@ -2068,49 +2268,71 @@ where SectionID: Hashable & Sendable {
             row(at: indexPath).map { CollectionContextMenuTarget(row: $0, indexPath: indexPath) }
         }
         // 按优先级惰性求值，未采用的 provider 不应创建配置或产生副作用。
-        let configuration = contextMenuItemsProvider?(targets.map {
-            context(for: $0.indexPath, identity: $0.row.identity)
-        }, point) ?? targets.first.flatMap {
-            $0.row.contextMenuProvider?(context(for: $0.indexPath, identity: $0.row.identity), point)
-        } ?? collectionDelegate?.collectionView?(
-            collectionView, contextMenuConfigurationForItemsAt: indexPaths, point: point
-        ) ?? indexPaths.first.flatMap {
-            collectionDelegate?.collectionView?(
-                collectionView, contextMenuConfigurationForItemAt: $0, point: point
-            )
+        var configuration =
+            contextMenuItemsProvider?(
+                targets.map {
+                    context(for: $0.indexPath, identity: $0.row.identity)
+                }, point) ?? targets.first.flatMap {
+                $0.row.contextMenuProvider?(context(for: $0.indexPath, identity: $0.row.identity), point)
+            }
+        if configuration == nil {
+            if let provider = collectionDelegate?.collectionView(_:contextMenuConfigurationForItemsAt:point:) {
+                configuration = provider(collectionView, indexPaths, point)
+            } else {
+                configuration = indexPaths.first.flatMap {
+                    collectionDelegate?.collectionView?(
+                        collectionView, contextMenuConfigurationForItemAt: $0, point: point
+                    )
+                }
+            }
         }
         registerContextMenu(configuration, targets: targets)
         return configuration
     }
 
+    /// 返回菜单会话中指定条目的高亮预览，未提供时查询外部代理。
+    ///
+    /// 代理实现逐项预览回调时，原样返回其结果；`nil` 表示交由系统处理。
+    /// 仅在未实现逐项回调时查询旧版预览回调。
     @available(iOS 16.0, tvOS 17.0, *)
     public func collectionView(
         _ collectionView: UICollectionView,
         contextMenuConfiguration configuration: UIContextMenuConfiguration,
         highlightPreviewForItemAt indexPath: IndexPath
     ) -> UITargetedPreview? {
-        contextMenuPreview(configuration, indexPath: indexPath, highlighting: true)
-            ?? collectionDelegate?.collectionView?(
-                collectionView, contextMenuConfiguration: configuration, highlightPreviewForItemAt: indexPath
-            ) ?? collectionDelegate?.collectionView?(
-                collectionView, previewForHighlightingContextMenuWithConfiguration: configuration
-            )
+        if let preview = contextMenuPreview(configuration, indexPath: indexPath, highlighting: true) {
+            return preview
+        }
+        if let provider = collectionDelegate?.collectionView(_:contextMenuConfiguration:highlightPreviewForItemAt:) {
+            return provider(collectionView, configuration, indexPath)
+        }
+        return collectionDelegate?.collectionView?(
+            collectionView, previewForHighlightingContextMenuWithConfiguration: configuration
+        )
     }
 
+    /// 返回菜单会话中指定条目的收起预览，未提供时查询外部代理。
+    ///
+    /// 代理实现逐项预览回调时，原样返回其结果；`nil` 表示交由系统处理。
+    /// 仅在未实现逐项回调时查询旧版预览回调。
     @available(iOS 16.0, tvOS 17.0, *)
     public func collectionView(
         _ collectionView: UICollectionView,
         contextMenuConfiguration configuration: UIContextMenuConfiguration,
         dismissalPreviewForItemAt indexPath: IndexPath
     ) -> UITargetedPreview? {
-        contextMenuPreview(configuration, indexPath: indexPath, highlighting: false)
-            ?? collectionDelegate?.collectionView?(
-                collectionView, contextMenuConfiguration: configuration, dismissalPreviewForItemAt: indexPath
-            ) ?? collectionDelegate?.collectionView?(
-                collectionView, previewForDismissingContextMenuWithConfiguration: configuration
-            )
+        if let preview = contextMenuPreview(configuration, indexPath: indexPath, highlighting: false) {
+            return preview
+        }
+        if let provider = collectionDelegate?.collectionView(_:contextMenuConfiguration:dismissalPreviewForItemAt:) {
+            return provider(collectionView, configuration, indexPath)
+        }
+        return collectionDelegate?.collectionView?(
+            collectionView, previewForDismissingContextMenuWithConfiguration: configuration
+        )
     }
 
+    /// 分发菜单预览提交事件，并将系统动画协调器传给处理器与外部代理。
     @available(iOS 13.0, *)
     public func collectionView(
         _ collectionView: UICollectionView,
@@ -2118,7 +2340,8 @@ where SectionID: Hashable & Sendable {
         animator: any UIContextMenuInteractionCommitAnimating
     ) {
         if let target = contextMenuSession(for: configuration)?.targets.first,
-           let indexPath = dataSource.indexPath(for: target.row.identity) {
+            let indexPath = dataSource.indexPath(for: target.row.identity)
+        {
             target.row.contextMenuCommitHandler?(
                 context(for: indexPath, identity: target.row.identity), configuration, animator
             )
@@ -2128,6 +2351,7 @@ where SectionID: Hashable & Sendable {
         )
     }
 
+    /// 返回当前菜单关联条目的高亮预览，未提供时查询外部代理。
     @available(iOS, introduced: 13.0, deprecated: 16.0)
     public func collectionView(
         _ collectionView: UICollectionView,
@@ -2139,6 +2363,7 @@ where SectionID: Hashable & Sendable {
             )
     }
 
+    /// 返回当前菜单关联条目的收起预览，未提供时查询外部代理。
     @available(iOS, introduced: 13.0, deprecated: 16.0)
     public func collectionView(
         _ collectionView: UICollectionView,
@@ -2158,7 +2383,8 @@ where SectionID: Hashable & Sendable {
         animator: (any UIContextMenuInteractionAnimating)?
     ) {
         if let target = contextMenuSession(for: configuration)?.targets.first {
-            target.row.contextMenuWillDisplayHandler?(contextMenuContext(for: target), configuration, animator)
+            target.row.contextMenuWillDisplayHandler?(
+                contextMenuContext(for: target), configuration, animator)
         }
         collectionDelegate?.collectionView?(
             collectionView, willDisplayContextMenu: configuration, animator: animator
@@ -2174,7 +2400,8 @@ where SectionID: Hashable & Sendable {
     ) {
         let session = contextMenuSession(for: configuration)
         if let target = session?.targets.first {
-            target.row.contextMenuWillEndHandler?(contextMenuContext(for: target), configuration, animator)
+            target.row.contextMenuWillEndHandler?(
+                contextMenuContext(for: target), configuration, animator)
         }
         collectionDelegate?.collectionView?(
             collectionView, willEndContextMenuInteraction: configuration, animator: animator
@@ -2200,7 +2427,9 @@ where SectionID: Hashable & Sendable {
     }
 
     /// 以配置对象身份关联捕获的 Row，不读取或修改业务 identifier。
-    private func registerContextMenu(_ configuration: UIContextMenuConfiguration?, targets: [CollectionContextMenuTarget]) {
+    private func registerContextMenu(
+        _ configuration: UIContextMenuConfiguration?, targets: [CollectionContextMenuTarget]
+    ) {
         guard let configuration else { return }
         contextMenuSessions[ObjectIdentifier(configuration)] = CollectionContextMenuSession(
             configuration: configuration, targets: targets
@@ -2208,9 +2437,12 @@ where SectionID: Hashable & Sendable {
     }
 
     /// 校验弱引用以拒绝已释放对象地址复用产生的错误匹配。
-    private func contextMenuSession(for configuration: UIContextMenuConfiguration) -> CollectionContextMenuSession? {
+    private func contextMenuSession(for configuration: UIContextMenuConfiguration)
+        -> CollectionContextMenuSession?
+    {
         guard let session = contextMenuSessions[ObjectIdentifier(configuration)],
-              session.configuration === configuration else { return nil }
+            session.configuration === configuration
+        else { return nil }
         return session
     }
 
@@ -2235,11 +2467,17 @@ where SectionID: Hashable & Sendable {
         } else {
             target = session.targets.first
         }
-        guard let target, let currentIndexPath = dataSource.indexPath(for: target.row.identity) else { return nil }
-        let provider = highlighting ? target.row.contextMenuHighlightPreviewProvider : target.row.contextMenuDismissalPreviewProvider
+        guard let target, let currentIndexPath = dataSource.indexPath(for: target.row.identity) else {
+            return nil
+        }
+        let provider =
+            highlighting
+            ? target.row.contextMenuHighlightPreviewProvider
+            : target.row.contextMenuDismissalPreviewProvider
         return provider?(context(for: currentIndexPath, identity: target.row.identity), configuration)
     }
 
+    /// 返回条目逻辑起始侧的滑动操作配置，未提供时返回 `nil`。
     public func collectionView(
         _ collectionView: UICollectionView,
         leadingSwipeActionsConfigurationForItemAt indexPath: IndexPath
@@ -2248,6 +2486,7 @@ where SectionID: Hashable & Sendable {
         return row.leadingSwipeActionsProvider?(context(for: indexPath, identity: row.identity))
     }
 
+    /// 返回条目逻辑结束侧的滑动操作配置，未提供时返回 `nil`。
     public func collectionView(
         _ collectionView: UICollectionView,
         trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
@@ -2256,6 +2495,9 @@ where SectionID: Hashable & Sendable {
         return row.trailingSwipeActionsProvider?(context(for: indexPath, identity: row.identity))
     }
 
+    /// 转发滚动位置变化通知；滚动代理与列表代理为同一对象时仅通知一次。
+    ///
+    /// 应用快照期间忽略此通知。
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard !isApplyingSnapshot else { return }
         scrollDelegate?.scrollViewDidScroll?(scrollView)
@@ -2264,6 +2506,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 转发即将开始拖动通知；滚动代理与列表代理为同一对象时仅通知一次。
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewWillBeginDragging?(scrollView)
         if !sameObject(scrollDelegate, collectionDelegate) {
@@ -2271,6 +2514,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 转发拖动结束及是否继续减速通知；滚动代理与列表代理为同一对象时仅通知一次。
     public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         scrollDelegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: decelerate)
         if !sameObject(scrollDelegate, collectionDelegate) {
@@ -2278,6 +2522,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 转发减速结束通知；滚动代理与列表代理为同一对象时仅通知一次。
     public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         scrollDelegate?.scrollViewDidEndDecelerating?(scrollView)
         if !sameObject(scrollDelegate, collectionDelegate) {
@@ -2285,6 +2530,7 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// 返回系统分区索引标题；已使用自定义索引控件或没有有效标题时返回 `nil`。
     public func indexTitles(for collectionView: UICollectionView) -> [String]? {
         guard sectionIndexView == nil else { return nil }
         indexTitleEntries = makeIndexTitleEntries()
@@ -2292,20 +2538,23 @@ where SectionID: Hashable & Sendable {
         return titles.isEmpty ? nil : titles
     }
 
+    /// 将索引标题解析为当前快照中的条目位置；原记录失效时重新查找。
     public func collectionView(
         _ collectionView: UICollectionView,
         indexPathForIndexTitle title: String,
         at index: Int
     ) -> IndexPath {
         if let entry = indexTitleEntries[safe: index],
-           entry.title == title,
-           let indexPath = dataSource.indexPath(for: entry.identity) {
+            entry.title == title,
+            let indexPath = dataSource.indexPath(for: entry.identity)
+        {
             return indexPath
         }
 
         indexTitleEntries = makeIndexTitleEntries()
         if let entry = indexTitleEntries.first(where: { $0.title == title }),
-           let indexPath = dataSource.indexPath(for: entry.identity) {
+            let indexPath = dataSource.indexPath(for: entry.identity)
+        {
             return indexPath
         }
 
@@ -2317,8 +2566,9 @@ where SectionID: Hashable & Sendable {
         let entries = makeIndexTitleEntries()
         sectionIndexView.update(titles: entries.map(\.title)) { [weak self] index in
             guard let self, let collectionView = self.collectionView,
-                  !self.isApplyingSnapshot, let entry = entries[safe: index],
-                  let path = self.dataSource.indexPath(for: entry.identity) else { return }
+                !self.isApplyingSnapshot, let entry = entries[safe: index],
+                let path = self.dataSource.indexPath(for: entry.identity)
+            else { return }
             collectionView.layoutIfNeeded()
             let header = collectionView.collectionViewLayout.layoutAttributesForSupplementaryView(
                 ofKind: UICollectionView.elementKindSectionHeader,
@@ -2327,18 +2577,24 @@ where SectionID: Hashable & Sendable {
             guard let item = collectionView.layoutAttributesForItem(at: path) else { return }
             let top = min(header?.frame.minY ?? item.frame.minY, item.frame.minY)
             let minimum = -collectionView.adjustedContentInset.top
-            let maximum = max(minimum, collectionView.contentSize.height - collectionView.bounds.height
-                              + collectionView.adjustedContentInset.bottom)
-            collectionView.setContentOffset(CGPoint(x: collectionView.contentOffset.x,
-                y: min(maximum, max(minimum, top - collectionView.adjustedContentInset.top))), animated: false)
+            let maximum = max(
+                minimum,
+                collectionView.contentSize.height - collectionView.bounds.height
+                    + collectionView.adjustedContentInset.bottom)
+            collectionView.setContentOffset(
+                CGPoint(
+                    x: collectionView.contentOffset.x,
+                    y: min(maximum, max(minimum, top - collectionView.adjustedContentInset.top))),
+                animated: false)
         }
     }
 
     private func makeIndexTitleEntries() -> [CollectionIndexTitleEntry] {
         sections.compactMap { section in
             guard let title = section.indexTitle,
-                  let row = section.rows.first,
-                  dataSource.indexPath(for: row.identity) != nil else { return nil }
+                let row = section.rows.first,
+                dataSource.indexPath(for: row.identity) != nil
+            else { return nil }
             return CollectionIndexTitleEntry(title: title, identity: row.identity)
         }
     }
@@ -2354,62 +2610,74 @@ where SectionID: Hashable & Sendable {
         return nil
     }
 
+    /// 返回布局代理提供的条目尺寸，否则使用流式布局尺寸或自动尺寸。
     public func collectionView(
         _ collectionView: UICollectionView,
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, sizeForItemAt: indexPath)
+        resolvedLayoutDelegate?.collectionView?(
+            collectionView, layout: collectionViewLayout, sizeForItemAt: indexPath)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.itemSize
             ?? UICollectionViewFlowLayout.automaticSize
     }
 
+    /// 返回布局代理提供的分区内边距，否则使用流式布局内边距或零。
     public func collectionView(
         _ collectionView: UICollectionView,
         layout collectionViewLayout: UICollectionViewLayout,
         insetForSectionAt section: Int
     ) -> UIEdgeInsets {
-        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, insetForSectionAt: section)
+        resolvedLayoutDelegate?.collectionView?(
+            collectionView, layout: collectionViewLayout, insetForSectionAt: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.sectionInset
             ?? .zero
     }
 
+    /// 返回布局代理提供的最小行间距，否则使用流式布局行间距或零。
     public func collectionView(
         _ collectionView: UICollectionView,
         layout collectionViewLayout: UICollectionViewLayout,
         minimumLineSpacingForSectionAt section: Int
     ) -> CGFloat {
-        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, minimumLineSpacingForSectionAt: section)
+        resolvedLayoutDelegate?.collectionView?(
+            collectionView, layout: collectionViewLayout, minimumLineSpacingForSectionAt: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.minimumLineSpacing
             ?? 0
     }
 
+    /// 返回布局代理提供的最小条目间距，否则使用流式布局间距或零。
     public func collectionView(
         _ collectionView: UICollectionView,
         layout collectionViewLayout: UICollectionViewLayout,
         minimumInteritemSpacingForSectionAt section: Int
     ) -> CGFloat {
-        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, minimumInteritemSpacingForSectionAt: section)
+        resolvedLayoutDelegate?.collectionView?(
+            collectionView, layout: collectionViewLayout, minimumInteritemSpacingForSectionAt: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.minimumInteritemSpacing
             ?? 0
     }
 
+    /// 返回布局代理提供的页眉参考尺寸，否则使用流式布局设置或零尺寸。
     public func collectionView(
         _ collectionView: UICollectionView,
         layout collectionViewLayout: UICollectionViewLayout,
         referenceSizeForHeaderInSection section: Int
     ) -> CGSize {
-        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, referenceSizeForHeaderInSection: section)
+        resolvedLayoutDelegate?.collectionView?(
+            collectionView, layout: collectionViewLayout, referenceSizeForHeaderInSection: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.headerReferenceSize
             ?? .zero
     }
 
+    /// 返回布局代理提供的页脚参考尺寸，否则使用流式布局设置或零尺寸。
     public func collectionView(
         _ collectionView: UICollectionView,
         layout collectionViewLayout: UICollectionViewLayout,
         referenceSizeForFooterInSection section: Int
     ) -> CGSize {
-        resolvedLayoutDelegate?.collectionView?(collectionView, layout: collectionViewLayout, referenceSizeForFooterInSection: section)
+        resolvedLayoutDelegate?.collectionView?(
+            collectionView, layout: collectionViewLayout, referenceSizeForFooterInSection: section)
             ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.footerReferenceSize
             ?? .zero
     }
@@ -2518,10 +2786,31 @@ where SectionID: Hashable & Sendable {
         return true
     }
 
+    /// 解析业务 kind 和所属 item 位置，得到实际 UIKit supplementary 地址。
+    /// measured 多 line Grid 中，同一业务 kind 对应多个实际 kind，且各自独立编号。
+    /// 返回值只适用于当前已解析布局；布局、方向或数据改变后应重新查询。未启用的 kind 返回 nil。
+    public func supplementaryElement(ofKind kind: String, at indexPath: IndexPath) -> ListSupplementaryElement? {
+        guard let section = sections[safe: indexPath.section], indexPath.item >= 0,
+            section.supplementaries.contains(where: { $0.kind == kind }) else { return nil }
+        let sectionID = AnyListID(section.id)
+        guard resolvedCollectionLayout === collectionView?.collectionViewLayout,
+            activeSupplementaryKinds[sectionID]?.contains(kind) == true else { return nil }
+        if let aliases = activeSupplementaryAliases[sectionID]?[kind] {
+            guard indexPath.item < (collectionView?.numberOfItems(inSection: indexPath.section) ?? 0) else { return nil }
+            for actual in aliases {
+                if let path = supplementaryAliases[actual]?.supplementaryIndexPath(for: indexPath) {
+                    return .init(elementKind: actual, indexPath: path)
+                }
+            }
+            return nil
+        }
+        return .init(elementKind: kind, indexPath: indexPath)
+    }
+
     /// 轻量重配当前可见 supplementary view。
     ///
     /// - Parameters:
-    ///   - kind: supplementary element kind。
+    ///   - kind: 业务 supplementary kind；映射布局会匹配该 kind 的所有实际 UIKit 地址。
     ///   - sectionID: 可选的 section id；为 `nil` 时匹配所有 section。
     /// - Returns: 实际重配的可见 supplementary view 数量。
     @discardableResult
@@ -2535,7 +2824,7 @@ where SectionID: Hashable & Sendable {
     /// 轻量重配当前可见 item-level supplementary view。
     ///
     /// - Parameters:
-    ///   - kind: supplementary element kind。
+    ///   - kind: 业务 supplementary kind；映射布局会匹配该 kind 的所有实际 UIKit 地址。
     ///   - rowID: row 的稳定 id。
     ///   - sectionID: 可选的 section id；为 `nil` 时匹配所有 section。
     /// - Returns: 实际重配的可见 supplementary view 数量。
@@ -2554,141 +2843,278 @@ where SectionID: Hashable & Sendable {
         )
     }
 
-    /// 根据当前 sections 生成 compositional layout。
+    /// 创建由当前 Section 值驱动的布局。apply 后无需重新赋值 layout。
     ///
-    /// - Parameters:
-    ///   - configuration: compositional layout 的全局 Section 间距和 content inset 配置。
-    ///   - fallback: legacy `layoutID` section 使用的 layout provider。
-    ///   - diagnostics: layout provider 期间发现前置条件不满足时的处理方式。
-    /// - Returns: 可直接赋值给 collection view 的 compositional layout。
-    /// - Note: 调用方仍需显式把返回的 layout 赋给 `collectionView.collectionViewLayout`。
+    /// Grid 自动跟随 configuration 的方向；显式 orthogonalScrolling 后内容方向与外层垂直。
+    /// 分区解析返回 `nil` 时，使用默认单轨道估算网格作为回退。
     public func makeCompositionalLayout(
         configuration: ListCompositionalLayoutConfiguration = .init(),
-        fallback: ((
-            ListSection<SectionID>,
-            Int,
-            any NSCollectionLayoutEnvironment
-        ) -> NSCollectionLayoutSection?)? = nil,
         diagnostics: ListDiagnosticsOptions = .debugDefault
     ) -> UICollectionViewCompositionalLayout {
         lastLayoutDiagnostics = []
-        let sectionProvider: UICollectionViewCompositionalLayoutSectionProvider = { [weak self] sectionIndex, environment in
-            MainActor.assumeIsolated {
-                guard let self else { return nil }
-                return self.makeCompositionalSection(
-                    for: sectionIndex,
-                    environment: environment,
-                    fallback: fallback,
-                    diagnostics: diagnostics
-                )
-            }
-        }
-        let layout = UICollectionViewCompositionalLayout(
-            sectionProvider: sectionProvider,
-            configuration: configuration.makeConfiguration()
-        )
-        registerBackgroundDecorations(on: layout, sections: sections)
+        let direction = ListLayoutDirectionSource(initial: configuration.scrollDirection ?? .vertical)
+        let layout = ListCollectionLayout(
+            sectionProvider: { [weak self] index, environment in
+                MainActor.assumeIsolated {
+                    self?.makeCompositionalSection(
+                        for: index, environment: environment,
+                        scrollDirection: direction.current, diagnostics: diagnostics)
+                        ?? ListSectionLayout.defaultLayout.makeCompositionalSection(
+                            environment: environment, itemSupplementaries: [],
+                            scrollDirection: direction.current)
+                }
+            }, configuration: configuration.makeConfiguration())
+        direction.layout = layout
+        registerDecorations(on: layout, sections: sections)
         return layout
     }
 
-    /// 根据当前 section 描述生成单个 compositional layout section。
+    /// 所有来源共用的解析入口。必须传入本次 provider 的真实环境，不能缓存 UIKit section。
+    /// 自行创建外层 layout 时，typed decoration 仍须注册到该 layout；adapter.apply 会注册到当前 layout。
     ///
     /// - Parameters:
-    ///   - sectionIndex: 当前 layout provider 请求的 section index。
-    ///   - diagnostics: Section 描述无法生成布局时的诊断处理方式。
-    /// - Returns: 匹配 section 的 compositional layout section；越界时返回 `nil`。
-    /// - Note: 仅支持内建 `ListSectionLayout` 和默认 list layout。legacy `layoutID` 或 custom layout
-    /// 需要使用 `makeCompositionalLayout(fallback:)`。
+    ///   - sectionIndex: 当前数据中的 Section 索引。
+    ///   - environment: 本次 section provider 收到的真实布局环境。
+    ///   - scrollDirection: 外层 collection layout 的实际滚动方向，默认 `.vertical`。
+    ///     此参数用于解析与校验，不会修改外层 layout；自行创建横向 layout 时必须传入 `.horizontal`。
+    ///     Grid 根据此方向及自身的正交配置解析实际内容方向。
+    ///   - diagnostics: 诊断处理方式。尺寸约束等错误按此配置处理；`.disabled` 不记录诊断，
+    ///     但仍拒绝无效布局，`.assertion` 会调用 `assertionFailure`。
+    /// - Returns: 解析后的 Section；索引不存在或布局无效时返回 `nil`。
     public func makeCompositionalSection(
         for sectionIndex: Int,
+        environment: any NSCollectionLayoutEnvironment,
+        scrollDirection: ListLayoutScrollDirection = .vertical,
         diagnostics: ListDiagnosticsOptions = .debugDefault
     ) -> NSCollectionLayoutSection? {
         lastLayoutDiagnostics = []
         guard let section = sections[safe: sectionIndex] else { return nil }
-        if section.layoutID != nil {
-            recordLayoutDiagnostics(
-                [unresolvedLayoutIDIssue(for: section, sectionIndex: sectionIndex, fallbackWasProvided: false)],
-                options: diagnostics
-            )
-            return nil
+        let currentLayout = collectionView?.collectionViewLayout as? UICollectionViewCompositionalLayout
+        if resolvedCollectionLayout !== currentLayout {
+            clearResolvedLayoutState()
+            resolvedCollectionLayout = currentLayout
         }
-        if section.customSectionLayout != nil {
-            recordLayoutDiagnostics(
-                [
-                    ListDiagnosticsIssue(
-                        kind: .invalidLayout,
-                        message: "ListKit: makeCompositionalSection(for:) only supports built-in ListSectionLayout; section \(AnyListID(section.id)) uses custom layout and should use makeCompositionalLayout(fallback:)"
-                    )
-                ],
-                options: diagnostics
-            )
-            return nil
-        }
-        if section.sectionLayout?.uiKitListLayout != nil {
-            recordLayoutDiagnostics(
-                [
-                    ListDiagnosticsIssue(
-                        kind: .invalidLayout,
-                        message: "ListKit: UIKitListLayout needs a layout environment; use makeCompositionalLayout() instead of makeCompositionalSection(for:)."
-                    )
-                ],
-                options: diagnostics
-            )
-            return nil
-        }
-        return section.makeCompositionalLayoutSection()
-    }
-
-    private func makeCompositionalSection(
-        for sectionIndex: Int,
-        environment: any NSCollectionLayoutEnvironment,
-        fallback: ((
-            ListSection<SectionID>,
-            Int,
-            any NSCollectionLayoutEnvironment
-        ) -> NSCollectionLayoutSection?)?,
-        diagnostics: ListDiagnosticsOptions
-    ) -> NSCollectionLayoutSection? {
-        guard let section = sections[safe: sectionIndex] else { return nil }
-        let fallbackSection: NSCollectionLayoutSection?
-        if let customSectionLayout = section.customSectionLayout {
-            fallbackSection = customSectionLayout.makeSection(section, sectionIndex, environment)
-        } else if let listLayout = section.sectionLayout?.uiKitListLayout {
-            var configuration = listLayout.makeConfiguration()
-            configuration.leadingSwipeActionsConfigurationProvider = { [weak self] indexPath in
-                guard let self, let collectionView = self.collectionView else { return nil }
-                return self.collectionView(
-                    collectionView,
-                    leadingSwipeActionsConfigurationForItemAt: indexPath
-                )
-            }
-            configuration.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
-                guard let self, let collectionView = self.collectionView else { return nil }
-                return self.collectionView(
-                    collectionView,
-                    trailingSwipeActionsConfigurationForItemAt: indexPath
-                )
-            }
-            fallbackSection = NSCollectionLayoutSection.list(
-                using: configuration,
-                layoutEnvironment: environment
-            )
-        } else if section.layoutID != nil {
-            fallbackSection = fallback?(section, sectionIndex, environment)
-            if fallbackSection == nil {
+        activeSupplementaryAliases[AnyListID(section.id)] = [:]
+        activeItemSupplementaryKinds[AnyListID(section.id)] = []
+        activeSupplementaryKinds[AnyListID(section.id)] = []
+        layoutEnvironments[AnyListID(section.id)] = environment
+        var source = section.layoutSource
+        var depth = 0
+        while case .environment(let selector) = source {
+            guard depth < 32 else {
                 recordLayoutDiagnostics(
-                    [unresolvedLayoutIDIssue(for: section, sectionIndex: sectionIndex, fallbackWasProvided: fallback != nil)],
-                    options: diagnostics
-                )
+                    [
+                        .init(kind: .invalidLayout, message: "ListKit: environment layout recursion exceeds 32")
+                    ], options: diagnostics)
+                return nil
             }
-        } else {
-            fallbackSection = nil
+            source = selector.resolve(environment) ?? .builtIn(.defaultLayout)
+            depth += 1
         }
-        let layoutSection = section.makeCompositionalLayoutSection(fallback: fallbackSection)
+        guard let options = source.options else { return nil }
+        let isCustom: Bool
+        if case .custom = source { isCustom = true } else { isCustom = false }
+        var issues = options.issues(in: section, custom: isCustom)
+        let kinds = Set(section.supplementaries.map(\.kind))
+        let containerSize = environment.container.effectiveContentSize
+        if !containerSize.width.isFinite || !containerSize.height.isFinite {
+            issues.append(
+                .init(kind: .invalidLayout, message: "ListKit: layout environment requires finite container dimensions")
+            )
+        }
+        if !issues.isEmpty {
+            recordLayoutDiagnostics(issues, options: diagnostics)
+            return nil
+        }
+        let itemSupplementaries: [NSCollectionLayoutSupplementaryItem] = options.items.compactMap { rule in
+            kinds.contains(rule.kind) ? rule.makeItem() : nil
+        }
+        let layoutSection: NSCollectionLayoutSection
+        switch source {
+        case .environment: preconditionFailure("ListKit: unresolved environment layout")
+        case .custom(let custom):
+            layoutSection = custom.makeSection(
+                .init(
+                    section: section, sectionIndex: sectionIndex,
+                    environment: environment, sectionInsets: options.sectionInsets,
+                    itemSupplementaries: itemSupplementaries))
+            if let requested = options.sectionInsets,
+                layoutSection.contentInsets != requested.directionalEdgeInsets
+            {
+                recordLayoutDiagnostics(
+                    [
+                        .init(
+                            kind: .invalidLayout,
+                            message:
+                                "ListKit: CustomLayout must use context.sectionInsets before building geometry")
+                    ], options: diagnostics)
+                return nil
+            }
+        case .builtIn(let layout):
+            issues += ListDiagnostics.invalidSectionLayoutIssues(layout, sectionID: AnyListID(section.id))
+            if case .gridConfiguration(let grid) = layout {
+                if issues.isEmpty {
+                    issues += grid.environmentValidationErrors(
+                        in: environment, scrollDirection: scrollDirection
+                    ).map {
+                        .init(kind: .invalidLayout, message: "ListKit: section \(section.id): \($0)")
+                    }
+                }
+                if issues.isEmpty && !itemSupplementaries.isEmpty
+                    && !grid.supportsItemSupplementaries(in: environment, scrollDirection: scrollDirection)
+                {
+                    issues.append(
+                        .init(
+                            kind: .invalidLayout,
+                            message:
+                                "ListKit: heterogeneous grid tracks do not support repeated item supplementary kinds"
+                        ))
+                }
+            }
+            if let grid = layout.gridLayout, grid.itemMainAxisSize.isSelfSizing,
+                case .count(let lines, _) = grid.grouping, lines > 1 {
+                for content in section.supplementaries where itemSupplementaries.contains(where: { $0.elementKind == content.kind }) && !content.supportsElementKindMapping {
+                    issues.append(.init(kind: .invalidLayout, message:
+                        "ListKit: provider for \(content.kind) must accept elementKind and the UIKit indexPath for measured multi-line badges"))
+                }
+            }
+            if layout.uiKitListLayout != nil && !itemSupplementaries.isEmpty {
+                issues.append(
+                    .init(
+                        kind: .invalidLayout,
+                        message: "ListKit: UIKitListLayout does not support item supplementaries"))
+            }
+            if !issues.isEmpty {
+                recordLayoutDiagnostics(issues, options: diagnostics)
+                return nil
+            }
+            if let list = layout.uiKitListLayout {
+                var configuration = list.makeConfiguration()
+                configuration.leadingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+                    guard let self, let collectionView = self.collectionView else { return nil }
+                    return self.collectionView(
+                        collectionView,
+                        leadingSwipeActionsConfigurationForItemAt: indexPath
+                    )
+                }
+                configuration.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+                    guard let self, let collectionView = self.collectionView else { return nil }
+                    return self.collectionView(
+                        collectionView,
+                        trailingSwipeActionsConfigurationForItemAt: indexPath
+                    )
+                }
+                layoutSection = NSCollectionLayoutSection.list(
+                    using: configuration, layoutEnvironment: environment)
+            } else if let grid = layout.gridLayout, grid.itemMainAxisSize.isSelfSizing,
+                case .count(let lines, _) = grid.grouping, lines > 1, !itemSupplementaries.isEmpty {
+                let geometry = try! grid.geometry(in: environment, scrollDirection: scrollDirection)
+                let rules = options.items.filter { kinds.contains($0.kind) }
+                var aliases: [String: [String]] = [:]
+                let perLine = (0..<lines).map { line in
+                    rules.map { rule in
+                        let content = section.supplementaries.first { $0.kind == rule.kind }!
+                        let key = ListSupplementaryAliasKey(sectionID: AnyListID(section.id), kind: rule.kind,
+                            presentationID: content.identity.presentationID, line: line,
+                            lines: lines, tracks: geometry.tracks.count)
+                        let actualKind: String
+                        if let existing = supplementaryAliasKinds[key] { actualKind = existing }
+                        else {
+                            actualKind = "ListKit.ItemSupplementary.\(UUID().uuidString)"
+                            supplementaryAliasKinds[key] = actualKind
+                            supplementaryAliases[actualKind] = key
+                        }
+                        if let collectionView { content.register(collectionView, actualKind) }
+                        aliases[rule.kind, default: []].append(actualKind)
+                        return rule.makeItem(elementKind: actualKind)
+                    }
+                }
+                activeSupplementaryAliases[AnyListID(section.id)] = aliases
+                layoutSection = grid.makeSection(environment: environment,
+                    itemSupplementaries: itemSupplementaries, scrollDirection: scrollDirection,
+                    lineSupplementaries: perLine)
+            } else {
+                layoutSection = layout.makeCompositionalSection(
+                    environment: environment, itemSupplementaries: itemSupplementaries,
+                    scrollDirection: scrollDirection)
+            }
+        }
+        if !isCustom, let insets = options.sectionInsets {
+            layoutSection.contentInsets = insets.directionalEdgeInsets
+        }
+        for rule in options.boundaries {
+            guard kinds.contains(rule.kind) else { continue }
+            let kind = rule.kind
+            let existing = layoutSection.boundarySupplementaryItems.filter { $0.elementKind == kind }
+            if rule.geometry == nil {
+                guard existing.count == 1 else {
+                    recordLayoutDiagnostics(
+                        [
+                            .init(
+                                kind: .invalidLayout,
+                                message:
+                                    "ListKit: CustomLayout must provide exactly one boundary for kind \(rule.kind)"
+                            )
+                        ], options: diagnostics)
+                    return nil
+                }
+            } else {
+                guard existing.isEmpty else {
+                    recordLayoutDiagnostics(
+                        [
+                            .init(
+                                kind: .conflictingSupplementaryLayout,
+                                message: "ListKit: duplicate boundary geometry for kind \(rule.kind)")
+                        ], options: diagnostics)
+                    return nil
+                }
+                if let message = rule.resolutionError(environment: environment, insets: layoutSection.contentInsets) {
+                    recordLayoutDiagnostics([
+                        .init(kind: .invalidLayout, message: "ListKit: section \(section.id), boundary kind \(rule.kind): \(message)")
+                    ], options: diagnostics)
+                    return nil
+                }
+                if let item = rule.makeItem(
+                    environment: environment, insets: layoutSection.contentInsets)
+                {
+                    layoutSection.boundarySupplementaryItems.append(item)
+                }
+            }
+        }
+        for rule in options.decorationRules(section.decorations) {
+            guard let content = section.decorations.first(where: { $0.kind == rule.kind }) else {
+                continue
+            }
+            guard !layoutSection.decorationItems.contains(where: {
+                $0.elementKind == content.elementKind
+            })
+            else {
+                recordLayoutDiagnostics(
+                    [
+                        .init(
+                            kind: .invalidLayout,
+                            message: "ListKit: section \(section.id): duplicate decoration elementKind \(content.elementKind) for kind \(rule.kind) (provider and framework)")
+                    ], options: diagnostics)
+                return nil
+            }
+            layoutSection.decorationItems.append(rule.makeItem(kind: content.elementKind))
+        }
+        activeItemSupplementaryKinds[AnyListID(section.id)] = Set(
+            itemSupplementaries.map(\.elementKind))
+        activeSupplementaryKinds[AnyListID(section.id)] = Set(itemSupplementaries.map(\.elementKind))
+            .union(layoutSection.boundarySupplementaryItems.map(\.elementKind))
+        if layoutSection.orthogonalScrollingBehavior == .none {
+            orthogonalSectionIDs.remove(AnyListID(section.id))
+            orthogonalScrollStates.removeValue(forKey: AnyListID(section.id))
+            pendingOrthogonalOffsets.removeValue(forKey: AnyListID(section.id))
+        } else {
+            orthogonalSectionIDs.insert(AnyListID(section.id))
+        }
         if section.visibleItemsInvalidationHandler != nil {
             layoutSection.visibleItemsInvalidationHandler = { [weak self] items, offset, environment in
                 MainActor.assumeIsolated {
-                    self?.sections[safe: sectionIndex]?.visibleItemsInvalidationHandler?(items, offset, environment)
+                    self?.sections[safe: sectionIndex]?.visibleItemsInvalidationHandler?(
+                        items, offset, environment)
                 }
             }
         }
@@ -2708,18 +3134,6 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    private func unresolvedLayoutIDIssue(
-        for section: ListSection<SectionID>,
-        sectionIndex: Int,
-        fallbackWasProvided: Bool
-    ) -> ListDiagnosticsIssue {
-        let reason = fallbackWasProvided ? "fallback returned nil" : "no fallback was provided"
-        return ListDiagnosticsIssue(
-            kind: .unresolvedLayoutID,
-            message: "ListKit: section \(AnyListID(section.id)) at index \(sectionIndex) uses legacy layoutID \(section.layoutID.map(String.init(describing:)) ?? "<nil>"), but \(reason); makeCompositionalLayout(fallback:) will use the default list layout for this section"
-        )
-    }
-
     private func rebuildLookupTables(in collectionView: UICollectionView) {
         rowsByIdentity = [:]
         supplementariesByKindAndSection = [:]
@@ -2731,15 +3145,16 @@ where SectionID: Hashable & Sendable {
                 rowsByIdentity[row.identity] = row
             }
             for supplementary in section.supplementaries {
-                supplementary.register(collectionView)
-                supplementariesByKindAndSection[SupplementaryKey(kind: supplementary.kind, sectionID: sectionID)] = supplementary
+                supplementary.register(collectionView, supplementary.kind)
+                supplementariesByKindAndSection[
+                    SupplementaryKey(kind: supplementary.kind, sectionID: sectionID)] = supplementary
             }
         }
     }
 
-    private func registerBackgroundDecorationsIfNeeded() {
+    private func registerDecorationsIfNeeded() {
         guard let layout = collectionView?.collectionViewLayout else { return }
-        registerBackgroundDecorations(on: layout, sections: sections)
+        registerDecorations(on: layout, sections: sections)
     }
 
     private func didReorder(
@@ -2748,8 +3163,8 @@ where SectionID: Hashable & Sendable {
         let initialSnapshot = transaction.initialSnapshot
         let finalSnapshot = transaction.finalSnapshot
         let movedIdentities = transaction.difference.compactMap { change -> AnyListIdentity? in
-            guard case let .remove(_, identity, associatedWith: destination) = change,
-                  destination != nil
+            guard case .remove(_, let identity, associatedWith: let destination) = change,
+                destination != nil
             else { return nil }
             return identity
         }
@@ -2787,7 +3202,8 @@ where SectionID: Hashable & Sendable {
                 from: section.outlineRoots,
                 previousExpansionState: previousExpansionStates[sectionID]
             )
-            guard !Self.outlineSnapshotsAreEquivalent(dataSource.snapshot(for: sectionID), snapshot) else {
+            guard !Self.outlineSnapshotsAreEquivalent(dataSource.snapshot(for: sectionID), snapshot)
+            else {
                 return nil
             }
             return ListOutlineSnapshotApplication(
@@ -2818,7 +3234,7 @@ where SectionID: Hashable & Sendable {
             completion()
             return
         }
-        // Each section snapshot must also finish unwinding before the next one starts.
+        // 每个分区快照的回调返回后，才能开始下一个分区更新。
         let nextApply = ListMainActorCallbackBox { [weak self] in
             guard let self else {
                 completion()
@@ -2857,7 +3273,8 @@ where SectionID: Hashable & Sendable {
                 let identity = node.row.identity
                 let shouldExpand: Bool
                 if let previousExpansionState,
-                   previousExpansionState.existingItems.contains(identity) {
+                    previousExpansionState.existingItems.contains(identity)
+                {
                     shouldExpand = previousExpansionState.expandedItems.contains(identity)
                 } else {
                     shouldExpand = node.isExpanded
@@ -2881,7 +3298,9 @@ where SectionID: Hashable & Sendable {
     }
 
     private func notifyExpansionChange(identity: AnyListIdentity, isExpanded: Bool) {
-        guard let section = sections.first(where: { AnyListID($0.id) == identity.sectionID }) else { return }
+        guard let section = sections.first(where: { AnyListID($0.id) == identity.sectionID }) else {
+            return
+        }
         section.expansionChangeHandler?(identity, isExpanded)
     }
 
@@ -2890,13 +3309,15 @@ where SectionID: Hashable & Sendable {
         at indexPath: IndexPath
     ) -> Bool {
         guard row.showsOutlineDisclosure,
-              let section = sections[safe: indexPath.section],
-              section.hasOutlineHierarchy else { return false }
+            let section = sections[safe: indexPath.section],
+            section.hasOutlineHierarchy
+        else { return false }
 
         let sectionID = AnyListID(section.id)
         var snapshot = dataSource.snapshot(for: sectionID)
         guard snapshot.contains(row.identity),
-              !snapshot.snapshot(of: row.identity).items.isEmpty else { return false }
+            !snapshot.snapshot(of: row.identity).items.isEmpty
+        else { return false }
 
         let willExpand = !snapshot.isExpanded(row.identity)
         if willExpand {
@@ -2927,36 +3348,37 @@ where SectionID: Hashable & Sendable {
         return IndexPath(item: item, section: section)
     }
 
-    private func registerBackgroundDecorations(
+    private func registerDecorations(
         on layout: UICollectionViewLayout,
         sections: [ListSection<SectionID>]
     ) {
         for section in sections {
-            section.backgroundDecorationItem?.register(on: layout)
+            section.decorations.forEach { $0.register(on: layout) }
         }
     }
 
-    private static func makeLayoutSignature(from sections: [ListSection<SectionID>]) -> [ListSectionLayoutSignature] {
+    private static func makeLayoutSignature(from sections: [ListSection<SectionID>])
+        -> [ListSectionLayoutSignature<SectionID>]
+    {
         sections.map { section in
             ListSectionLayoutSignature(
                 sectionID: AnyListID(section.id),
-                layoutID: section.layoutID,
-                sectionLayout: section.sectionLayout,
-                customLayoutID: section.customSectionLayout?.id,
+                source: section.layoutSource,
                 hasVisibleItemsInvalidationHandler: section.visibleItemsInvalidationHandler != nil,
                 supplementarySignatures: section.supplementaries.map { supplementary in
                     ListSupplementaryLayoutSignature(
                         identity: supplementary.identity,
-                        kind: supplementary.kind,
-                        layout: section.resolvedSupplementaryLayouts().first { $0.kind == supplementary.kind }
+                        kind: supplementary.kind
                     )
                 },
-                backgroundDecoration: section.backgroundDecorationItem
+                decorations: section.decorations
             )
         }
     }
 
-    private static func makeCoreSnapshots(from sections: [ListSection<SectionID>]) -> [ListSectionSnapshot] {
+    private static func makeCoreSnapshots(from sections: [ListSection<SectionID>])
+        -> [ListSectionSnapshot]
+    {
         sections.map { section in
             ListSectionSnapshot(
                 sectionID: AnyListID(section.id),
@@ -3041,9 +3463,10 @@ where SectionID: Hashable & Sendable {
                 case .reconfigure(let layout):
                     let context = context(for: indexPath, identity: row.identity)
                     if animatingContent,
-                       oldRowSnapshot.refreshID != rowSnapshot.refreshID,
-                       case .opacity(let duration) = row.contentTransition.storage,
-                       duration > 0 {
+                        oldRowSnapshot.refreshID != rowSnapshot.refreshID,
+                        case .opacity(let duration) = row.contentTransition.storage,
+                        duration > 0
+                    {
                         coordinator.enter()
                         UIView.transition(
                             with: cell.contentView,
@@ -3097,7 +3520,8 @@ where SectionID: Hashable & Sendable {
             guard
                 let supplementary = supplementary(kind: target.kind, at: target.indexPath),
                 let supplementarySnapshot = applyPlan.newSupplementariesByIdentity[supplementary.identity],
-                let oldSupplementarySnapshot = applyPlan.oldSupplementariesByIdentity[supplementary.identity],
+                let oldSupplementarySnapshot = applyPlan.oldSupplementariesByIdentity[
+                    supplementary.identity],
                 !applyPlan.snapshotReloadSections.contains(supplementary.identity.sectionID),
                 ListApplyPlanner.shouldRefreshVisibleSupplementary(
                     supplementarySnapshot,
@@ -3107,7 +3531,8 @@ where SectionID: Hashable & Sendable {
 
             reconfiguredCount += reconfigureVisibleSupplementary(target, supplementary: supplementary)
             if case .supplementary(let rule) = supplementarySnapshot.refreshRule,
-               rule.action == .reconfigureVisible(layout: .invalidate) {
+                rule.action == .reconfigureVisible(layout: .invalidate)
+            {
                 needsLayoutInvalidation = true
             }
         }
@@ -3146,7 +3571,9 @@ where SectionID: Hashable & Sendable {
 
     private func rebindVisibleSupplementaryTapHandlers() {
         for target in visibleSupplementaryTargets() {
-            guard let supplementary = supplementary(kind: target.kind, at: target.indexPath) else { continue }
+            guard let supplementary = supplementary(kind: target.kind, at: target.indexPath) else {
+                continue
+            }
             let context = context(for: target.indexPath, identity: supplementary.identity)
             ListTapHandlerInstaller.install(
                 on: target.view,
@@ -3164,7 +3591,8 @@ where SectionID: Hashable & Sendable {
         guard let collectionView else { return [] }
         let visibleRect = CGRect(origin: collectionView.contentOffset, size: collectionView.bounds.size)
         let targetSectionID = sectionID.map(AnyListID.init)
-        let attributes = collectionView.collectionViewLayout.layoutAttributesForElements(in: visibleRect) ?? []
+        let attributes =
+            collectionView.collectionViewLayout.layoutAttributesForElements(in: visibleRect) ?? []
 
         return attributes.compactMap { attributes -> VisibleSupplementaryTarget? in
             guard
@@ -3172,21 +3600,26 @@ where SectionID: Hashable & Sendable {
                 let elementKind = attributes.representedElementKind
             else { return nil }
             let indexPath = attributes.indexPath
-            if let kind, elementKind != kind {
+            let logicalKind = supplementaryAliases[elementKind]?.kind ?? elementKind
+            let itemPath = supplementaryItemIndexPath(kind: elementKind, at: indexPath)
+            if let kind, logicalKind != kind {
                 return nil
             }
             if let targetSectionID, self.sectionID(at: indexPath.section) != targetSectionID {
                 return nil
             }
             if let matchingIndexPaths {
-                guard matchingIndexPaths.contains(indexPath), isItemSupplementary(kind: elementKind, at: indexPath) else {
+                guard matchingIndexPaths.contains(itemPath),
+                    isItemSupplementary(kind: logicalKind, at: itemPath)
+                else {
                     return nil
                 }
             }
-            guard let view = collectionView.supplementaryView(forElementKind: elementKind, at: indexPath) else {
+            guard let view = collectionView.supplementaryView(forElementKind: elementKind, at: indexPath)
+            else {
                 return nil
             }
-            return VisibleSupplementaryTarget(kind: elementKind, indexPath: indexPath, view: view)
+            return VisibleSupplementaryTarget(kind: logicalKind, indexPath: itemPath, view: view)
         }
         .sorted { lhs, rhs in
             lhs.indexPath.section == rhs.indexPath.section
@@ -3197,20 +3630,142 @@ where SectionID: Hashable & Sendable {
 
     private func isItemSupplementary(kind: String, at indexPath: IndexPath) -> Bool {
         guard let section = sections[safe: indexPath.section] else { return false }
-        return section.resolvedSupplementaryLayouts().first { $0.kind == kind }?.placement.isItem == true
+        if let options = section.layoutSource.options {
+            return options.items.contains { $0.kind == kind }
+                && section.supplementaries.contains { $0.kind == kind }
+        }
+        return activeItemSupplementaryKinds[AnyListID(section.id)]?.contains(kind) == true
+    }
+
+    private func clearResolvedLayoutState() {
+        activeSupplementaryAliases.removeAll()
+        activeSupplementaryKinds.removeAll()
+        activeItemSupplementaryKinds.removeAll()
+        layoutEnvironments.removeAll()
+        orthogonalSectionIDs.removeAll()
+        orthogonalScrollStates.removeAll()
+        pendingOrthogonalOffsets.removeAll()
+        resolvedCollectionLayout = nil
+    }
+
+    /// 仅已存在且启用几何的元素种类可能有待替换的旧附属视图。
+    /// 解析结果为空集合时仍有意义：内容声明可以保留，但其几何已关闭。
+    private func supplementaryIsEnabled(_ kind: String, in section: ListSection<SectionID>) -> Bool {
+        // 流式布局和独立提供的布局不一定使用分区声明中的几何。
+        // 仅在解析元数据属于当前安装的布局时使用它。
+        guard let resolvedCollectionLayout,
+            resolvedCollectionLayout === collectionView?.collectionViewLayout else { return true }
+        var source = section.layoutSource
+        if let environment = layoutEnvironments[AnyListID(section.id)] {
+            var depth = 0
+            while case .environment(let selector) = source, depth < 32 {
+                source = selector.resolve(environment) ?? .builtIn(.defaultLayout)
+                depth += 1
+            }
+        }
+        if case .builtIn(let layout) = source {
+            let options = layout.options
+            guard options.boundaries.contains(where: { $0.kind == kind })
+                || options.items.contains(where: { $0.kind == kind }) else { return false }
+        }
+        // UIKit 不公开分区的组结构，自定义提供者可能安装自己的条目附属视图，
+        // 而未使用上下文提供的附属视图。已经显示的视图可以直接证明
+        // 对应元素种类已启用，仍需参与身份替换。
+        if displayedSupplementariesByView.values.contains(where: {
+            $0.identity.sectionID == AnyListID(section.id) && $0.kind == kind
+        }) { return true }
+        if let active = activeSupplementaryKinds[AnyListID(section.id)] {
+            return active.contains(kind)
+        }
+        // 未通过 makeCompositionalSection 提供的独立布局没有对应解析元数据。
+        // 沿用这些布局的身份替换行为，不通过当前屏幕可见性推断是否替换。
+        return true
+    }
+
+    /// 通过滚动容器中的单元格，将 UIKit 滚动容器与分区身份关联。
+    /// 遍历遇到单元格或内嵌集合视图时停止，避免修改业务自有的嵌套滚动视图。
+    /// 仅使用 UIView 和 UIScrollView 接口，不依赖私有类名或键值编码。
+    private func orthogonalScrollViewsBySection() -> [AnyListID: UIScrollView] {
+        guard let collectionView else { return [:] }
+        var result: [AnyListID: UIScrollView] = [:]
+        func visit(_ view: UIView) {
+            if let cell = view as? UICollectionViewCell {
+                guard let indexPath = collectionView.indexPath(for: cell),
+                    let identity = dataSource.itemIdentifier(for: indexPath) else { return }
+                var ancestor = cell.superview
+                while let current = ancestor, current !== collectionView {
+                    if let scrollView = current as? UIScrollView {
+                        result[identity.sectionID] = scrollView
+                        break
+                    }
+                    ancestor = current.superview
+                }
+                return
+            }
+            if view is UICollectionView { return }
+            for child in view.subviews { visit(child) }
+        }
+        for child in collectionView.subviews { visit(child) }
+        return result
+    }
+
+    @discardableResult
+    private func bindOrthogonalScrollViews() -> [AnyListID: UIScrollView] {
+        let views = orthogonalScrollViewsBySection()
+        for (sectionID, scrollView) in views {
+            if orthogonalScrollStates[sectionID]?.scrollView !== scrollView {
+                orthogonalScrollStates[sectionID] = ListOrthogonalScrollState(scrollView)
+            }
+        }
+        return views
+    }
+
+    private func scheduleOrthogonalOffsetRestoration() {
+        guard !isOrthogonalRestorationScheduled else { return }
+        isOrthogonalRestorationScheduled = true
+        // 显示回调可能早于 UIKit 将单元格加入滚动容器的时刻。
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isOrthogonalRestorationScheduled = false
+            guard !self.isApplyingSnapshot else { return }
+            self.restoreOrthogonalOffsets([:])
+        }
+    }
+
+    private func restoreOrthogonalOffsets(_ offsets: [AnyListID: CGPoint]) {
+        guard let collectionView else { return }
+        pendingOrthogonalOffsets.merge(offsets.filter { orthogonalSectionIDs.contains($0.key) }) { _, new in new }
+        collectionView.layoutIfNeeded()
+        for (sectionID, scrollView) in bindOrthogonalScrollViews() {
+            guard let offset = pendingOrthogonalOffsets.removeValue(forKey: sectionID) else { continue }
+            let insets = scrollView.adjustedContentInset
+            let target = CGPoint(
+                x: min(max(offset.x, -insets.left), max(-insets.left,
+                    scrollView.contentSize.width - scrollView.bounds.width + insets.right)),
+                y: min(max(offset.y, -insets.top), max(-insets.top,
+                    scrollView.contentSize.height - scrollView.bounds.height + insets.bottom)))
+            if scrollView.contentOffset != target {
+                scrollView.setContentOffset(target, animated: false)
+                scrollView.layoutIfNeeded()
+            }
+        }
+        collectionView.layoutIfNeeded()
     }
 
     private func configureSelectionBehavior() {
         guard let collectionView else { return }
-        let selectionSections = sections.compactMap { section -> (ListSection<SectionID>, ResolvedListSelectionMode)? in
+        let selectionSections = sections.compactMap {
+            section -> (ListSection<SectionID>, ResolvedListSelectionMode)? in
             let mode = selectionMode(for: section)
             return mode == .none ? nil : (section, mode)
         }
         let allowsRowSelection = sections.contains(where: sectionAllowsUserSelection)
-        let allowsHighlight = collectionDelegateHasHighlightIntent
+        let allowsHighlight =
+            collectionDelegateHasHighlightIntent
             || sections.contains { $0.rows.contains(where: \.hasAutomaticHighlightIntent) }
         collectionView.allowsSelection = allowsRowSelection || allowsHighlight
-        collectionView.allowsMultipleSelection = selectionSections.contains { $0.1 == .multiple }
+        collectionView.allowsMultipleSelection =
+            selectionSections.contains { $0.1 == .multiple }
             || selectionSections.count > 1
     }
 
@@ -3316,16 +3871,23 @@ where SectionID: Hashable & Sendable {
     }
 
     private var collectionDelegateHasSelectionIntent: Bool {
-        collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:shouldSelectItemAt:)))
-            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:didSelectItemAt:)))
-            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:shouldDeselectItemAt:)))
-            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:didDeselectItemAt:)))
+        collectionDelegateResponds(
+            to: #selector(UICollectionViewDelegate.collectionView(_:shouldSelectItemAt:)))
+            || collectionDelegateResponds(
+                to: #selector(UICollectionViewDelegate.collectionView(_:didSelectItemAt:)))
+            || collectionDelegateResponds(
+                to: #selector(UICollectionViewDelegate.collectionView(_:shouldDeselectItemAt:)))
+            || collectionDelegateResponds(
+                to: #selector(UICollectionViewDelegate.collectionView(_:didDeselectItemAt:)))
     }
 
     private var collectionDelegateHasHighlightIntent: Bool {
-        collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:shouldHighlightItemAt:)))
-            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:didHighlightItemAt:)))
-            || collectionDelegateResponds(to: #selector(UICollectionViewDelegate.collectionView(_:didUnhighlightItemAt:)))
+        collectionDelegateResponds(
+            to: #selector(UICollectionViewDelegate.collectionView(_:shouldHighlightItemAt:)))
+            || collectionDelegateResponds(
+                to: #selector(UICollectionViewDelegate.collectionView(_:didHighlightItemAt:)))
+            || collectionDelegateResponds(
+                to: #selector(UICollectionViewDelegate.collectionView(_:didUnhighlightItemAt:)))
     }
 
     private func collectionDelegateResponds(to selector: Selector) -> Bool {
@@ -3360,8 +3922,10 @@ where SectionID: Hashable & Sendable {
     private func reserveScrollRange(for anchor: ListVisibleRowAnchor) {
         guard let collectionView else { return }
         temporaryAnchorBaseBottomInset = anchor.baseBottomInset
-        let systemBottomInset = collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
-        let bottomInsetKeepingCurrentOffset = collectionView.contentOffset.y
+        let systemBottomInset =
+            collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
+        let bottomInsetKeepingCurrentOffset =
+            collectionView.contentOffset.y
             + collectionView.bounds.height
             - systemBottomInset
         UIView.performWithoutAnimation {
@@ -3399,7 +3963,8 @@ where SectionID: Hashable & Sendable {
 
         let minimumOffsetY = -collectionView.adjustedContentInset.top
         let desiredOffsetY = max(minimumOffsetY, attributes.frame.minY - anchor.viewportMinY)
-        let systemBottomInset = collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
+        let systemBottomInset =
+            collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
         let maximumOffsetWithoutCompensation = max(
             minimumOffsetY,
             collectionView.contentSize.height
@@ -3428,8 +3993,10 @@ where SectionID: Hashable & Sendable {
             return 0
         }
         cancelTemporaryAnchorReservation()
-        let baseBottomInset = collectionView.contentInset.bottom - preservedAnchorBottomInsetCompensation
-        let systemBottomInset = collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
+        let baseBottomInset =
+            collectionView.contentInset.bottom - preservedAnchorBottomInsetCompensation
+        let systemBottomInset =
+            collectionView.adjustedContentInset.bottom - collectionView.contentInset.bottom
         let minimumOffsetY = -collectionView.adjustedContentInset.top
         let maximumOffsetWithoutCompensation = max(
             minimumOffsetY,
@@ -3491,7 +4058,8 @@ where SectionID: Hashable & Sendable {
         let snapshot = dataSource.snapshot()
         return snapshot.itemIdentifiers.compactMap { identity in
             guard identity.rowID == target.rowID,
-                  target.sectionID == nil || identity.sectionID == target.sectionID else { return nil }
+                target.sectionID == nil || identity.sectionID == target.sectionID
+            else { return nil }
             return Self.indexPath(for: identity, in: snapshot)
         }
     }
@@ -3516,8 +4084,8 @@ where SectionID: Hashable & Sendable {
         let snapshot = dataSource.snapshot()
         if let sectionID {
             guard let section = snapshot.indexOfSection(sectionID),
-                  let identity = snapshot.itemIdentifiers(inSection: sectionID).last,
-                  let item = snapshot.itemIdentifiers(inSection: sectionID).firstIndex(of: identity)
+                let identity = snapshot.itemIdentifiers(inSection: sectionID).last,
+                let item = snapshot.itemIdentifiers(inSection: sectionID).firstIndex(of: identity)
             else { return nil }
             return IndexPath(item: item, section: section)
         }
@@ -3538,9 +4106,15 @@ where SectionID: Hashable & Sendable {
             }
     }
 
+    private func supplementaryItemIndexPath(kind: String, at indexPath: IndexPath) -> IndexPath {
+        supplementaryAliases[kind]?.itemIndexPath(for: indexPath) ?? indexPath
+    }
+
     private func supplementary(kind: String, at indexPath: IndexPath) -> AnySupplementary? {
         let sectionID = sectionID(at: indexPath.section)
-        return supplementariesByKindAndSection[SupplementaryKey(kind: kind, sectionID: sectionID)]
+        let alias = supplementaryAliases[kind]
+        return supplementariesByKindAndSection[SupplementaryKey(kind: alias?.kind ?? kind,
+            sectionID: alias?.sectionID ?? sectionID)]
     }
 
     private func sectionID(at sectionIndex: Int) -> AnyListID {
@@ -3554,7 +4128,8 @@ where SectionID: Hashable & Sendable {
         guard let collectionView else {
             fatalError("CollectionListAdapter collectionView was released")
         }
-        return ListContext(identity: identity, indexPath: indexPath, collectionView: collectionView) { [weak self] event, context in
+        return ListContext(identity: identity, indexPath: indexPath, collectionView: collectionView) {
+            [weak self] event, context in
             self?.dispatch(event, context: context)
         }
     }
@@ -3585,6 +4160,25 @@ private final class CollectionContextMenuSession {
     init(configuration: UIContextMenuConfiguration, targets: [CollectionContextMenuTarget]) {
         self.configuration = configuration
         self.targets = targets
+    }
+}
+
+/// 即使 UIKit 移除不可见分区的滚动容器，也保留该分区最近的偏移量。
+/// 绑定仅适用于当前有效分区身份，观察回调弱引用其所有者。
+@MainActor
+private final class ListOrthogonalScrollState {
+    weak var scrollView: UIScrollView?
+    private(set) var offset: CGPoint
+    private var observation: NSKeyValueObservation?
+
+    init(_ scrollView: UIScrollView) {
+        self.scrollView = scrollView
+        offset = scrollView.contentOffset
+        observation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, change in
+            MainActor.assumeIsolated {
+                if let offset = change.newValue { self?.offset = offset }
+            }
+        }
     }
 }
 
@@ -3629,8 +4223,8 @@ private final class CollectionApplyAnimationMetrics {
     var scrollOutcome = ListScrollOutcome()
 }
 
-private extension ListScrollPosition {
-    var collectionViewPosition: UICollectionView.ScrollPosition {
+extension ListScrollPosition {
+    fileprivate var collectionViewPosition: UICollectionView.ScrollPosition {
         switch self {
         case .top: .top
         case .center: .centeredVertically
@@ -3640,20 +4234,18 @@ private extension ListScrollPosition {
     }
 }
 
-private struct ListSectionLayoutSignature: Hashable {
+private struct ListSectionLayoutSignature<SectionID>: Hashable
+where SectionID: Hashable & Sendable {
     let sectionID: AnyListID
-    let layoutID: AnyListID?
-    let sectionLayout: ListSectionLayout?
-    let customLayoutID: AnyListID?
+    let source: ListSectionLayoutSource<SectionID>
     let hasVisibleItemsInvalidationHandler: Bool
     let supplementarySignatures: [ListSupplementaryLayoutSignature]
-    let backgroundDecoration: ListBackgroundDecoration?
+    let decorations: [SectionDecoration]
 }
 
 private struct ListSupplementaryLayoutSignature: Hashable {
     let identity: AnyListIdentity
     let kind: String
-    let layout: ListSupplementaryLayout?
 }
 
 private struct ListOutlineSnapshotApplication: Sendable {
@@ -3744,8 +4336,8 @@ where SectionID: Hashable & Sendable {
     }
 }
 
-private extension Array {
-    subscript(safe index: Int) -> Element? {
+extension Array {
+    fileprivate subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
 }
