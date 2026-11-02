@@ -6,3 +6,6 @@ DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
+
+# Keep local experiments and their generated artifacts out of the repository.
+/Experiments/
