@@ -36,7 +36,7 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
                         } layout: {
                             grid
                         } supplementaries: {
-                            SectionSupplementary(MeasuredBadgeView.self, kind: "badge", id: 0) {
+                            SectionSupplementary(MeasuredBadgeView.self, kind: "badge", elementID: 0) {
                                 view, context in
                                 view.item = context.indexPath.item
                             }
@@ -104,12 +104,12 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
                     }
             } supplementaries: {
                 if replacement {
-                    SectionSupplementary(OtherMeasuredBadgeView.self, kind: "badge", id: 1) { view, context in
+                    SectionSupplementary(OtherMeasuredBadgeView.self, kind: "badge", elementID: 1) { view, context in
                         view.item = context.indexPath.item
                         view.version = version
                     }
                 } else {
-                    SectionSupplementary(MeasuredBadgeView.self, kind: "badge", id: 0) { view, context in
+                    SectionSupplementary(MeasuredBadgeView.self, kind: "badge", elementID: 0) { view, context in
                         view.item = context.indexPath.item
                         view.version = version
                         configurations[context.indexPath.item, default: 0] += 1
@@ -176,7 +176,7 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
         let f = LayoutFixture(width: 360, count: 8)
         defer { f.close() }
         var requests: [(Int, Int)] = []
-        let provider = ProviderSupplementary("badge", id: 0, view: MeasuredBadgeView.self) {
+        let provider = ProviderSupplementary("badge", view: MeasuredBadgeView.self) {
             collection, kind, path, context in
             requests.append((path.item, context.indexPath.item))
             let view = collection.lk.dequeue(MeasuredBadgeView.self, ofKind: kind, for: path)
@@ -225,7 +225,7 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
                                     itemAnchor: .topTrailing)
                             }
                     } supplementaries: {
-                        SectionSupplementary(MeasuredBadgeView.self, kind: "badge", id: 0) { view, context in
+                        SectionSupplementary(MeasuredBadgeView.self, kind: "badge", elementID: 0) { view, context in
                             view.item = context.indexPath.item
                             view.version = sectionID
                         }
@@ -262,7 +262,7 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
             } layout: {
                 GridLayout(tracks: 1).itemMainAxisSize(.fixed(44))
             } supplementaries: {
-                SectionSupplementary(MeasuredBadgeView.self, kind: "badge", id: 0) { _, _ in }
+                SectionSupplementary(MeasuredBadgeView.self, kind: "badge", elementID: 0) { _, _ in }
             }
         }
         f.render()
@@ -288,7 +288,7 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
                             itemAnchor: .topTrailing)
                     }
             } supplementaries: {
-                SectionSupplementary(MeasuredBadgeView.self, kind: "badge", id: 0) { view, context in
+                SectionSupplementary(MeasuredBadgeView.self, kind: "badge", elementID: 0) { view, context in
                     view.item = context.indexPath.item
                 }
             }
@@ -328,7 +328,7 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
                     }
                 } supplementaries: {
                     SectionSupplementary(
-                        ProviderSupplementary("badge", id: 0, view: MeasuredBadgeView.self) {
+                        ProviderSupplementary("badge", view: MeasuredBadgeView.self) {
                             collection, path, _ in
                             collection.lk.dequeue(MeasuredBadgeView.self, ofKind: "badge", for: path)
                         })

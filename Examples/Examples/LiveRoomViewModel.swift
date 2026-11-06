@@ -780,8 +780,7 @@ final class LiveRoomViewModel {
     private func micSeatsHeader(refreshID: String) -> ListSectionSupplementary<LiveRoomSection> {
         SectionSupplementary(
             SectionHeaderView.self,
-            kind: Self.micTitleKind,
-            id: "mic-header"
+            kind: Self.micTitleKind
         ) { view, _ in
             view.configure(title: "Mic seats", detail: "Tap a seat to move speaking focus")
         }
@@ -844,8 +843,7 @@ final class LiveRoomViewModel {
     private func messagesHeader(count: Int) -> ListSectionSupplementary<LiveRoomSection> {
         SectionSupplementary(
             SectionHeaderView.self,
-            kind: Self.sectionHeaderKind,
-            id: "messages-header"
+            kind: Self.sectionHeaderKind
         ) { view, _ in
             view.configure(title: "Live activity", detail: "\(count) messages")
         }
@@ -932,8 +930,7 @@ final class LiveRoomViewModel {
     private func giftsHeader(selectedGiftID: String) -> ListSectionSupplementary<LiveRoomSection> {
         SectionSupplementary(
             SectionHeaderView.self,
-            kind: Self.sectionHeaderKind,
-            id: "gifts-header"
+            kind: Self.sectionHeaderKind
         ) { view, _ in
             view.configure(title: "Gift tray", detail: "Selection uses refreshID reconfigure")
         }
@@ -991,11 +988,16 @@ final class LiveRoomViewModel {
         let moderationCount = state.moderationEvents.count
         return TableSection(.moderation) {
             moderationRows()
-        } header: {
-            TableHeader(AdminHeaderView.self, id: "moderation-header") { view, _ in
+        }
+        .layout {
+            TableLayout()
+                .rowHeight(.fixed(72))
+                .headerHeight(.estimated(44))
+        }
+        .header {
+            TableHeader(AdminHeaderView.self) { view, _ in
                 view.configure(title: "Admin Events", detail: "\(moderationCount)")
             }
-            .height(.automatic(estimated: 44))
             .refreshID(moderationCount)
         }
         .selectionMode(.single)
@@ -1006,7 +1008,6 @@ final class LiveRoomViewModel {
             let row = TableRow(model: event, cell: AdminEventTableCell.self) { cell, event, _ in
                 cell.configure(event)
             }
-            .height(.fixed(72))
             .refreshID(event.refreshToken)
             .contentTransition(.opacity)
             .selected(event.isSelected)

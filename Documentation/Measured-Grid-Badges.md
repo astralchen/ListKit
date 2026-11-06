@@ -43,12 +43,12 @@ GridLayout(tracks: 2)
     }
 ```
 
-typed `SectionSupplementary(BadgeView.self, kind: "badge", id: ...)` 自动适配，无须逐 line 声明多份内容。
+typed `SectionSupplementary(BadgeView.self, kind: "badge")` 自动适配，无须逐 line 声明多份内容。
 
 自定义 provider 改用四参数重载；`indexPath` 与 `elementKind` 一起用于 dequeue，`context.indexPath` 用于业务内容：
 
 ```swift
-ProviderSupplementary("badge", id: "badge", view: BadgeView.self) {
+ProviderSupplementary("badge", view: BadgeView.self) {
     collectionView, elementKind, indexPath, context in
     let view = collectionView.lk.dequeue(BadgeView.self, ofKind: elementKind, for: indexPath)
     view.configure(item: context.indexPath.item)

@@ -44,10 +44,10 @@ final class DeclarativeLayoutTests: XCTestCase {
 
         } supplementaries: {
             SectionSupplementary(
-                UICollectionReusableView.self, kind: "same", id: 1
+                UICollectionReusableView.self, kind: "same", elementID: 1
             ) { _, _ in }
             SectionSupplementary(
-                UICollectionReusableView.self, kind: "same", id: 2
+                UICollectionReusableView.self, kind: "same", elementID: 2
             ) { _, _ in }
         }
         let issues = ListDiagnostics.validate([invalid])
@@ -73,7 +73,7 @@ final class DeclarativeLayoutTests: XCTestCase {
             native
         } supplementaries: {
             SectionSupplementary(
-                UICollectionReusableView.self, kind: "badge", id: 0
+                UICollectionReusableView.self, kind: "badge", elementID: 0
             ) { _, _ in }
         }
         XCTAssertTrue(ListDiagnostics.validate([section]).contains { $0.kind == .invalidLayout })
@@ -118,7 +118,7 @@ final class DeclarativeLayoutTests: XCTestCase {
 
                 } supplementaries: {
                     SectionSupplementary(
-                        UICollectionReusableView.self, kind: "badge", id: 0
+                        UICollectionReusableView.self, kind: "badge", elementID: 0
                     ) { _, _ in }
                 }
             ], transaction: .disabled)
@@ -292,11 +292,11 @@ final class DeclarativeLayoutTests: XCTestCase {
         } supplementaries: {
             SectionSupplementary(
                 UICollectionReusableView.self,
-                kind: UICollectionView.elementKindSectionHeader, id: 0
+                kind: UICollectionView.elementKindSectionHeader, elementID: 0
             ) { _, _ in }
 
             SectionSupplementary(
-                UICollectionReusableView.self, kind: "badge", id: 0
+                UICollectionReusableView.self, kind: "badge", elementID: 0
             ) { _, _ in }
         } decorations: {
             SectionDecoration(LayoutTestBackground.self, kind: "section-decoration")

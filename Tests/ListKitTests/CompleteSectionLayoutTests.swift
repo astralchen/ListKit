@@ -16,7 +16,7 @@ import XCTest
     -> ListSectionSupplementary<Int>
     {
         let contentID = id ?? kind
-        return SectionSupplementary(UICollectionReusableView.self, kind: kind, id: contentID) {
+        return SectionSupplementary(UICollectionReusableView.self, kind: kind, elementID: contentID) {
             _, _ in
         }.refreshID(version)
     }

@@ -36,7 +36,7 @@ import XCTest
                 }
             } supplementaries: {
                 for kind in ["title", "toolbar"] {
-                    SectionSupplementary(ReplacementA.self, kind: kind, id: version) { view, _ in
+                    SectionSupplementary(ReplacementA.self, kind: kind, elementID: version) { view, _ in
                         view.value = "\(id):\(version)"
                     }.refreshID(0).refresh(when: .never)
                 }
@@ -108,11 +108,11 @@ import XCTest
                         }
                 } supplementaries: {
                     if changesType && stage > 0 {
-                        SectionSupplementary(ReplacementB.self, kind: "shared", id: contentID) { view, _ in
+                        SectionSupplementary(ReplacementB.self, kind: "shared", elementID: contentID) { view, _ in
                             view.value = "\(stage):\(version)"
                         }.refreshID(version).refresh(when: trigger)
                     } else {
-                        SectionSupplementary(ReplacementA.self, kind: "shared", id: contentID) { view, _ in
+                        SectionSupplementary(ReplacementA.self, kind: "shared", elementID: contentID) { view, _ in
                             view.value = "\(stage):\(version)"
                         }.refreshID(version).refresh(when: trigger)
                     }

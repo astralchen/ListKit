@@ -26,7 +26,7 @@ final class GridDynamicTypeTests: XCTestCase {
                     }
             } supplementaries: {
                 if badges {
-                    SectionSupplementary(UICollectionReusableView.self, kind: "badge", id: 0) { _, _ in }
+                    SectionSupplementary(UICollectionReusableView.self, kind: "badge", elementID: 0) { _, _ in }
                 }
             }], transaction: .disabled)
             f.render()

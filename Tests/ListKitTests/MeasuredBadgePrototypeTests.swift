@@ -70,7 +70,7 @@ final class MeasuredBadgePrototypeTests: XCTestCase {
                         } supplementaries: {
                             for line in 0..<3 {
                                 SectionSupplementary(
-                                    UICollectionReusableView.self, kind: "badge-\(line)", id: line
+                                    UICollectionReusableView.self, kind: "badge-\(line)", elementID: line
                                 ) { _, _ in }
                             }
                         }

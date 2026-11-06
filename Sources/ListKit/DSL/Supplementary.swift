@@ -3,6 +3,12 @@ import UIKit
 
 // MARK: - Supplementary Model
 
+/// 省略 elementID 时推断出的类型，可用于公开的 Supplementary 或 ProviderSupplementary 声明。
+public struct DefaultCollectionSupplementaryID: Hashable, Sendable {
+    @usableFromInline static let inferred = Self()
+    private init() {}
+}
+
 /// 附属视图内容的类型擦除描述，几何信息由分区布局保存。
 public struct AnySupplementary {
     /// 包含 Section、supplementary ID、view 类型和展示变体的稳定 identity。
@@ -178,21 +184,21 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
 /// 使用指定视图类型和业务身份创建分区附属视图。
 ///
 /// `kind` 须非空且在分区内唯一，用于关联内容与几何；多行自适应网格可映射为不同的 UIKit 地址。
-/// `id` 标识业务内容，业务种类或视图类型变化时展示身份也随之变化。
+/// 默认由分区、业务 kind 和视图类型确定身份；显式改变 elementID 可替换同一种类的内容。
 ///
 /// - Parameters:
 ///   - viewType: 自动注册和出队的附属视图类型。
 ///   - kind: 与布局几何声明对应的业务元素种类。
-///   - id: 附属视图内容的稳定标识符。
+///   - elementID: 可省略的稳定业务标识。更新同一份内容时使用 refreshID。
 ///   - configure: 在主执行器上配置视图的闭包。
 /// - Returns: 可放入分区附属视图构建器的内容声明。
 @MainActor public func SectionSupplementary<SectionID, ID, View>(
-    _ viewType: View.Type, kind: String, id: ID,
+    _ viewType: View.Type, kind: String, elementID: ID = DefaultCollectionSupplementaryID.inferred,
     configure: @escaping @MainActor (View, ListContext) -> Void
 ) -> ListSectionSupplementary<SectionID>
 where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UICollectionReusableView {
     return ListSectionSupplementary(kind: kind) { sectionID in
-        Supplementary(kind, id: id, view: viewType, configure: configure).eraseToAnySupplementary(
+        Supplementary(kind, elementID: elementID, view: viewType, configure: configure).eraseToAnySupplementary(
             sectionID: sectionID)
     }
 }
@@ -228,7 +234,7 @@ where SectionID: Hashable & Sendable, ID: Hashable & Sendable {
 /// - Note: 常规声明使用 SectionSupplementary；此值可独立组合刷新与事件后放入 supplementary builder。
 public struct Supplementary<ID, View>
 where ID: Hashable & Sendable, View: UICollectionReusableView {
-    private let id: ID
+    private let elementID: ID
     let kind: String
     private let viewType: View.Type
     private let configure: @MainActor (View, ListContext) -> Void
@@ -241,17 +247,17 @@ where ID: Hashable & Sendable, View: UICollectionReusableView {
     /// 创建 supplementary 描述。
     ///
     /// - Parameters:
-    ///   - kind: 附属视图的 UIKit 元素种类。
-    ///   - id: supplementary 身份。
+    ///   - kind: 与布局绑定的业务元素种类。
+    ///   - elementID: 可省略的稳定业务标识；改变显式标识会替换内容。
     ///   - viewType: reusable view 类型。
     ///   - configure: 配置 reusable view 的闭包。
     public init(
         _ kind: String,
-        id: ID,
+        elementID: ID = DefaultCollectionSupplementaryID.inferred,
         view viewType: View.Type,
         configure: @escaping @MainActor (View, ListContext) -> Void
     ) {
-        self.id = id
+        self.elementID = elementID
         self.kind = kind
         self.viewType = viewType
         self.configure = configure
@@ -322,7 +328,7 @@ where ID: Hashable & Sendable, View: UICollectionReusableView {
     where SectionID: Hashable & Sendable {
         let identity = AnyListIdentity(
             sectionID: AnyListID(sectionID),
-            rowID: AnyListID(id),
+            rowID: AnyListID(elementID),
             presentationID: ObjectIdentifier(viewType),
             variant: AnyListID(kind)
         )
@@ -380,7 +386,7 @@ where ID: Hashable & Sendable, View: UICollectionReusableView {
 /// 此类型不提供可见视图的原地配置闭包。默认 `reconfigureVisible` 动作不会重新执行提供者；
 /// 需要由刷新规则更新内容时，使用 `reloadSection`，该动作也会重载分区中的条目。
 public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
-    private let id: ID
+    private let elementID: ID
     let kind: String
     private let presentationID: ObjectIdentifier
     private let registerProvider: @MainActor (UICollectionView, String) -> Void
@@ -393,8 +399,8 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     /// 用 view 类型作为展示 identity 的 ProviderSupplementary。
     ///
     /// - Parameters:
-    ///   - kind: 附属视图的 UIKit 元素种类。
-    ///   - id: supplementary 身份。
+    ///   - kind: 与布局绑定的业务元素种类。
+    ///   - elementID: 可省略的稳定业务标识；改变显式标识会替换内容。
     ///   - viewType: 用于 presentation identity 和默认注册的 reusable view 类型。
     ///   - register: 可选的自定义注册闭包。
     ///   - viewProvider: 创建或 dequeue reusable view 的闭包。
@@ -402,13 +408,13 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     ///   提供者须使用传入的索引路径出队视图。
     public init<View>(
         _ kind: String,
-        id: ID,
+        elementID: ID = DefaultCollectionSupplementaryID.inferred,
         view viewType: View.Type,
         register: (@MainActor (UICollectionView) -> Void)? = nil,
         viewProvider:
             @escaping @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
     ) where View: UICollectionReusableView {
-        self.id = id
+        self.elementID = elementID
         self.kind = kind
         self.presentationID = ObjectIdentifier(viewType)
         self.registerProvider = { collectionView, _ in
@@ -424,21 +430,21 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     /// 完全自定义 presentation identity 的 ProviderSupplementary。
     ///
     /// - Parameters:
-    ///   - kind: 附属视图的 UIKit 元素种类。
-    ///   - id: supplementary 身份。
+    ///   - kind: 与布局绑定的业务元素种类。
+    ///   - elementID: 可省略的稳定业务标识；改变显式标识会替换内容。
     ///   - presentationID: 自定义展示身份。
     ///   - register: 注册 reusable view 的闭包。
     ///   - viewProvider: 创建或 dequeue reusable view 的闭包。
     /// - Important: 此重载不支持内部元素种类映射；需要映射时使用接收实际元素种类的重载。
     public init(
         _ kind: String,
-        id: ID,
+        elementID: ID = DefaultCollectionSupplementaryID.inferred,
         presentationID: ObjectIdentifier,
         register: @escaping @MainActor (UICollectionView) -> Void,
         viewProvider:
             @escaping @MainActor (UICollectionView, IndexPath, ListContext) -> UICollectionReusableView
     ) {
-        self.id = id
+        self.elementID = elementID
         self.kind = kind
         self.presentationID = presentationID
         self.registerProvider = { collectionView, _ in register(collectionView) }
@@ -451,11 +457,11 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     /// 支持布局内部 kind 映射的 provider。elementKind 与 indexPath 是本次 UIKit 请求，必须原样用于 dequeue。
     /// context.indexPath 则是所属业务 item 的位置；不能用它替代 supplementary 的 dequeue indexPath。
     public init<View>(
-        _ kind: String, id: ID, view viewType: View.Type,
+        _ kind: String, elementID: ID = DefaultCollectionSupplementaryID.inferred, view viewType: View.Type,
         register: (@MainActor (UICollectionView, String) -> Void)? = nil,
         viewProvider: @escaping @MainActor (UICollectionView, String, IndexPath, ListContext) -> UICollectionReusableView
     ) where View: UICollectionReusableView {
-        self.id = id
+        self.elementID = elementID
         self.kind = kind
         self.presentationID = ObjectIdentifier(viewType)
         self.registerProvider = register ?? { collectionView, elementKind in
@@ -467,11 +473,11 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
 
     /// 自定义展示身份的映射 provider；注册和 dequeue 都必须使用传入的实际 elementKind。
     public init(
-        _ kind: String, id: ID, presentationID: ObjectIdentifier,
+        _ kind: String, elementID: ID = DefaultCollectionSupplementaryID.inferred, presentationID: ObjectIdentifier,
         register: @escaping @MainActor (UICollectionView, String) -> Void,
         viewProvider: @escaping @MainActor (UICollectionView, String, IndexPath, ListContext) -> UICollectionReusableView
     ) {
-        self.id = id
+        self.elementID = elementID
         self.kind = kind
         self.presentationID = presentationID
         self.registerProvider = register
@@ -524,7 +530,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     where SectionID: Hashable & Sendable {
         let identity = AnyListIdentity(
             sectionID: AnyListID(sectionID),
-            rowID: AnyListID(id),
+            rowID: AnyListID(elementID),
             presentationID: presentationID,
             variant: AnyListID(kind)
         )

@@ -119,7 +119,7 @@ final class GridReviewRegressionTests: XCTestCase {
                     } layout: {
                         grid
                     } supplementaries: {
-                        SectionSupplementary(UICollectionReusableView.self, kind: "badge", id: 0) { _, _ in }
+                        SectionSupplementary(UICollectionReusableView.self, kind: "badge", elementID: 0) { _, _ in }
                     }
                 }
                 XCTAssertNotNil(

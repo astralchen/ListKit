@@ -30,11 +30,11 @@ import XCTest
                             alignment: .bottom)
                     }
                 } supplementaries: {
-                    SectionSupplementary(ReviewView.self, kind: "header", id: version) { view, _ in
+                    SectionSupplementary(ReviewView.self, kind: "header", elementID: version) { view, _ in
                         configurations["header-\(id)", default: 0] += 1
                         view.value = version
                     }.refresh(when: .never)
-                    SectionSupplementary(ReviewView.self, kind: "footer", id: "stable") { view, _ in
+                    SectionSupplementary(ReviewView.self, kind: "footer", elementID: "stable") { view, _ in
                         configurations["footer-\(id)", default: 0] += 1
                         view.value = version
                     }.refreshID(version).refresh(when: .refreshIDChanges)
@@ -99,13 +99,13 @@ import XCTest
                     Row(0, model: 0, cell: ReviewCell.self) { _, _, _ in }
                 } supplementaries: {
                     if changesType && version > 0 {
-                        SectionSupplementary(OtherReviewView.self, kind: kind, id: 0) { view, _ in
+                        SectionSupplementary(OtherReviewView.self, kind: kind, elementID: 0) { view, _ in
                             view.value = version
                         }
                         .refresh(when: .never)
                     } else {
                         SectionSupplementary(
-                            ReviewView.self, kind: kind, id: changesType ? 0 : version
+                            ReviewView.self, kind: kind, elementID: changesType ? 0 : version
                         ) { view, _ in view.value = version }
                         .refresh(when: .never)
                     }
@@ -125,7 +125,7 @@ import XCTest
                                 alignment: .top)
                         }
                     } supplementaries: {
-                        SectionSupplementary(ReviewView.self, kind: kind, id: 0) { _, _ in }
+                        SectionSupplementary(ReviewView.self, kind: kind, elementID: 0) { _, _ in }
                     }
                 }
                 f.collection.layoutIfNeeded()
@@ -157,7 +157,7 @@ import XCTest
             } layout: {
                 GridLayout(tracks: 1).itemMainAxisSize(.fixed(40)).trackSpacing(0).lineSpacing(0)
             } supplementaries: {
-                SectionSupplementary(ReviewView.self, kind: "unused", id: version) { _, _ in }
+                SectionSupplementary(ReviewView.self, kind: "unused", elementID: version) { _, _ in }
                     .refresh(when: .never)
             }
         }
@@ -200,7 +200,7 @@ import XCTest
                     }
                 }
             } supplementaries: {
-                SectionSupplementary(ReviewView.self, kind: "header", id: version) { view, _ in
+                SectionSupplementary(ReviewView.self, kind: "header", elementID: version) { view, _ in
                     view.value = version
                 }
             }
@@ -258,10 +258,10 @@ import XCTest
                     return layout
                 }
             } supplementaries: {
-                SectionSupplementary(ReviewView.self, kind: "header", id: header) { view, _ in
+                SectionSupplementary(ReviewView.self, kind: "header", elementID: header) { view, _ in
                     view.value = header
                 }
-                SectionSupplementary(ReviewView.self, kind: "unused", id: unused) { _, _ in }
+                SectionSupplementary(ReviewView.self, kind: "unused", elementID: unused) { _, _ in }
             }
         }
         await f.adapter.apply(transaction: .disabled) { section(header: 0, unused: 0) }
@@ -304,7 +304,7 @@ import XCTest
                         geometry
                     }
                 } supplementaries: {
-                    SectionSupplementary(ReviewView.self, kind: "header", id: version) { view, _ in
+                    SectionSupplementary(ReviewView.self, kind: "header", elementID: version) { view, _ in
                         view.value = version
                     }
                 }
@@ -355,11 +355,11 @@ import XCTest
                 }
             } supplementaries: {
                 if version == 0 {
-                    SectionSupplementary(ReviewView.self, kind: "badge", id: 0) { view, _ in
+                    SectionSupplementary(ReviewView.self, kind: "badge", elementID: 0) { view, _ in
                         view.value = version
                     }
                 } else {
-                    SectionSupplementary(OtherReviewView.self, kind: "badge", id: 0) { view, _ in
+                    SectionSupplementary(OtherReviewView.self, kind: "badge", elementID: 0) { view, _ in
                         view.value = version
                     }
                 }
@@ -403,7 +403,7 @@ import XCTest
                         ).pinToVisibleBounds()
                     }
                 } supplementaries: {
-                    SectionSupplementary(ReviewView.self, kind: "header", id: version) { view, _ in
+                    SectionSupplementary(ReviewView.self, kind: "header", elementID: version) { view, _ in
                         view.value = version
                     }
                 }.selectionMode(.multiple)
@@ -458,7 +458,7 @@ import XCTest
                         alignment: .top)
                 }
             } supplementaries: {
-                SectionSupplementary(ReviewView.self, kind: "header", id: version) { view, _ in
+                SectionSupplementary(ReviewView.self, kind: "header", elementID: version) { view, _ in
                     view.value = version
                 }
             }.selectionMode(.single)
@@ -514,13 +514,13 @@ import XCTest
                 }
             } supplementaries: {
                 if changesType && stage % 2 == 1 {
-                    SectionSupplementary(OtherReviewView.self, kind: "header", id: 0) { view, _ in
+                    SectionSupplementary(OtherReviewView.self, kind: "header", elementID: 0) { view, _ in
                         view.value = refreshID
                     }
                     .refreshID(refreshID).refresh(when: .refreshIDChanges)
                 } else {
                     SectionSupplementary(
-                        ReviewView.self, kind: "header", id: changesType ? 0 : stage
+                        ReviewView.self, kind: "header", elementID: changesType ? 0 : stage
                     ) {
                         view, _ in view.value = refreshID
                     }
@@ -650,7 +650,7 @@ import XCTest
                             alignment: .top)
                     }
             } supplementaries: {
-                SectionSupplementary(ReviewView.self, kind: "header", id: version) { view, _ in
+                SectionSupplementary(ReviewView.self, kind: "header", elementID: version) { view, _ in
                     view.value = version
                 }
             }
@@ -742,11 +742,11 @@ import XCTest
                 }
             } supplementaries: {
                 if version == 0 {
-                    SectionSupplementary(ReviewView.self, kind: "header", id: 0) { view, _ in
+                    SectionSupplementary(ReviewView.self, kind: "header", elementID: 0) { view, _ in
                         view.value = version
                     }
                 } else {
-                    SectionSupplementary(OtherReviewView.self, kind: "header", id: 0) { view, _ in
+                    SectionSupplementary(OtherReviewView.self, kind: "header", elementID: 0) { view, _ in
                         view.value = version
                     }
                 }
@@ -819,7 +819,7 @@ private final class OtherReviewView: ReviewView {}
             alignment: .top)
         }
     } supplementaries: {
-      SectionSupplementary(ReviewView.self, kind: "header", id: 0) { view, _ in view.value = version
+      SectionSupplementary(ReviewView.self, kind: "header", elementID: 0) { view, _ in view.value = version
       }
       .refreshID(version).refresh(when: .refreshIDChanges, action: .reloadSection)
     }

@@ -682,13 +682,15 @@ where SectionID: Hashable & Sendable {
         }
 
         // UITableView 按 section/角色持有 header/footer；仅替换描述树不会重新请求视图。
-        // 身份（包括视图类型）变化属于结构更新，不受 refresh trigger 限制。
+        // 自定义视图的身份或系统标题发生变化时，重新请求该分区的视图。
         let previousSections = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
         let supplementaryReplacementSections = newSections.compactMap { section -> AnyListID? in
             guard let previous = previousSections[section.id] else { return nil }
-            return previous.header?.identity != section.header?.identity
-                || previous.footer?.identity != section.footer?.identity
-                ? AnyListID(section.id) : nil
+            let headerChanged = previous.header?.identity != section.header?.identity
+                || (section.header == nil && previous.headerTitle != section.headerTitle)
+            let footerChanged = previous.footer?.identity != section.footer?.identity
+                || (section.footer == nil && previous.footerTitle != section.footerTitle)
+            return headerChanged || footerChanged ? AnyListID(section.id) : nil
         }
         let applyPlan = ListApplyPlanner.makePlan(
             old: Self.makeCoreSnapshots(from: sections),
@@ -712,6 +714,17 @@ where SectionID: Hashable & Sendable {
             // 诊断拒绝也结束了当前队首请求；completion 重入后继续推进剩余队列。
             performNextPendingMutationIfNeeded()
             return summary
+        }
+
+        // 高度规则独立于内容刷新；复用本次 apply 的布局更新来重测已有内容。
+        let heightRulesChanged = newSections.contains { section in
+            guard let previous = previousSections[section.id] else { return false }
+            if previous.effectiveHeaderHeight != section.effectiveHeaderHeight
+                || previous.effectiveFooterHeight != section.effectiveFooterHeight { return true }
+            return section.rows.contains { row in
+                guard let old = rowsByIdentity[row.identity] else { return false }
+                return (old.height ?? previous.layout.rowHeight) != (row.height ?? section.layout.rowHeight)
+            }
         }
 
         let visibleAnchor: TableVisibleRowAnchor?
@@ -840,7 +853,7 @@ where SectionID: Hashable & Sendable {
                 self.performNextPendingMutationIfNeeded()
             }
 
-            var needsLayoutInvalidation = options.applicationMode == .reloadData
+            var needsLayoutInvalidation = heightRulesChanged || options.applicationMode == .reloadData
                 || !applyPlan.snapshotLayoutInvalidationItems.isEmpty
             if applyPlan.shouldRunVisibleRefresh {
                 let refresh = self.refreshVisibleRowsIfNeeded(
@@ -2027,48 +2040,50 @@ where SectionID: Hashable & Sendable {
             ?? 0
     }
 
-    /// 按条目高度、外部代理和表格默认行高的顺序返回行高。
+    private func rowHeight(at indexPath: IndexPath) -> TableHeight? {
+        guard let section = sections[safe: indexPath.section],
+              let row = section.rows[safe: indexPath.row] else { return nil }
+        return row.height ?? section.layout.rowHeight
+    }
+
+    /// 按单行规则、分区规则、外部代理和表格默认行高的顺序返回行高。
     public func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        row(at: indexPath)?.height?.resolvedHeight
+        rowHeight(at: indexPath)?.resolvedHeight
             ?? tableDelegate?.tableView?(tableView, heightForRowAt: indexPath)
             ?? tableView.rowHeight
     }
 
-    /// 返回条目估算高度或高度规则的估算值；未设置时使用表格估算行高。
-    ///
-    /// 条目不存在时查询外部代理，再回退到表格估算行高。
+    /// 实际高度和估算高度共用同一条规则，省略时分别查询对应的 delegate 方法。
     public func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
-        if let row = row(at: indexPath) {
-            return row.estimatedHeight ?? row.height?.resolvedEstimatedHeight ?? tableView.estimatedRowHeight
-        }
-        return tableDelegate?.tableView?(tableView, estimatedHeightForRowAt: indexPath)
+        rowHeight(at: indexPath)?.resolvedEstimatedHeight
+            ?? tableDelegate?.tableView?(tableView, estimatedHeightForRowAt: indexPath)
             ?? tableView.estimatedRowHeight
     }
 
     /// 按页眉高度规则、外部代理和表格默认页眉高度的顺序返回高度。
     public func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        sections[safe: section]?.header?.height?.resolvedHeight
+        sections[safe: section]?.effectiveHeaderHeight?.resolvedHeight
             ?? tableDelegate?.tableView?(tableView, heightForHeaderInSection: section)
             ?? tableView.sectionHeaderHeight
     }
 
     /// 按页眉估算规则、外部代理和表格默认估算页眉高度的顺序返回高度。
     public func tableView(_ tableView: UITableView, estimatedHeightForHeaderInSection section: Int) -> CGFloat {
-        sections[safe: section]?.header?.height?.resolvedEstimatedHeight
+        sections[safe: section]?.effectiveHeaderHeight?.resolvedEstimatedHeight
             ?? tableDelegate?.tableView?(tableView, estimatedHeightForHeaderInSection: section)
             ?? tableView.estimatedSectionHeaderHeight
     }
 
     /// 按页脚高度规则、外部代理和表格默认页脚高度的顺序返回高度。
     public func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-        sections[safe: section]?.footer?.height?.resolvedHeight
+        sections[safe: section]?.effectiveFooterHeight?.resolvedHeight
             ?? tableDelegate?.tableView?(tableView, heightForFooterInSection: section)
             ?? tableView.sectionFooterHeight
     }
 
     /// 按页脚估算规则、外部代理和表格默认估算页脚高度的顺序返回高度。
     public func tableView(_ tableView: UITableView, estimatedHeightForFooterInSection section: Int) -> CGFloat {
-        sections[safe: section]?.footer?.height?.resolvedEstimatedHeight
+        sections[safe: section]?.effectiveFooterHeight?.resolvedEstimatedHeight
             ?? tableDelegate?.tableView?(tableView, estimatedHeightForFooterInSection: section)
             ?? tableView.estimatedSectionFooterHeight
     }

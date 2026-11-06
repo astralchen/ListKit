@@ -7,10 +7,10 @@ import XCTest
     func testExplicitKindsAndWrappersPreserveIdentityAndRefreshMetadata() {
         // Explicit kinds are passed through verbatim, without generated defaults.
         for kind in ["title", "app.title", UICollectionView.elementKindSectionHeader] {
-            let original = Supplementary(kind, id: "title", view: UICollectionReusableView.self) { _, _ in }
+            let original = Supplementary(kind, elementID: "title", view: UICollectionReusableView.self) { _, _ in }
                 .refreshID(7)
             let direct: ListSectionSupplementary<Int> = SectionSupplementary(
-                UICollectionReusableView.self, kind: kind, id: "title"
+                UICollectionReusableView.self, kind: kind, elementID: "title"
             ) { _, _ in }.refreshID(7)
             let wrapped: ListSectionSupplementary<Int> = SectionSupplementary(original)
             let expected = original.eraseToAnySupplementary(sectionID: 42)
@@ -22,6 +22,20 @@ import XCTest
                 XCTAssertEqual(actual.refreshRule, expected.refreshRule)
             }
         }
+    }
+
+    func testDefaultElementIdentityAgreesAcrossDeclarationsAndDiffersFromExplicitID() {
+        let kind = "badge"
+        let view = UICollectionReusableView.self
+        let direct: ListSectionSupplementary<Int> = SectionSupplementary(view, kind: kind) { _, _ in }
+        let typed = Supplementary(kind, view: view) { _, _ in }
+        let provider = ProviderSupplementary(kind, view: view) { _, _, _, _ in UICollectionReusableView() }
+        let explicit: ListSectionSupplementary<Int> = SectionSupplementary(view, kind: kind, elementID: kind) { _, _ in }
+        let identity = direct.makeSupplementary(sectionID: 1).identity
+        XCTAssertEqual(identity, typed.eraseToAnySupplementary(sectionID: 1).identity)
+        XCTAssertEqual(identity, provider.eraseToAnySupplementary(sectionID: 1).identity)
+        XCTAssertNotEqual(identity, direct.makeSupplementary(sectionID: 2).identity)
+        XCTAssertNotEqual(identity, explicit.makeSupplementary(sectionID: 1).identity)
     }
 
     func testKindsRemainDistinctWithoutImplicitPrefixing() {
@@ -37,7 +51,7 @@ import XCTest
             }
         } supplementaries: {
             for kind in kinds {
-                SectionSupplementary(UICollectionReusableView.self, kind: kind, id: "same-content-id") { _, _ in }
+                SectionSupplementary(UICollectionReusableView.self, kind: kind, elementID: "same-content-id") { _, _ in }
             }
         }
         XCTAssertTrue(ListDiagnostics.validate([section]).isEmpty)
@@ -58,7 +72,7 @@ import XCTest
                 }
             } supplementaries: {
                 SectionSupplementary(
-                    ProviderSupplementary("shared", id: "title", view: UICollectionReusableView.self) { _, _, _ in
+                    ProviderSupplementary("shared", view: UICollectionReusableView.self) { _, _, _ in
                         receivedSections.append(sectionID)
                         return UICollectionReusableView()
                     })
@@ -121,7 +135,7 @@ import XCTest
                 }
             } supplementaries: {
                 if present {
-                    SectionSupplementary(KindMigrationHeader.self, kind: headerKind, id: "title") { view, _ in
+                    SectionSupplementary(KindMigrationHeader.self, kind: headerKind) { view, _ in
                         view.version = version
                     }.refreshID(version)
                 }

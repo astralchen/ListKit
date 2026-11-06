@@ -157,7 +157,7 @@ final class LayoutLabViewController: UIViewController {
         .supplementaries {
             boundaryContent(in: section, configuration: configuration)
             if configuration.scene == .badges {
-                SectionSupplementary(LayoutLabBadge.self, kind: LayoutLabElementKind.badge, id: "badge") { view, context in
+                SectionSupplementary(LayoutLabBadge.self, kind: LayoutLabElementKind.badge) { view, context in
                     view.configure(item: context.indexPath.item)
                 }.onTap { [weak self] context in
                     self?.explanation.text = "点击徽标：item \(context.indexPath.item)"
@@ -224,11 +224,11 @@ final class LayoutLabViewController: UIViewController {
     @ListSectionSupplementaryBuilder<Int>
     private func boundaryContent(in section: Int, configuration: LayoutLabConfiguration) -> [ListSectionSupplementary<Int>] {
         if section == 0 && configuration.scene != .nativeList {
-            SectionSupplementary(LayoutLabHeader.self, kind: LayoutLabElementKind.title, id: "title") { view, _ in
+            SectionSupplementary(LayoutLabHeader.self, kind: LayoutLabElementKind.title) { view, _ in
                 view.configure(text: "lab.title · \(configuration.count)", identifier: "lab-title")
             }
             .refreshID(configuration.count)
-            SectionSupplementary(LayoutLabHeader.self, kind: LayoutLabElementKind.summary, id: "footer") { view, _ in
+            SectionSupplementary(LayoutLabHeader.self, kind: LayoutLabElementKind.summary) { view, _ in
                 view.configure(text: "lab.summary", identifier: "lab-summary")
             }
         }

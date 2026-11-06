@@ -53,12 +53,12 @@ final class ListKitPublicAPITests: XCTestCase {
         } supplementaries: {
             SectionSupplementary(
                 UICollectionReusableView.self,
-                kind: UICollectionView.elementKindSectionHeader, id: "header"
+                kind: UICollectionView.elementKindSectionHeader, elementID: "header"
             ) { _, _ in }
 
             SectionSupplementary(
                 UICollectionReusableView.self,
-                kind: UICollectionView.elementKindSectionFooter, id: "footer"
+                kind: UICollectionView.elementKindSectionFooter, elementID: "footer"
             ) { _, _ in }
         }
     }
@@ -96,7 +96,7 @@ final class ListKitPublicAPITests: XCTestCase {
     }
 
     func testProviderSupplementaryCanDeclareItemGeometry() {
-        let provider = ProviderSupplementary("custom", id: 1, view: UICollectionReusableView.self) {
+        let provider = ProviderSupplementary("custom", elementID: 1, view: UICollectionReusableView.self) {
             _, _, _ in
             UICollectionReusableView()
         }

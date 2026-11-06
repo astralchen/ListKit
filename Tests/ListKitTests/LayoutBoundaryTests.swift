@@ -32,12 +32,12 @@ import XCTest
 
         } supplementaries: {
             SectionSupplementary(
-                UICollectionReusableView.self, kind: "title", id: 1
+                UICollectionReusableView.self, kind: "title", elementID: 1
             ) { _, _ in }.onTap { _ in }
                 .refreshID(1)
 
             SectionSupplementary(
-                UICollectionReusableView.self, kind: "summary", id: 2
+                UICollectionReusableView.self, kind: "summary", elementID: 2
             ) { _, _ in }.onTap { _ in }
                 .onDisplay { _, _ in }
         }
@@ -74,7 +74,7 @@ import XCTest
         } supplementaries: {
             SectionSupplementary(
                 UICollectionReusableView.self,
-                kind: UICollectionView.elementKindSectionFooter, id: 0
+                kind: UICollectionView.elementKindSectionFooter, elementID: 0
             ) { _, _ in }
         }
         XCTAssertEqual(opposite.resolvedForTesting().boundarySupplementaryItems.first?.alignment, .top)
@@ -106,7 +106,7 @@ import XCTest
                 } supplementaries: {
                     SectionSupplementary(
                         ReviewSizingBoundary.self,
-                        kind: "custom.title", id: 0
+                        kind: "custom.title", elementID: 0
                     ) { view, _ in
                         received.insert("custom.title")
                         view.horizontal = horizontal
@@ -115,7 +115,7 @@ import XCTest
 
                     SectionSupplementary(
                         ReviewSizingBoundary.self,
-                        kind: "custom.summary", id: 1
+                        kind: "custom.summary", elementID: 1
                     ) { view, _ in
                         received.insert("custom.summary")
                         view.horizontal = horizontal
@@ -150,7 +150,7 @@ import XCTest
 
                 } supplementaries: {
                     SectionSupplementary(
-                        UICollectionReusableView.self, kind: "ratio", id: 0
+                        UICollectionReusableView.self, kind: "ratio", elementID: 0
                     ) { _, _ in }
                 })
             let frame = try f.boundary("ratio")
@@ -180,11 +180,11 @@ import XCTest
 
             } supplementaries: {
                 SectionSupplementary(
-                    ReviewSizingBoundary.self, kind: "title", id: 0
+                    ReviewSizingBoundary.self, kind: "title", elementID: 0
                 ) { view, _ in view.extent = 75 }
 
                 SectionSupplementary(
-                    ReviewSizingBoundary.self, kind: "summary", id: 1
+                    ReviewSizingBoundary.self, kind: "summary", elementID: 1
                 ) { view, _ in view.extent = 65 }
             })
         XCTAssertEqual(try f.boundary("title").height, 75, accuracy: 1)
@@ -204,7 +204,7 @@ import XCTest
 
         } supplementaries: {
             SectionSupplementary(
-                UICollectionReusableView.self, kind: "", id: 0
+                UICollectionReusableView.self, kind: "", elementID: 0
             ) { _, _ in }
         }
         XCTAssertTrue(ListDiagnostics.validate([invalid]).contains { $0.message.contains("kind") })
@@ -221,7 +221,7 @@ import XCTest
         } supplementaries: {
             SectionSupplementary(
                 UICollectionReusableView.self,
-                kind: UICollectionView.elementKindSectionHeader, id: 0
+                kind: UICollectionView.elementKindSectionHeader, elementID: 0
             ) { _, _ in }
         }
         XCTAssertTrue(ListDiagnostics.validate([invalidSize]).contains { $0.message.contains("size") })
@@ -252,7 +252,7 @@ import XCTest
                 }
             } supplementaries: {
                 SectionSupplementary(
-                    UICollectionReusableView.self, kind: "missing", id: 0
+                    UICollectionReusableView.self, kind: "missing", elementID: 0
                 ) { _, _ in }
             }
             f.apply(section)
@@ -290,7 +290,7 @@ import XCTest
             } supplementaries: {
                 SectionSupplementary(
                     UICollectionReusableView.self,
-                    kind: "custom-header", id: 0
+                    kind: "custom-header", elementID: 0
                 ) { _, _ in
                     configured = true
                 }.refreshID(1)
@@ -331,7 +331,7 @@ import XCTest
 
             } supplementaries: {
                 SectionSupplementary(
-                    UICollectionReusableView.self, kind: "title", id: 0
+                    UICollectionReusableView.self, kind: "title", elementID: 0
                 ) { _, _ in }
             })
         XCTAssertNil(f.adapter.makeCompositionalSection(for: 0, environment: TestLayoutEnvironment()))
@@ -401,7 +401,7 @@ import XCTest
 
                 } supplementaries: {
                     SectionSupplementary(
-                        UICollectionReusableView.self, kind: "badge", id: 0
+                        UICollectionReusableView.self, kind: "badge", elementID: 0
                     ) { _, _ in }
                 }
             ], transaction: .disabled)

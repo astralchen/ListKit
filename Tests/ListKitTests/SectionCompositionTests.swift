@@ -35,7 +35,7 @@ final class SectionCompositionTests: XCTestCase {
     }
 
     private func header(_ kind: String = "title", version: Int = 1) -> ListSectionSupplementary<Int> {
-        SectionSupplementary(UICollectionReusableView.self, kind: kind, id: kind) { view, _ in
+        SectionSupplementary(UICollectionReusableView.self, kind: kind, elementID: kind) { view, _ in
             view.accessibilityLabel = "version \(version)"
         }
         .refreshID(version)

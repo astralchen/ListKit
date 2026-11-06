@@ -12,6 +12,10 @@ xcrun swiftc -emit-module -enable-testing -swift-version 6 -module-name ListKit 
 check() {
     local name="$1" expected="$2" snippet="$3"
     printf 'import UIKit\nimport ListKit\n@MainActor func example() {\n%s\n}\n' "$snippet" > "$check_dir/$name.swift"
+    check_source "$name" "$expected"
+}
+check_source() {
+    local name="$1" expected="$2"
     if xcrun swiftc -typecheck -swift-version 6 -sdk "$sdk_path" -target arm64-apple-ios15.0-simulator \
         -module-cache-path "$check_dir/cache" -I "$check_dir" "$check_dir/$name.swift" > "$check_dir/$name.log" 2>&1; then
         [ "$expected" = pass ] || { echo "UNEXPECTED SUCCESS: $name"; exit 1; }
@@ -20,6 +24,37 @@ check() {
     fi
     echo "$expected: $name"
 }
+check table-layout pass 'let _ = TableSection(0) {
+    TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.height(.fixed(28))
+}.layout {
+    TableLayout().rowHeight(.estimated(64)).headerHeight(.automatic).footerHeight(.fixed(44))
+}.header {
+    TableHeader(UITableViewHeaderFooterView.self) { _, _ in }.refreshID(3)
+}.footer {
+    TableFooter(UITableViewHeaderFooterView.self) { _, _ in }
+}'
+check table-footer-in-header fail 'let _ = TableSection(0) {}.header {
+    TableFooter(UITableViewHeaderFooterView.self) { _, _ in }.refreshID(1)
+}'
+check table-header-in-footer fail 'let _ = TableSection(0) {} footer: {
+    TableHeader(UITableViewHeaderFooterView.self) { _, _ in }
+}'
+cat > "$check_dir/public-collection-supplementaries.swift" <<'SWIFT'
+import UIKit
+import ListKit
+@MainActor public struct ReusableElements {
+    public let badge = Supplementary("badge", view: UICollectionReusableView.self) { _, _ in }
+    public let provider = ProviderSupplementary("footer", view: UICollectionReusableView.self) { _, _, _ in
+        UICollectionReusableView()
+    }
+    public func makeBadge() -> Supplementary<DefaultCollectionSupplementaryID, UICollectionReusableView> { badge }
+}
+SWIFT
+check_source public-collection-supplementaries pass
+check table-legacy-height-type fail 'let _: TableRowHeight = .fixed(28)'
+check table-legacy-automatic-estimate fail 'let _: TableHeight = .automatic(estimated: 64)'
+check table-legacy-independent-estimate fail 'let _ = TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.estimatedHeight(64)'
+check table-legacy-supplementary-height fail 'let _: TableSectionHeader<Int> = TableHeader(UITableViewHeaderFooterView.self, elementID: 0) { _, _ in }.height(.fixed(44))'
 check empty-section-builders pass 'let _ = ListSection(0) {} layout: {} supplementaries: {} decorations: {}
 let _ = ListSection(0, rows: {}, layout: {}, supplementaries: {}, decorations: {})
 let _ = ListSection(0) {}
@@ -66,7 +101,7 @@ let _ = ListSection(0) {} layout: {
         }
         .sectionInsets(.init(12)).itemMainAxisSize(.aspectRatio(1)).trackSpacing(8).lineSpacing(8)
 } supplementaries: {
-    SectionSupplementary(UICollectionReusableView.self, kind: title, id: 1) { _, _ in }
+    SectionSupplementary(UICollectionReusableView.self, kind: title, elementID: 1) { _, _ in }
 } decorations: {
     SectionDecoration(UICollectionReusableView.self, kind: card)
 }'
@@ -85,12 +120,12 @@ let _ = GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).boundarySupplemen
         BoundarySupplementaryLayout(kind: kind, mainAxisSize: .aspectRatio(4), sizingAxis: .vertical, alignment: .top).whenContentExists()
     }
 }.trackSpacing(8).lineSpacing(8)'
-check optional-supplementary-content pass 'let present: ListSectionSupplementary<Int>? = SectionSupplementary(UICollectionReusableView.self, kind: "title", id: 0) { _, _ in }
+check optional-supplementary-content pass 'let present: ListSectionSupplementary<Int>? = SectionSupplementary(UICollectionReusableView.self, kind: "title", elementID: 0) { _, _ in }
 let absent: ListSectionSupplementary<Int>? = nil
 let _ = ListSection(0) {} supplementaries: {
     present
     absent
-    SectionSupplementary(UICollectionReusableView.self, kind: "other", id: 1) { _, _ in }
+    SectionSupplementary(UICollectionReusableView.self, kind: "other", elementID: 1) { _, _ in }
 }'
 check decoration-kinds pass 'let logical = "card"
 let typed = SectionDecoration(UICollectionReusableView.self, kind: logical)
@@ -107,7 +142,7 @@ check native-grid-size fail 'let _ = UIKitListLayout().itemMainAxisSize(.aspectR
 check uniform-availability fail 'let _ = GridLayout(tracks: 2).itemMainAxisSize(.uniform(estimated: 60))'
 check legacy-header fail 'let _ = ListSection(0) {} header: { Header(UICollectionReusableView.self, id: 0) { _, _ in } }'
 check item-pinning fail 'let _ = ItemSupplementaryLayout(kind: "badge", size: .init(width: .absolute(10), height: .absolute(10)), itemAnchor: .top).pinToVisibleBounds()'
-check content-geometry fail 'let value: ListSectionSupplementary<Int> = SectionSupplementary(UICollectionReusableView.self, kind: "title", id: 0) { _, _ in }; let _ = value.layout(height: .absolute(44))'
+check content-geometry fail 'let value: ListSectionSupplementary<Int> = SectionSupplementary(UICollectionReusableView.self, kind: "title", elementID: 0) { _, _ in }; let _ = value.layout(height: .absolute(44))'
 echo "Logs: $check_dir"
 
 check removed-list fail 'let _ = ListLayout()'
@@ -192,7 +227,7 @@ check removed-group-line-spacing-method fail 'let _ = GridLayout(tracks: 2).grou
 check removed-group-line-spacing-property fail 'var value = GridLayout(tracks: 2); value.groupLineSpacing = 8'
 check unified-line-spacing pass 'var value = GridLayout(tracks: 2).lineGrouping(.count(lines: 3)).lineSpacing(8).groupSpacing(20); value.lineSpacing = 12; let _: CGFloat = value.lineSpacing'
 
-check section-composition pass 'let title: ListSectionSupplementary<Int> = SectionSupplementary(UICollectionReusableView.self, kind: "title", id: 0) { _, _ in }
+check section-composition pass 'let title: ListSectionSupplementary<Int> = SectionSupplementary(UICollectionReusableView.self, kind: "title", elementID: 0) { _, _ in }
 let card = SectionDecoration(UICollectionReusableView.self, kind: "card")
 let _ = ListSection(0) {}
     .layout { GridLayout(tracks: 1) }
@@ -206,7 +241,17 @@ check removed-adding-section-supplementaries fail 'let _ = ListSection(0) {}.add
 
 check removed-grid-spacing fail 'let _ = GridLayout(tracks: 2).gridSpacing(8)'
 check optional-group-spacing pass 'var value = GridLayout(tracks: 2).lineSpacing(8).groupSpacing(20).groupSpacing(nil); value.groupSpacing = nil; let _: CGFloat? = value.groupSpacing'
-check mapped-supplementary-provider pass 'let _ = ProviderSupplementary("badge", id: 0, view: UICollectionReusableView.self) { collection, kind, path, context in
+check default-collection-supplementary-ids pass 'let view = UICollectionReusableView.self
+let _ = ListSection(0) {}.supplementaries {
+    SectionSupplementary(view, kind: "title") { _, _ in }.refreshID(1)
+    SectionSupplementary(Supplementary("footer", view: view) { _, _ in })
+    SectionSupplementary(ProviderSupplementary("badge", view: view) { _, _, _ in UICollectionReusableView() })
+    SectionSupplementary(ProviderSupplementary("custom", presentationID: ObjectIdentifier(view), register: { _, _ in }) { _, _, _, _ in UICollectionReusableView() })
+}'
+check legacy-collection-supplementary-id fail 'let _ = ListSection(0) {}.supplementaries {
+    SectionSupplementary(UICollectionReusableView.self, kind: "badge", id: 1) { _, _ in }
+}'
+check mapped-supplementary-provider pass 'let _ = ProviderSupplementary("badge", view: UICollectionReusableView.self) { collection, kind, path, context in
     let view = collection.lk.dequeue(UICollectionReusableView.self, ofKind: kind, for: path)
     view.tag = context.indexPath.item
     return view

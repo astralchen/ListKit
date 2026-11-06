@@ -18,19 +18,22 @@ final class TableListAdapterTests: XCTestCase {
                     }
                     .refreshID(message.version)
                     .contentTransition(.opacity)
-                    .height(.fixed(64))
+                }
+            } header: {
+                TableHeader(MessageHeaderView.self, elementID: "chrome") { view, _ in
+                    view.title = "Messages"
+                }
+            } footer: {
+                TableFooter(MessageHeaderView.self, elementID: "chrome") { view, _ in
+                    view.title = "Footer"
+                }
             }
-        } header: {
-            TableHeader(MessageHeaderView.self, id: "chrome") { view, _ in
-                view.title = "Messages"
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(64))
+                    .headerHeight(.estimated(32))
+                    .footerHeight(.estimated(24))
             }
-            .height(.estimated(32))
-        } footer: {
-            TableFooter(MessageHeaderView.self, id: "chrome") { view, _ in
-                view.title = "Footer"
-            }
-            .height(.automatic(estimated: 24))
-        }
         }
 
         XCTAssertEqual(sections.count, 1)
@@ -652,20 +655,19 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(2, model: "Decorated", cell: MessageTableCell.self) { _, _, _ in }
                     .height(.fixed(44))
             } header: {
-                TableHeader(MessageHeaderView.self, id: "header") { view, _ in
+                TableHeader(MessageHeaderView.self, elementID: "header") { view, _ in
                     view.title = "Header \(version)"
                 }
-                .height(.fixed(32))
                 .refreshID(version)
                 .refresh(when: .refreshIDChanges)
             } footer: {
-                TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
+                TableFooter(MessageHeaderView.self, elementID: "footer") { view, _ in
                     view.title = "Footer \(version)"
                 }
-                .height(.fixed(28))
                 .refreshID(version)
                 .refresh(when: .refreshIDChanges)
             }
+            .layout { TableLayout().headerHeight(.fixed(32)).footerHeight(.fixed(28)) }
         }
 
         _ = await adapter.apply(
@@ -774,7 +776,6 @@ final class TableListAdapterTests: XCTestCase {
                     cell: MessageTableCell.self
                 ) { _, _, _ in }
                 .height(.fixed(72))
-                .estimatedHeight(70)
                 .onDisplay { message, _, _ in displayedID = message.id }
                 .onEndDisplay { message, _, _ in endedID = message.id }
                 .onPrefetch { message, _ in prefetchedID = message.id }
@@ -799,7 +800,7 @@ final class TableListAdapterTests: XCTestCase {
         adapter.tableView(tableView, moveRowAt: indexPath, to: IndexPath(row: 1, section: 0))
 
         XCTAssertEqual(adapter.tableView(tableView, heightForRowAt: indexPath), 72)
-        XCTAssertEqual(adapter.tableView(tableView, estimatedHeightForRowAt: indexPath), 70)
+        XCTAssertEqual(adapter.tableView(tableView, estimatedHeightForRowAt: indexPath), 72)
         XCTAssertTrue(adapter.tableView(tableView, canEditRowAt: indexPath))
         XCTAssertTrue(adapter.tableView(tableView, canMoveRowAt: indexPath))
         XCTAssertNotNil(adapter.tableView(tableView, leadingSwipeActionsConfigurationForRowAt: indexPath))
@@ -1116,22 +1117,21 @@ final class TableListAdapterTests: XCTestCase {
                     cell: MessageTableCell.self
                 ) { _, _, _ in }
             } header: {
-                TableHeader(MessageHeaderView.self, id: "header") { view, _ in
+                TableHeader(MessageHeaderView.self, elementID: "header") { view, _ in
                     view.title = "Header"
                 }
-                .height(.fixed(30))
                 .onDisplay { _, _ in
                     displayedHeader = true
                 }
             } footer: {
-                TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
+                TableFooter(MessageHeaderView.self, elementID: "footer") { view, _ in
                     view.title = "Footer"
                 }
-                .height(.estimated(18))
                 .onEndDisplay { _, _ in
                     endedFooter = true
                 }
             }
+            .layout { TableLayout().headerHeight(.fixed(30)).footerHeight(.estimated(18)) }
         }
         wait(for: [applyCompleted], timeout: 1)
 
@@ -1183,20 +1183,19 @@ final class TableListAdapterTests: XCTestCase {
                 .refreshID("stable-row")
                 .refresh(when: .never)
             } header: {
-                TableHeader(MessageHeaderView.self, id: "header") { view, _ in
+                TableHeader(MessageHeaderView.self, elementID: "header") { view, _ in
                     view.title = headerTitle
                 }
-                .height(.fixed(40))
                 .refreshID("stable-header")
                 .refresh(when: .never)
             } footer: {
-                TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
+                TableFooter(MessageHeaderView.self, elementID: "footer") { view, _ in
                     view.title = footerTitle
                 }
-                .height(.fixed(40))
                 .refreshID("stable-footer")
                 .refresh(when: .never)
             }
+            .layout { TableLayout().headerHeight(.fixed(40)).footerHeight(.fixed(40)) }
         }
         wait(for: [initialApplyCompleted], timeout: 1)
         tableView.reloadData()
@@ -1358,26 +1357,26 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(1, model: (), cell: MessageTableCell.self) { _, _, _ in }
                     .height(.fixed(44))
             } header: {
-                TableHeader(MessageHeaderView.self, id: "messages-header") { view, _ in
+                TableHeader(MessageHeaderView.self, elementID: "messages-header") { view, _ in
                     view.title = messagesHeader
                 }
-                .height(.fixed(40))
                 .refreshID("stable-messages-header")
                 .refresh(when: .never)
             }
+            .layout { TableLayout().headerHeight(.fixed(40)) }
             .indexTitle("M")
 
             TableSection(.empty) {
                 TableRow(2, model: (), cell: MessageTableCell.self) { _, _, _ in }
                     .height(.fixed(44))
             } header: {
-                TableHeader(MessageHeaderView.self, id: "empty-header") { view, _ in
+                TableHeader(MessageHeaderView.self, elementID: "empty-header") { view, _ in
                     view.title = emptyHeader
                 }
-                .height(.fixed(40))
                 .refreshID("stable-empty-header")
                 .refresh(when: .never)
             }
+            .layout { TableLayout().headerHeight(.fixed(40)) }
             .indexTitle("E")
         }
         wait(for: [initialApplyCompleted], timeout: 1)
@@ -1492,20 +1491,19 @@ final class TableListAdapterTests: XCTestCase {
                     }
                     .height(.fixed(44))
                 } header: {
-                    TableHeader(MessageHeaderView.self, id: "header") { view, _ in
+                    TableHeader(MessageHeaderView.self, elementID: "header") { view, _ in
                         view.title = headerTitle
                     }
-                    .height(.fixed(40))
                     .refreshID(version)
                     .refresh(when: .refreshIDChanges)
                 } footer: {
-                    TableFooter(MessageHeaderView.self, id: "footer") { view, _ in
+                    TableFooter(MessageHeaderView.self, elementID: "footer") { view, _ in
                         view.title = footerTitle
                     }
-                    .height(.fixed(40))
                     .refreshID(version)
                     .refresh(when: .refreshIDChanges)
                 }
+                .layout { TableLayout().headerHeight(.fixed(40)).footerHeight(.fixed(40)) }
             }
             wait(for: [applyCompleted], timeout: 1)
             return result

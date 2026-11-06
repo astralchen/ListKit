@@ -2,43 +2,6 @@ import UIKit
 
 // MARK: - Table DSL
 
-/// 表格条目、页眉或页脚的高度规则。
-public enum TableRowHeight: Equatable, Sendable {
-    /// 固定高度。
-    case fixed(CGFloat)
-    /// 自动高度，可附带估算高度。
-    case automatic(estimated: CGFloat? = nil)
-    /// 自动高度，并使用指定估算高度。
-    case estimated(CGFloat)
-
-    @MainActor var resolvedHeight: CGFloat {
-        switch self {
-        case .fixed(let height):
-            return height
-        case .automatic, .estimated:
-            return UITableView.automaticDimension
-        }
-    }
-
-    @MainActor var resolvedEstimatedHeight: CGFloat {
-        switch self {
-        case .fixed(let height):
-            return height
-        case .automatic(let estimated):
-            return estimated ?? UITableView.automaticDimension
-        case .estimated(let height):
-            return height
-        }
-    }
-}
-
-extension TableRowHeight {
-    var isFixed: Bool {
-        if case .fixed = self { return true }
-        return false
-    }
-}
-
 /// Table row 在 `TableForEach(id:)` 内使用时的占位 ID 类型。
 public struct InheritedTableRowID: Hashable, Sendable {
     private init() {}
@@ -141,10 +104,8 @@ public struct AnyTableRow {
     public let selectionFollowsFocus: Bool?
     /// 是否允许弹簧加载交互；`nil` 时查询外部代理，代理未提供结果时允许。
     public let isSpringLoadingEnabled: Bool?
-    /// 条目的高度策略；`nil` 时先查询外部代理，再使用表格视图的默认行高。
-    public let height: TableRowHeight?
-    /// 单独覆盖的估算高度；`nil` 使用 `height` 或 table view 默认值。
-    public let estimatedHeight: CGFloat?
+    /// 条目的高度规则；省略时继承分区的默认行高。
+    public let height: TableHeight?
     /// Row 的缩进层级；`nil` 使用 Cell/UITableView 默认值。
     public let indentationLevel: Int?
     /// 编辑状态下是否保持系统缩进；`nil` 使用 UIKit 默认值。
@@ -259,8 +220,7 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     private var rowIsFocusable: Bool?
     private var rowSelectionFollowsFocus: Bool?
     private var rowIsSpringLoadingEnabled: Bool?
-    private var rowHeight: TableRowHeight?
-    private var rowEstimatedHeight: CGFloat?
+    private var rowHeight: TableHeight?
     private var rowIndentationLevel: Int?
     private var rowShouldIndentWhileEditing: Bool?
     private var rowSelectHandler: (@MainActor (TableListContext) -> Void)?
@@ -387,18 +347,9 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 设置 row 高度。
     ///
     /// - Parameter height: 固定高度、自动高度或估算高度描述。
-    public func height(_ height: TableRowHeight) -> Self {
+    public func height(_ height: TableHeight) -> Self {
         var copy = self
         copy.rowHeight = height
-        return copy
-    }
-
-    /// 设置 row 的估算高度。
-    ///
-    /// - Parameter height: 估算高度。
-    public func estimatedHeight(_ height: CGFloat) -> Self {
-        var copy = self
-        copy.rowEstimatedHeight = height
         return copy
     }
 
@@ -811,7 +762,6 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
             selectionFollowsFocus: rowSelectionFollowsFocus,
             isSpringLoadingEnabled: rowIsSpringLoadingEnabled,
             height: rowHeight,
-            estimatedHeight: rowEstimatedHeight,
             indentationLevel: rowIndentationLevel,
             shouldIndentWhileEditing: rowShouldIndentWhileEditing,
             contentTransition: rowContentTransition,
@@ -1070,10 +1020,6 @@ public struct AnyTableSectionSupplementary {
     public let refreshID: AnyListID?
     /// identity 保持不变时使用的 supplementary 刷新规则。
     public let refreshRule: ListSupplementaryRefreshRule
-    /// header/footer 的高度策略。
-    public let height: TableRowHeight?
-
-    let kind: TableSectionSupplementaryKind
     let register: @MainActor (UITableView) -> Void
     let viewProvider: @MainActor (UITableView, TableListContext) -> UITableViewHeaderFooterView
     let configureVisibleView: @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void
@@ -1081,41 +1027,28 @@ public struct AnyTableSectionSupplementary {
     let endDisplayHandler: (@MainActor (UITableViewHeaderFooterView, TableListContext) -> Void)?
 }
 
-/// 表格分区页眉或页脚的内容声明。
-public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & Sendable {
-    let kind: TableSectionSupplementaryKind
+/// 标记只能用于分区页眉的内容声明。
+public enum TableHeaderRole {}
+/// 标记只能用于分区页脚的内容声明。
+public enum TableFooterRole {}
+
+/// TableHeader 返回的分区页眉声明。
+public typealias TableSectionHeader<SectionID: Hashable & Sendable> = TableSectionSupplementary<SectionID, TableHeaderRole>
+/// TableFooter 返回的分区页脚声明。
+public typealias TableSectionFooter<SectionID: Hashable & Sendable> = TableSectionSupplementary<SectionID, TableFooterRole>
+
+/// 表格分区页眉或页脚的内容声明。Role 在编译期区分页眉和页脚。
+public struct TableSectionSupplementary<SectionID, Role> where SectionID: Hashable & Sendable {
     private let makeSupplementaryProvider: @MainActor (SectionID) -> AnyTableSectionSupplementary
 
     init(
-        kind: TableSectionSupplementaryKind,
         makeSupplementary: @escaping @MainActor (SectionID) -> AnyTableSectionSupplementary
     ) {
-        self.kind = kind
         self.makeSupplementaryProvider = makeSupplementary
     }
 
     @MainActor func makeSupplementary(sectionID: SectionID) -> AnyTableSectionSupplementary {
         makeSupplementaryProvider(sectionID)
-    }
-
-    /// 设置 header/footer 高度。
-    ///
-    /// - Parameter height: 固定高度、自动高度或估算高度描述。
-    public func height(_ height: TableRowHeight) -> Self {
-        mapSupplementary { supplementary in
-            AnyTableSectionSupplementary(
-                identity: supplementary.identity,
-                refreshID: supplementary.refreshID,
-                refreshRule: supplementary.refreshRule,
-                height: height,
-                kind: supplementary.kind,
-                register: supplementary.register,
-                viewProvider: supplementary.viewProvider,
-                configureVisibleView: supplementary.configureVisibleView,
-                displayHandler: supplementary.displayHandler,
-                endDisplayHandler: supplementary.endDisplayHandler
-            )
-        }
     }
 
     /// 设置 header/footer 的内容刷新版本。
@@ -1127,8 +1060,6 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
                 identity: supplementary.identity,
                 refreshID: AnyListID(refreshID),
                 refreshRule: supplementary.refreshRule,
-                height: supplementary.height,
-                kind: supplementary.kind,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
                 configureVisibleView: supplementary.configureVisibleView,
@@ -1145,8 +1076,6 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
                 identity: supplementary.identity,
                 refreshID: supplementary.refreshID,
                 refreshRule: rule,
-                height: supplementary.height,
-                kind: supplementary.kind,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
                 configureVisibleView: supplementary.configureVisibleView,
@@ -1173,8 +1102,6 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
                 identity: supplementary.identity,
                 refreshID: supplementary.refreshID,
                 refreshRule: supplementary.refreshRule,
-                height: supplementary.height,
-                kind: supplementary.kind,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
                 configureVisibleView: supplementary.configureVisibleView,
@@ -1193,8 +1120,6 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
                 identity: supplementary.identity,
                 refreshID: supplementary.refreshID,
                 refreshRule: supplementary.refreshRule,
-                height: supplementary.height,
-                kind: supplementary.kind,
                 register: supplementary.register,
                 viewProvider: supplementary.viewProvider,
                 configureVisibleView: supplementary.configureVisibleView,
@@ -1208,30 +1133,41 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
         _ transform: @escaping @MainActor (AnyTableSectionSupplementary) -> AnyTableSectionSupplementary
     ) -> Self {
         let provider = makeSupplementaryProvider
-        return TableSectionSupplementary(kind: kind) { sectionID in
+        return Self { sectionID in
             transform(provider(sectionID))
         }
     }
+}
+
+/// 创建使用默认身份的页眉。同一分区、同一视图类型的页眉在多次 apply 之间保持身份稳定。
+/// 内容变化可使用 `refreshID`；要显式替换同一类型的页眉，请使用带 `elementID:` 的重载。
+@MainActor public func TableHeader<SectionID, View>(
+    _ viewType: View.Type,
+    configure: @escaping @MainActor (View, TableListContext) -> Void
+) -> TableSectionHeader<SectionID>
+    where SectionID: Hashable & Sendable, View: UITableViewHeaderFooterView
+{
+    TableHeader(viewType, elementID: TableSectionSupplementaryKind.header, configure: configure)
 }
 
 /// 创建 table section header。
 ///
 /// - Parameters:
 ///   - viewType: header view 类型。
-///   - id: header 的稳定身份。
+///   - elementID: 当前分区内 header 内容的稳定标识。改变标识会替换该元素；同一元素的内容更新可通过 refreshID 声明。
 ///   - configure: header 配置闭包。
 /// - Returns: 可放入 `TableSection` header builder 的元素。
-@MainActor public func TableHeader<SectionID, ID, View>(
+@MainActor public func TableHeader<SectionID, ElementID, View>(
     _ viewType: View.Type,
-    id: ID,
+    elementID: ElementID,
     configure: @escaping @MainActor (View, TableListContext) -> Void
-) -> TableSectionSupplementary<SectionID>
-    where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UITableViewHeaderFooterView
+) -> TableSectionHeader<SectionID>
+    where SectionID: Hashable & Sendable, ElementID: Hashable & Sendable, View: UITableViewHeaderFooterView
 {
-    TableSectionSupplementary(kind: .header) { sectionID in
+    TableSectionHeader { sectionID in
         let identity = AnyListIdentity(
             sectionID: AnyListID(sectionID),
-            rowID: AnyListID(id),
+            rowID: AnyListID(elementID),
             presentationID: ObjectIdentifier(viewType),
             variant: AnyListID(TableSectionSupplementaryKind.header)
         )
@@ -1239,8 +1175,6 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
             identity: identity,
             refreshID: nil,
             refreshRule: .automatic,
-            height: nil,
-            kind: .header,
             register: { tableView in
                 tableView.lk.registerHeaderFooter(viewType)
             },
@@ -1259,24 +1193,35 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
     }
 }
 
+/// 创建使用默认身份的页脚。同一分区、同一视图类型的页脚在多次 apply 之间保持身份稳定。
+/// 内容变化可使用 `refreshID`；要显式替换同一类型的页脚，请使用带 `elementID:` 的重载。
+@MainActor public func TableFooter<SectionID, View>(
+    _ viewType: View.Type,
+    configure: @escaping @MainActor (View, TableListContext) -> Void
+) -> TableSectionFooter<SectionID>
+    where SectionID: Hashable & Sendable, View: UITableViewHeaderFooterView
+{
+    TableFooter(viewType, elementID: TableSectionSupplementaryKind.footer, configure: configure)
+}
+
 /// 创建 table section footer。
 ///
 /// - Parameters:
 ///   - viewType: footer view 类型。
-///   - id: footer 的稳定身份。
+///   - elementID: 当前分区内 footer 内容的稳定标识。改变标识会替换该元素；同一元素的内容更新可通过 refreshID 声明。
 ///   - configure: footer 配置闭包。
 /// - Returns: 可放入 `TableSection` footer builder 的元素。
-@MainActor public func TableFooter<SectionID, ID, View>(
+@MainActor public func TableFooter<SectionID, ElementID, View>(
     _ viewType: View.Type,
-    id: ID,
+    elementID: ElementID,
     configure: @escaping @MainActor (View, TableListContext) -> Void
-) -> TableSectionSupplementary<SectionID>
-    where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UITableViewHeaderFooterView
+) -> TableSectionFooter<SectionID>
+    where SectionID: Hashable & Sendable, ElementID: Hashable & Sendable, View: UITableViewHeaderFooterView
 {
-    TableSectionSupplementary(kind: .footer) { sectionID in
+    TableSectionFooter { sectionID in
         let identity = AnyListIdentity(
             sectionID: AnyListID(sectionID),
-            rowID: AnyListID(id),
+            rowID: AnyListID(elementID),
             presentationID: ObjectIdentifier(viewType),
             variant: AnyListID(TableSectionSupplementaryKind.footer)
         )
@@ -1284,8 +1229,6 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
             identity: identity,
             refreshID: nil,
             refreshRule: .automatic,
-            height: nil,
-            kind: .footer,
             register: { tableView in
                 tableView.lk.registerHeaderFooter(viewType)
             },
@@ -1306,49 +1249,49 @@ public struct TableSectionSupplementary<SectionID> where SectionID: Hashable & S
 
 /// 将条件、数组和可用性分支组合成 Table Section header/footer 描述。
 @resultBuilder
-public enum TableSectionSupplementaryBuilder<SectionID> where SectionID: Hashable & Sendable {
+public enum TableSectionSupplementaryBuilder<Element> {
     /// 将表达式转换为构建器的元素集合。
-    public static func buildExpression(_ expression: TableSectionSupplementary<SectionID>) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildExpression(_ expression: Element) -> [Element] {
         [expression]
     }
 
     /// 按原顺序接收表达式数组。
-    public static func buildExpression(_ expression: [TableSectionSupplementary<SectionID>]) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildExpression(_ expression: [Element]) -> [Element] {
         expression
     }
 
     /// 将不产生值的表达式转换为空集合。
-    public static func buildExpression(_ expression: ()) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildExpression(_ expression: ()) -> [Element] {
         []
     }
 
     /// 按声明顺序合并构建块中的元素集合。
-    public static func buildBlock(_ components: [TableSectionSupplementary<SectionID>]...) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildBlock(_ components: [Element]...) -> [Element] {
         components.flatMap { $0 }
     }
 
     /// 按迭代顺序合并循环各次生成的元素集合。
-    public static func buildArray(_ components: [[TableSectionSupplementary<SectionID>]]) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildArray(_ components: [[Element]]) -> [Element] {
         components.flatMap { $0 }
     }
 
     /// 返回条件表达式第一个分支的构建结果。
-    public static func buildEither(first component: [TableSectionSupplementary<SectionID>]) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildEither(first component: [Element]) -> [Element] {
         component
     }
 
     /// 返回条件表达式第二个分支的构建结果。
-    public static func buildEither(second component: [TableSectionSupplementary<SectionID>]) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildEither(second component: [Element]) -> [Element] {
         component
     }
 
     /// 返回可选分支的元素；分支不存在时返回空集合。
-    public static func buildOptional(_ component: [TableSectionSupplementary<SectionID>]?) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildOptional(_ component: [Element]?) -> [Element] {
         component ?? []
     }
 
     /// 传递通过系统可用性检查的分支结果。
-    public static func buildLimitedAvailability(_ component: [TableSectionSupplementary<SectionID>]) -> [TableSectionSupplementary<SectionID>] {
+    public static func buildLimitedAvailability(_ component: [Element]) -> [Element] {
         component
     }
 }
@@ -1357,6 +1300,18 @@ public enum TableSectionSupplementaryBuilder<SectionID> where SectionID: Hashabl
 public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     /// Section 的稳定数据 ID。
     public let id: SectionID
+    /// 当前分区的高度规则。
+    public private(set) var layout = TableLayout()
+
+    /// 仅当分区声明了对应内容时使用页眉、页脚高度。
+    var effectiveHeaderHeight: TableHeight? {
+        header != nil || headerTitle != nil ? layout.headerHeight : nil
+    }
+
+    var effectiveFooterHeight: TableHeight? {
+        footer != nil || footerTitle != nil ? layout.footerHeight : nil
+    }
+
     /// Section 当前包含的类型擦除 Row。
     public internal(set) var rows: [AnyTableRow]
     /// 可选的自定义 header 描述。
@@ -1383,8 +1338,10 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     ///             cell.configure(message)
     ///         }
     ///     }
-    /// } header: {
-    ///     TableHeader(MessageHeaderView.self, id: "header") { view, _ in
+    /// }
+    /// .layout { TableLayout().rowHeight(.estimated(64)) }
+    /// .header {
+    ///     TableHeader(MessageHeaderView.self) { view, _ in
     ///         view.title = "Messages"
     ///     }
     /// }
@@ -1393,23 +1350,51 @@ public struct TableSection<SectionID> where SectionID: Hashable & Sendable {
     /// - Parameters:
     ///   - id: section 的稳定身份。
     ///   - rows: 按声明顺序生成条目的构建闭包。
+    ///   - layout: 当前分区的完整布局；省略时不指定高度规则。
     ///   - header: header builder，最多使用第一个 header。
     ///   - footer: footer builder，最多使用第一个 footer。
     @MainActor public init(
         _ id: SectionID,
         @TableRowBuilder rows: () -> [any TableRowRepresentable],
-        @TableSectionSupplementaryBuilder<SectionID> header: () -> [TableSectionSupplementary<SectionID>] = { [] },
-        @TableSectionSupplementaryBuilder<SectionID> footer: () -> [TableSectionSupplementary<SectionID>] = { [] }
+        layout: () -> TableLayout = { TableLayout() },
+        @TableSectionSupplementaryBuilder<TableSectionHeader<SectionID>> header: () -> [TableSectionHeader<SectionID>] = { [] },
+        @TableSectionSupplementaryBuilder<TableSectionFooter<SectionID>> footer: () -> [TableSectionFooter<SectionID>] = { [] }
     ) {
         self.id = id
         self.rows = rows().flatMap { $0.eraseToAnyTableRows(sectionID: id) }
-        self.header = header().first { $0.kind == .header }?.makeSupplementary(sectionID: id)
-        self.footer = footer().first { $0.kind == .footer }?.makeSupplementary(sectionID: id)
+        self.layout = layout()
+        self.header = header().first?.makeSupplementary(sectionID: id)
+        self.footer = footer().first?.makeSupplementary(sectionID: id)
         self.selectionMode = .automatic
         self.indexTitle = nil
         self.headerTitle = nil
         self.footerTitle = nil
         self.allowsMultipleSelectionInteraction = false
+    }
+
+    /// 替换当前分区的完整布局。
+    public func layout(_ makeLayout: () -> TableLayout) -> Self {
+        var copy = self
+        copy.layout = makeLayout()
+        return copy
+    }
+
+    /// 替换自定义页眉。空 builder 清除自定义页眉，此时可显示 headerTitle。
+    @MainActor public func header(
+        @TableSectionSupplementaryBuilder<TableSectionHeader<SectionID>> _ content: () -> [TableSectionHeader<SectionID>]
+    ) -> Self {
+        var copy = self
+        copy.header = content().first?.makeSupplementary(sectionID: id)
+        return copy
+    }
+
+    /// 替换自定义页脚。空 builder 清除自定义页脚，此时可显示 footerTitle。
+    @MainActor public func footer(
+        @TableSectionSupplementaryBuilder<TableSectionFooter<SectionID>> _ content: () -> [TableSectionFooter<SectionID>]
+    ) -> Self {
+        var copy = self
+        copy.footer = content().first?.makeSupplementary(sectionID: id)
+        return copy
     }
 
     /// 设置 section 的选择模式。

@@ -312,7 +312,7 @@ item supplementary 的 itemAnchor 相对于所属 item，不是 Section 边界�
 
 Grid 启用 item supplementary 时，要求实际解析出的轨道尺寸相等且轨道间距一致；异构组合会被 adapter 拒绝。原生 UIKit List 不提供 itemSupplementaries 修饰方法，此类组合在编译期被拒绝。CustomLayout 需要自行将 `context.itemSupplementaries` 安装到 item 上。
 
-supplementary 内容和几何直接通过同一个非空 `kind: String` 关联。普通布局原样使用这个 kind；estimated/uniform 多 line Grid 为各基本单元生成内部实际 elementKind，以避免 UIKit 的重复 kind 冲突。UIKit 对每个实际 kind 独立编号，因此实际 supplementary indexPath 与所属 item indexPath 可能不同。业务声明、刷新及事件继续使用业务 kind/所属 item 位置。每个 Section 内一个 kind 只能声明一份内容，并且只能附着到一条 boundary 或 item 规则；不同 Section 可以复用 kind。内容 id 表示业务身份，refreshID 表示内容版本。kind 和视图类型也参与展示 identity，改变它们不等同于仅更新内容版本。
+supplementary 内容和几何直接通过同一个非空 `kind: String` 关联。普通布局原样使用这个 kind；estimated/uniform 多 line Grid 为各基本单元生成内部实际 elementKind，以避免 UIKit 的重复 kind 冲突。UIKit 对每个实际 kind 独立编号，因此实际 supplementary indexPath 与所属 item indexPath 可能不同。业务声明、刷新及事件继续使用业务 kind/所属 item 位置。每个 Section 内一个 kind 只能声明一份内容，并且只能附着到一条 boundary 或 item 规则；不同 Section 可以复用 kind。默认身份由分区、业务 kind 和视图类型（或 provider 的 `presentationID`）确定。需要替换同一 kind 的业务内容时显式传 `elementID:`；`refreshID` 表示同一内容的版本。
 
 自适应多 line 的 badge 示例：
 
@@ -327,7 +327,9 @@ GridLayout(tracks: 2)
     }
 ```
 
-用 `SectionSupplementary(BadgeView.self, kind: "badge", id: ...)` 声明一次内容即可。configure、onTap、onDisplay 和 onEndDisplay 中的 `context.indexPath` 是所属 item 的位置。`reconfigureVisibleSupplementaries(ofKind:forRowID:in:)` 按业务 row identity 查询，在重排后仍指向该 row。
+对于 item 徽章，身份标识该分区的内容声明，各行通过所属 item 的上下文定位。自定义 provider 若要根据内容版本重新执行创建闭包，需选用 `.reloadSection` 刷新动作。
+
+用 `SectionSupplementary(BadgeView.self, kind: "badge")` 声明一次内容即可。configure、onTap、onDisplay 和 onEndDisplay 中的 `context.indexPath` 是所属 item 的位置。`reconfigureVisibleSupplementaries(ofKind:forRowID:in:)` 按业务 row identity 查询，在重排后仍指向该 row。
 
 需要直接查询 UIKit 时，先取得实际地址；不要把业务 item 的 indexPath 与实际 kind 混用，也不要缓存地址跨布局／数据更新：
 
@@ -341,7 +343,7 @@ if let address = adapter.supplementaryElement(ofKind: "badge", at: itemIndexPath
 自定义 provider 使用接收实际 elementKind 的重载。provider 的 `indexPath` 用于 UIKit dequeue，`context.indexPath` 用于业务，两者职责不同：
 
 ```swift
-ProviderSupplementary("badge", id: "badge", view: BadgeView.self) {
+ProviderSupplementary("badge", view: BadgeView.self) {
     collectionView, elementKind, indexPath, context in
     let view = collectionView.lk.dequeue(BadgeView.self, ofKind: elementKind, for: indexPath)
     view.configure(item: context.indexPath.item)
@@ -402,7 +404,7 @@ let layout = GridLayout(tracks: 1)
         )
     }
 let title: ListSectionSupplementary<Int> = SectionSupplementary(
-    UICollectionReusableView.self, kind: titleKind, id: "title"
+    UICollectionReusableView.self, kind: titleKind
 ) { view, _ in
     view.accessibilityLabel = "\(count) items"
 }

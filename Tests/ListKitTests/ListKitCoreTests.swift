@@ -623,7 +623,7 @@ final class ListKitCoreTests: XCTestCase {
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                     ,
-                    id: "header") { view, _ in
+                    elementID: "header") { view, _ in
                         view.title = headerText
                     }
                     .refreshID(1)
@@ -723,7 +723,7 @@ final class ListKitCoreTests: XCTestCase {
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                     ,
-                    id: "header") { view, _ in
+                    elementID: "header") { view, _ in
                         view.title = headerText
                     }
                     .refreshID(1)
@@ -1210,7 +1210,7 @@ final class ListKitCoreTests: XCTestCase {
             let header: ListSectionSupplementary<Int> = SectionSupplementary(
                 HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                 ,
-                id: "outline-header") { view, _ in
+                elementID: "outline-header") { view, _ in
                     view.title = "Header \(headerVersion)"
                 }
                 .refreshID(headerVersion)
@@ -1598,7 +1598,7 @@ final class ListKitCoreTests: XCTestCase {
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                     ,
-                    id: "header") { view, _ in
+                    elementID: "header") { view, _ in
                         view.title = "Users"
                     }
             }
@@ -1981,7 +1981,7 @@ final class ListKitCoreTests: XCTestCase {
             SectionSupplementary(
                 HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                 ,
-                id: "header") { _, _ in }.onTap { context in
+                elementID: "header") { _, _ in }.onTap { context in
                     context.send(UserEvent.headerTap)
                 }
         }
@@ -2035,12 +2035,12 @@ final class ListKitCoreTests: XCTestCase {
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                     ,
-                    id: "same-header") { _, _ in }
+                    elementID: "same-header") { _, _ in }
 
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                     ,
-                    id: "same-header") { _, _ in }
+                    elementID: "same-header") { _, _ in }
             }
 
             ListSection(0) {
@@ -2596,7 +2596,7 @@ final class ListKitCoreTests: XCTestCase {
     func testSectionMetadataSelectionAndSupplementaryEnhancements() {
         let header = Supplementary(
             UICollectionView.elementKindSectionHeader,
-            id: "header",
+            elementID: "header",
             view: HeaderView.self
         ) { _, _ in }
             .refreshID(2)
@@ -2623,7 +2623,7 @@ final class ListKitCoreTests: XCTestCase {
             SectionSupplementary(header)
 
             SectionSupplementary(
-                HeaderView.self, kind: "badge", id: "badge"
+                HeaderView.self, kind: "badge", elementID: "badge"
             ) { _, _ in }
         } decorations: {
             SectionDecoration(kind: "section-decoration", elementKind: "user-background")
@@ -2745,7 +2745,7 @@ final class ListKitCoreTests: XCTestCase {
                 }
 
         } supplementaries: {
-            SectionSupplementary(HeaderView.self, kind: "dot", id: "dot") { _, _ in }
+            SectionSupplementary(HeaderView.self, kind: "dot", elementID: "dot") { _, _ in }
         }
 
         let layout = section.layoutSource.options?.items.first { $0.kind == "dot" }
@@ -2802,7 +2802,7 @@ final class ListKitCoreTests: XCTestCase {
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                     ,
-                    id: "history") { _, _ in }
+                    elementID: "history") { _, _ in }
             }
         }
 
@@ -2874,18 +2874,18 @@ final class ListKitCoreTests: XCTestCase {
             SectionSupplementary(
                 HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                 ,
-                id: "header") { _, _ in }
+                elementID: "header") { _, _ in }
 
             SectionSupplementary(
                 HeaderView.self, kind: UICollectionView.elementKindSectionFooter
                 ,
-                id: "footer") { _, _ in }
+                elementID: "footer") { _, _ in }
 
             SectionSupplementary(
-                HeaderView.self, kind: "badge", id: "badge"
+                HeaderView.self, kind: "badge", elementID: "badge"
             ) { _, _ in }
 
-            SectionSupplementary(HeaderView.self, kind: "dot", id: "dot") { _, _ in }
+            SectionSupplementary(HeaderView.self, kind: "dot", elementID: "dot") { _, _ in }
         }
 
         let layouts = section.layoutSource.options!.items
@@ -2935,15 +2935,15 @@ final class ListKitCoreTests: XCTestCase {
             SectionSupplementary(
                 HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                 ,
-                id: "header") { _, _ in }
+                elementID: "header") { _, _ in }
 
             SectionSupplementary(
                 HeaderView.self, kind: UICollectionView.elementKindSectionFooter
                 ,
-                id: "footer") { _, _ in }
+                elementID: "footer") { _, _ in }
 
             SectionSupplementary(
-                HeaderView.self, kind: "badge", id: "badge"
+                HeaderView.self, kind: "badge", elementID: "badge"
             ) { _, _ in }
         }
 
@@ -2973,19 +2973,19 @@ final class ListKitCoreTests: XCTestCase {
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                     ,
-                    id: "header") { _, _ in }
+                    elementID: "header") { _, _ in }
             }
 
             if false {
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionFooter
                     ,
-                    id: "footer") { _, _ in }
+                    elementID: "footer") { _, _ in }
             }
 
             if false {
                 SectionSupplementary(
-                    HeaderView.self, kind: "badge", id: "badge"
+                    HeaderView.self, kind: "badge", elementID: "badge"
                 ) { _, _ in }
             }
         }
@@ -3206,7 +3206,7 @@ final class ListKitCoreTests: XCTestCase {
                     SectionSupplementary(
                         HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                         ,
-                        id: "header") { _, _ in }
+                        elementID: "header") { _, _ in }
                 }
             }
         }
@@ -3241,7 +3241,7 @@ final class ListKitCoreTests: XCTestCase {
                 SectionSupplementary(
                     HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                     ,
-                    id: "header") { _, _ in }
+                    elementID: "header") { _, _ in }
             } decorations: {
                 SectionDecoration(HeaderView.self, kind: "section-decoration")
             }
@@ -3481,7 +3481,7 @@ final class ListKitCoreTests: XCTestCase {
 
                 } supplementaries: {
                     SectionSupplementary(
-                        BadgeView.self, kind: kind, id: "badge"
+                        BadgeView.self, kind: kind, elementID: "badge"
                     ) { view, context in
                         configuredCount += 1
                         view.value = "\(badgePrefix)-\(context.indexPath.item)"
@@ -3551,7 +3551,7 @@ final class ListKitCoreTests: XCTestCase {
 
                 } supplementaries: {
                     SectionSupplementary(
-                        BadgeView.self, kind: kind, id: "badge"
+                        BadgeView.self, kind: kind, elementID: "badge"
                     ) { view, context in
                         configuredCount += 1
                         view.value = "\(badgePrefix)-\(context.indexPath.item)"
@@ -3594,7 +3594,7 @@ final class ListKitCoreTests: XCTestCase {
 
         func applyBadge(hasTapHandler: Bool) {
             var supplementary: ListSectionSupplementary<Int> = SectionSupplementary(
-                BadgeView.self, kind: kind, id: "badge"
+                BadgeView.self, kind: kind, elementID: "badge"
             ) { _, _ in }.refresh(when: .never)
             if hasTapHandler {
                 supplementary = supplementary.onTap { _ in }
@@ -3671,7 +3671,7 @@ final class ListKitCoreTests: XCTestCase {
                     }
 
             } supplementaries: {
-                SectionSupplementary(BadgeView.self, kind: kind, id: "badge") {
+                SectionSupplementary(BadgeView.self, kind: kind, elementID: "badge") {
                     view, context in
                     let rowID = context.indexPath.item == 0 ? "first" : "second"
                     view.value = badgeValues[rowID]
@@ -3728,7 +3728,7 @@ final class ListKitCoreTests: XCTestCase {
 
                 } supplementaries: {
                     SectionSupplementary(
-                        BadgeView.self, kind: "badge", id: "badge"
+                        BadgeView.self, kind: "badge", elementID: "badge"
                     ) { _, _ in }
                 }
             }
@@ -3758,7 +3758,7 @@ final class ListKitCoreTests: XCTestCase {
                 }
         } supplementaries: {
             SectionSupplementary(
-                HeaderView.self, kind: "badge", id: "badge"
+                HeaderView.self, kind: "badge", elementID: "badge"
             ) { _, _ in }
         }
 

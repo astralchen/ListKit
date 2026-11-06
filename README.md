@@ -131,7 +131,7 @@ func render(users: [User]) {
                 )
             }
         } supplementaries: {
-            SectionSupplementary(UsersHeaderView.self, kind: title, id: "users-title") { view, _ in
+            SectionSupplementary(UsersHeaderView.self, kind: title) { view, _ in
                 view.titleLabel.text = "Users"
             }
         }
@@ -140,6 +140,10 @@ func render(users: [User]) {
 ```
 
 `ForEach` 会把自己的 ID 传给内部 `Row`，因此上例不需要在 `Row` 上重复写 `id`。
+
+Collection 附属视图的 `kind:` 与布局中的边界元素或 item 徽章对应。同一 Section、同一业务 kind 和视图类型默认复用内容身份。用 `.refreshID(...)` 更新同一份内容；需要替换同一 kind 的业务对象时才传 `elementID:`。这也适用于可独立组合的 `Supplementary` 和自定义 `ProviderSupplementary`。旧的 `id:` 可迁移为 `elementID:`，固定的占位 ID 可以直接省略。
+
+如果公共属性或函数需要写出省略 ID 后的返回类型，可使用 `Supplementary<DefaultCollectionSupplementaryID, BadgeView>` 或 `ProviderSupplementary<DefaultCollectionSupplementaryID>`。
 
 ### Section 组合方式
 
@@ -163,7 +167,7 @@ let section = ListSection(0) {
 }
 .supplementaries {
     SectionSupplementary(
-        UICollectionReusableView.self, kind: titleKind, id: "title"
+        UICollectionReusableView.self, kind: titleKind
     ) { view, _ in
         view.accessibilityLabel = "Messages"
     }
@@ -264,18 +268,23 @@ private lazy var adapter = TableListAdapter<Section>(tableView: tableView)
 func render(messages: [Message]) {
     adapter.apply {
         TableSection(.messages) {
+            TableRow("today-divider", model: "今天", cell: TimeDividerCell.self) { cell, title, _ in
+                cell.configure(title: title)
+            }
+            .height(.fixed(28))
+
             TableForEach(messages, id: \.id) { message in
                 TableRow(model: message, cell: MessageCell.self) { cell, message, _ in
                     cell.configure(with: message)
                 }
                 .refreshID(message.version)
-                .height(.automatic(estimated: 64))
                 .onSelect { message, _ in
                     openMessage(message)
                 }
             }
         }
         .headerTitle("Messages")
+        .layout { TableLayout().rowHeight(.estimated(64)) }
     }
 }
 ```
@@ -289,21 +298,55 @@ func render(messages: [Message]) {
 ```swift
 TableSection(.messages) {
     makeMessageRows()
-} header: {
-    TableHeader(MessagesHeaderView.self, id: "messages-header") { view, _ in
+}
+.layout {
+    TableLayout()
+        .rowHeight(.estimated(64))
+        .headerHeight(.estimated(48))
+        .footerHeight(.fixed(44))
+}
+.header {
+    TableHeader(MessagesHeaderView.self) { view, _ in
         view.configure(title: "Messages", unreadCount: unreadCount)
     }
     .refreshID(unreadCount)
-    .height(.estimated(48))
-} footer: {
+}
+.footer {
     if hasMore {
-        TableFooter(LoadingFooterView.self, id: "loading-footer") { view, _ in
+        TableFooter(LoadingFooterView.self) { view, _ in
             view.startAnimating()
         }
-        .height(.fixed(44))
     }
 }
 ```
+
+页眉和页脚默认按分区、角色和视图类型确定身份。上例未读数发生变化时，`.refreshID(unreadCount)` 让同一页眉更新内容。若同一分区使用相同视图类型展示不同账户，且切换账户时需要替换页眉，可以写 `TableHeader(ProfileHeaderView.self, elementID: account.id)`。从旧版迁移时，固定的 `id:` 通常可以省略；有意控制替换的业务 ID 改用 `elementID:`。
+
+和 `ListSection` 一样，可以从 rows 开始，链式调用 `.layout { … }`、`.header { … }`、`.footer { … }`，也可以使用初始化器的 `layout:`、`header:`、`footer:` 闭包。两种写法可以混用；每次调用只替换对应声明。`.header {}` 或 `.footer {}` 会清除对应的自定义视图，此时仍可显示已设置的系统标题。
+
+编译器会检查角色：`.header` 只接受 `TableHeader`，`.footer` 只接受 `TableFooter`。单独封装时，返回类型分别写作 `TableSectionHeader<SectionID>` 和 `TableSectionFooter<SectionID>`。系统标题的增删和文字变更会随 `apply` 更新；自定义视图覆盖该角色时，修改其备用标题不会触发分区重载。
+
+`TableLayout` 作用于当前 Section。普通消息继承分区规则，时间分隔行的 `.height(.fixed(28))` 同时将实际高度和估算高度设为 28。自定义视图和系统标题都使用分区的页眉、页脚规则；上例在 `hasMore == false` 时不会因为 `.footerHeight(.fixed(44))` 而预留 44 点。
+
+| 高度规则 | 实际高度 | 估算高度 |
+| --- | --- | --- |
+| `.fixed(28)` | 28 点 | 28 点 |
+| `.automatic` | UIKit 按内容测量 | UIKit 自动估算 |
+| `.estimated(64)` | UIKit 按内容测量 | 64 点 |
+
+实际行高与估算行高分别按「单行 → 分区 → 外部 delegate 对应方法 → UITableView 对应属性」解析。显式 `.automatic` 会完整覆盖分区规则，省略才会继承。页眉、页脚仅在声明了相应视图或标题时使用分区高度，其他情况沿用 delegate 和表格默认值。再次 `apply` 改变已有内容的高度规则时，adapter 会重新测量布局，即使内容的 `refreshID` 相同。
+
+**从旧版高度 API 迁移**
+
+| 旧声明 | 新声明 |
+| --- | --- |
+| `TableRowHeight` | 共用的 `TableHeight` |
+| `.automatic()` / `.automatic(estimated: 64)` | `.automatic` / `.estimated(64)` |
+| 每行重复同一 `.height(...)` | 分区 `.layout { TableLayout().rowHeight(...) }`，例外行保留 `.height(...)` |
+| `TableHeader.height(...)` / `TableFooter.height(...)` | 分区布局的 `.headerHeight(...)` / `.footerHeight(...)` |
+| 单行 `.estimatedHeight(64)` | 内容自适应时使用 `.height(.estimated(64))`；若实际和估算高度需要独立计算，省略 DSL 规则，分别实现 delegate 的两个行高方法 |
+
+新版对已存在但未声明高度规则的行也会查询外部 delegate 的估算方法，然后回退到 `tableView.estimatedRowHeight`。
 
 ### Collection 上下文菜单
 
@@ -391,7 +434,7 @@ iOS 13.0 引入、iOS 16.0 弃用；显示与结束通知从 iOS 13.2 引入。a
 TableRow(model: message, id: \.id, cell: MessageCell.self) { cell, message, _ in
     cell.configure(with: message)
 }
-.height(.automatic(estimated: 72))
+.height(.estimated(72))
 .editing(.delete) { message, _, _ in
     store.delete(message.id)
 }

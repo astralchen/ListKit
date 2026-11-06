@@ -190,18 +190,18 @@ struct LayoutLabConfiguration: Hashable {
             if section == 0 && scene != .nativeList {
                 let badgeContent = scene == .badges ? """
 
-                        SectionSupplementary(LayoutLabBadge.self, kind: "lab.badge", id: "badge") { view, context in
+                        SectionSupplementary(LayoutLabBadge.self, kind: "lab.badge") { view, context in
                             view.configure(item: context.indexPath.item)
                         }
                 """ : ""
                 text += """
 
                     .supplementaries {
-                        SectionSupplementary(LayoutLabHeader.self, kind: "\(LayoutLabElementKind.title)", id: "title") { view, _ in
+                        SectionSupplementary(LayoutLabHeader.self, kind: "\(LayoutLabElementKind.title)") { view, _ in
                             view.configure(text: "lab.title · \(count)", identifier: "lab-title")
                         }
                         .refreshID(\(count))
-                        SectionSupplementary(LayoutLabHeader.self, kind: "\(LayoutLabElementKind.summary)", id: "footer") { view, _ in
+                        SectionSupplementary(LayoutLabHeader.self, kind: "\(LayoutLabElementKind.summary)") { view, _ in
                             view.configure(text: "lab.summary", identifier: "lab-summary")
                         }\(badgeContent)
                     }

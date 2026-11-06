@@ -60,7 +60,7 @@ final class LayoutAPIReviewTests: XCTestCase {
                                 sizingAxis: horizontal ? .horizontal : .vertical, alignment: horizontal ? .leading : .top)
                         }
                 } supplementaries: {
-                    SectionSupplementary(UICollectionReusableView.self, kind: "header", id: 0) { _, _ in }
+                    SectionSupplementary(UICollectionReusableView.self, kind: "header", elementID: 0) { _, _ in }
                 }
             }
             f.render()
@@ -86,7 +86,7 @@ final class LayoutAPIReviewTests: XCTestCase {
                             ItemSupplementaryLayout(kind: "badge", size: .init(width: .absolute(8), height: .absolute(8)), itemAnchor: .topTrailing)
                         }
                 } supplementaries: {
-                    SectionSupplementary(UICollectionReusableView.self, kind: "badge", id: 0) { _, _ in }
+                    SectionSupplementary(UICollectionReusableView.self, kind: "badge", elementID: 0) { _, _ in }
                 }
             }
             f.render()
