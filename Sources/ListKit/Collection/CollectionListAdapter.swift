@@ -768,7 +768,8 @@ where SectionID: Hashable & Sendable {
             ))
         }
 
-        let newLayoutSignature = Self.makeLayoutSignature(from: newSections)
+        let newLayoutSignature = Self.makeLayoutSignature(
+            from: newSections, usesListKitLayout: collectionView.collectionViewLayout is ListCollectionLayout)
         var shouldInvalidateLayout =
             options.applicationMode == .reloadData
             || layoutSignature != newLayoutSignature
@@ -2834,14 +2835,19 @@ where SectionID: Hashable & Sendable {
     /// 解析业务 kind 和所属 item 位置，得到实际 UIKit supplementary 地址。
     /// measured 多 line Grid 中，同一业务 kind 对应多个实际 kind，且各自独立编号。
     /// 返回值只适用于当前已解析布局；布局、方向或数据改变后应重新查询。未启用的 kind 返回 nil。
+    /// item 徽章要求所属条目存在；空分区的边界页眉仍可使用第 0 项的位置查询。
     public func supplementaryElement(ofKind kind: String, at indexPath: IndexPath) -> ListSupplementaryElement? {
         guard let section = sections[safe: indexPath.section], indexPath.item >= 0,
             section.supplementaries.contains(where: { $0.kind == kind }) else { return nil }
         let sectionID = AnyListID(section.id)
-        guard resolvedCollectionLayout === collectionView?.collectionViewLayout,
+        guard let collectionView, resolvedCollectionLayout === collectionView.collectionViewLayout,
+            indexPath.section < collectionView.numberOfSections,
             activeSupplementaryKinds[sectionID]?.contains(kind) == true else { return nil }
+        if activeItemSupplementaryKinds[sectionID]?.contains(kind) == true,
+            indexPath.item >= collectionView.numberOfItems(inSection: indexPath.section) {
+            return nil
+        }
         if let aliases = activeSupplementaryAliases[sectionID]?[kind] {
-            guard indexPath.item < (collectionView?.numberOfItems(inSection: indexPath.section) ?? 0) else { return nil }
             for actual in aliases {
                 if let path = supplementaryAliases[actual]?.supplementaryIndexPath(for: indexPath) {
                     return .init(elementKind: actual, indexPath: path)
@@ -3402,15 +3408,24 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    private static func makeLayoutSignature(from sections: [ListSection<SectionID>])
-        -> [ListSectionLayoutSignature<SectionID>]
-    {
+    private static func makeLayoutSignature(
+        from sections: [ListSection<SectionID>], usesListKitLayout: Bool
+    ) -> [ListSectionLayoutSignature<SectionID>] {
         sections.map { section in
-            ListSectionLayoutSignature(
+            let content: [AnySupplementary]
+            if usesListKitLayout, case .builtIn(let layout) = section.layoutSource, !section.supplementaries.isEmpty {
+                // 几何顺序已包含在 layoutSource 中；内容仅按启用的 kind 匹配。
+                let options = layout.options
+                let kinds = Set(options.boundaries.map(\.kind) + options.items.map(\.kind))
+                content = section.supplementaries.filter { kinds.contains($0.kind) }.sorted { $0.kind < $1.kind }
+            } else {
+                content = section.supplementaries
+            }
+            return ListSectionLayoutSignature(
                 sectionID: AnyListID(section.id),
                 source: section.layoutSource,
                 hasVisibleItemsInvalidationHandler: section.visibleItemsInvalidationHandler != nil,
-                supplementarySignatures: section.supplementaries.map { supplementary in
+                supplementarySignatures: content.map { supplementary in
                     ListSupplementaryLayoutSignature(
                         identity: supplementary.identity,
                         kind: supplementary.kind

@@ -327,9 +327,11 @@ GridLayout(tracks: 2)
     }
 ```
 
-对于 item 徽章，身份标识该分区的内容声明，各行通过所属 item 的上下文定位。自定义 provider 若要根据内容版本重新执行创建闭包，需选用 `.reloadSection` 刷新动作。
+对于 item 徽章，身份标识该分区的内容声明，同一 kind 的各行徽章共享这份声明的身份。省略 `elementID` 时，`context.itemID` 是 `DefaultSupplementaryID`。若需在重排后找到原条目，可在回调中保存 `adapter.itemIdentity(at: context.indexPath)` 的结果，之后通过 `adapter.indexPath(for:)` 重新定位。自定义 provider 若要根据内容版本重新执行创建闭包，需选用 `.reloadSection` 刷新动作。
 
 用 `SectionSupplementary(BadgeView.self, kind: "badge")` 声明一次内容即可。configure、onTap、onDisplay 和 onEndDisplay 中的 `context.indexPath` 是所属 item 的位置。`reconfigureVisibleSupplementaries(ofKind:forRowID:in:)` 按业务 row identity 查询，在重排后仍指向该 row。
+
+查询徽章时，超出当前分区条目范围的位置返回 `nil`，包括空分区的第 0 项。分区页眉按分区定位，空分区仍可在第 0 项的位置查询已启用的页眉。
 
 需要直接查询 UIKit 时，先取得实际地址；不要把业务 item 的 indexPath 与实际 kind 混用，也不要缓存地址跨布局／数据更新：
 
@@ -352,6 +354,8 @@ ProviderSupplementary("badge", view: BadgeView.self) {
 ```
 
 自定义 register 闭包同样可接收 `(collectionView, elementKind)`。旧三参数 viewProvider 在原有不需要映射的布局中保持可用；自适应多 line 布局会在构建前要求迁移该 provider。原始 UIKit delegate 转发和 visibleItemsInvalidationHandler 仍携带 UIKit 的实际标识；ListKit 的业务事件与刷新入口负责转换。
+
+使用 adapter 创建的布局且分区直接声明 `GridLayout` 或 `UIKitListLayout` 时，附属视图内容按几何规则中的 `kind` 匹配。改变未启用内容的 `elementID`，或仅调整内容声明顺序，不会因此触发布局失效。已启用元素的身份变化，以及边界或徽章几何规则的变化，仍会更新布局。
 
 同一 Section、同一 kind 下，业务 id 或视图类型改变属于身份替换：当该 kind 的几何已启用且仍需显示时，框架重新加载受影响的已有 Section，使 supplementary 进入完整配置/复用路径。仅保留内容注册、未启用几何的 kind 不因此重新加载 Section；环境布局以当前真实环境解析的新分支为准。屏幕外但已启用的 kind 仍参与替换判断。直接提供的 FlowLayout 或未通过 `makeCompositionalSection` 解析的外部布局没有可验证的 kind 启用元数据，保留原有的保守重载行为，不用 DSL 缺省值推断其几何。切换 collection layout 时清理旧布局的解析和滚动记录。
 

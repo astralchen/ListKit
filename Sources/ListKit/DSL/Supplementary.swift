@@ -3,12 +3,6 @@ import UIKit
 
 // MARK: - Supplementary Model
 
-/// 省略 elementID 时推断出的类型，可用于公开的 Supplementary 或 ProviderSupplementary 声明。
-public struct DefaultCollectionSupplementaryID: Hashable, Sendable {
-    @usableFromInline static let inferred = Self()
-    private init() {}
-}
-
 /// 附属视图内容的类型擦除描述，几何信息由分区布局保存。
 public struct AnySupplementary {
     /// 包含 Section、supplementary ID、view 类型和展示变体的稳定 identity。
@@ -193,7 +187,7 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
 ///   - configure: 在主执行器上配置视图的闭包。
 /// - Returns: 可放入分区附属视图构建器的内容声明。
 @MainActor public func SectionSupplementary<SectionID, ID, View>(
-    _ viewType: View.Type, kind: String, elementID: ID = DefaultCollectionSupplementaryID.inferred,
+    _ viewType: View.Type, kind: String, elementID: ID = DefaultSupplementaryID.inferred,
     configure: @escaping @MainActor (View, ListContext) -> Void
 ) -> ListSectionSupplementary<SectionID>
 where SectionID: Hashable & Sendable, ID: Hashable & Sendable, View: UICollectionReusableView {
@@ -253,7 +247,7 @@ where ID: Hashable & Sendable, View: UICollectionReusableView {
     ///   - configure: 配置 reusable view 的闭包。
     public init(
         _ kind: String,
-        elementID: ID = DefaultCollectionSupplementaryID.inferred,
+        elementID: ID = DefaultSupplementaryID.inferred,
         view viewType: View.Type,
         configure: @escaping @MainActor (View, ListContext) -> Void
     ) {
@@ -408,7 +402,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     ///   提供者须使用传入的索引路径出队视图。
     public init<View>(
         _ kind: String,
-        elementID: ID = DefaultCollectionSupplementaryID.inferred,
+        elementID: ID = DefaultSupplementaryID.inferred,
         view viewType: View.Type,
         register: (@MainActor (UICollectionView) -> Void)? = nil,
         viewProvider:
@@ -438,7 +432,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     /// - Important: 此重载不支持内部元素种类映射；需要映射时使用接收实际元素种类的重载。
     public init(
         _ kind: String,
-        elementID: ID = DefaultCollectionSupplementaryID.inferred,
+        elementID: ID = DefaultSupplementaryID.inferred,
         presentationID: ObjectIdentifier,
         register: @escaping @MainActor (UICollectionView) -> Void,
         viewProvider:
@@ -457,7 +451,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     /// 支持布局内部 kind 映射的 provider。elementKind 与 indexPath 是本次 UIKit 请求，必须原样用于 dequeue。
     /// context.indexPath 则是所属业务 item 的位置；不能用它替代 supplementary 的 dequeue indexPath。
     public init<View>(
-        _ kind: String, elementID: ID = DefaultCollectionSupplementaryID.inferred, view viewType: View.Type,
+        _ kind: String, elementID: ID = DefaultSupplementaryID.inferred, view viewType: View.Type,
         register: (@MainActor (UICollectionView, String) -> Void)? = nil,
         viewProvider: @escaping @MainActor (UICollectionView, String, IndexPath, ListContext) -> UICollectionReusableView
     ) where View: UICollectionReusableView {
@@ -473,7 +467,7 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
 
     /// 自定义展示身份的映射 provider；注册和 dequeue 都必须使用传入的实际 elementKind。
     public init(
-        _ kind: String, elementID: ID = DefaultCollectionSupplementaryID.inferred, presentationID: ObjectIdentifier,
+        _ kind: String, elementID: ID = DefaultSupplementaryID.inferred, presentationID: ObjectIdentifier,
         register: @escaping @MainActor (UICollectionView, String) -> Void,
         viewProvider: @escaping @MainActor (UICollectionView, String, IndexPath, ListContext) -> UICollectionReusableView
     ) {

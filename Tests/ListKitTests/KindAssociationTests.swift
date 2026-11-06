@@ -32,6 +32,7 @@ import XCTest
         let provider = ProviderSupplementary(kind, view: view) { _, _, _, _ in UICollectionReusableView() }
         let explicit: ListSectionSupplementary<Int> = SectionSupplementary(view, kind: kind, elementID: kind) { _, _ in }
         let identity = direct.makeSupplementary(sectionID: 1).identity
+        XCTAssertNotNil(identity.rowID.typed(DefaultSupplementaryID.self))
         XCTAssertEqual(identity, typed.eraseToAnySupplementary(sectionID: 1).identity)
         XCTAssertEqual(identity, provider.eraseToAnySupplementary(sectionID: 1).identity)
         XCTAssertNotEqual(identity, direct.makeSupplementary(sectionID: 2).identity)

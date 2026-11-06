@@ -5,6 +5,51 @@ import XCTest
 
 @MainActor
 final class MeasuredBadgeLayoutTests: XCTestCase {
+    func testBadgeAddressRequiresExistingItemButEmptySectionHeaderStillResolves() async throws {
+        let fixture = LayoutFixture(width: 320, count: 1)
+        defer { fixture.close() }
+        let first = IndexPath(item: 0, section: 0)
+        let pastEnd = IndexPath(item: 1, section: 0)
+
+        func render(itemCount: Int, lines: Int) async {
+            await fixture.adapter.apply(transaction: .disabled) {
+                ListSection(0) {
+                    for item in 0..<itemCount {
+                        Row(item, model: item, cell: UICollectionViewCell.self) { _, _, _ in }
+                    }
+                } layout: {
+                    GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).lineGrouping(.count(lines: lines))
+                        .itemSupplementaries {
+                            ItemSupplementaryLayout(kind: "badge", size: .init(width: .absolute(10), height: .absolute(10)),
+                                itemAnchor: .topTrailing)
+                        }
+                        .boundarySupplementaries {
+                            BoundarySupplementaryLayout(kind: "header", mainAxisSize: .fixed(32), sizingAxis: .vertical, alignment: .top)
+                        }
+                } supplementaries: {
+                    SectionSupplementary(MeasuredBadgeView.self, kind: "badge") { _, _ in }
+                    SectionSupplementary(UICollectionReusableView.self, kind: "header") { _, _ in }
+                }
+            }
+            fixture.render()
+        }
+
+        for lines in [1, 2] {
+            await render(itemCount: 1, lines: lines)
+            let badge = try XCTUnwrap(fixture.adapter.supplementaryElement(ofKind: "badge", at: first))
+            XCTAssertEqual(badge.elementKind == "badge", lines == 1)
+            XCTAssertNil(fixture.adapter.supplementaryElement(ofKind: "badge", at: pastEnd))
+
+            await render(itemCount: 0, lines: lines)
+            XCTAssertNil(fixture.adapter.supplementaryElement(ofKind: "badge", at: first))
+            let header = try XCTUnwrap(fixture.adapter.supplementaryElement(ofKind: "header", at: first))
+            XCTAssertEqual(header.elementKind, "header")
+            XCTAssertEqual(header.indexPath, first)
+            XCTAssertNotNil(fixture.collection.layoutAttributesForSupplementaryElement(
+                ofKind: header.elementKind, at: header.indexPath))
+        }
+    }
+
     func testMeasuredBadgesKeepGeometryAndBusinessIndexPaths() throws {
         for horizontal in [false, true] {
             for orthogonal in [false, true] {

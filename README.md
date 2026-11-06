@@ -143,7 +143,7 @@ func render(users: [User]) {
 
 Collection 附属视图的 `kind:` 与布局中的边界元素或 item 徽章对应。同一 Section、同一业务 kind 和视图类型默认复用内容身份。用 `.refreshID(...)` 更新同一份内容；需要替换同一 kind 的业务对象时才传 `elementID:`。这也适用于可独立组合的 `Supplementary` 和自定义 `ProviderSupplementary`。旧的 `id:` 可迁移为 `elementID:`，固定的占位 ID 可以直接省略。
 
-如果公共属性或函数需要写出省略 ID 后的返回类型，可使用 `Supplementary<DefaultCollectionSupplementaryID, BadgeView>` 或 `ProviderSupplementary<DefaultCollectionSupplementaryID>`。
+如果公共属性或函数需要写出省略 ID 后的返回类型，可使用 `Supplementary<DefaultSupplementaryID, BadgeView>` 或 `ProviderSupplementary<DefaultSupplementaryID>`。已有的 `DefaultCollectionSupplementaryID` 类型名仍然可用。
 
 ### Section 组合方式
 
@@ -320,7 +320,7 @@ TableSection(.messages) {
 }
 ```
 
-页眉和页脚默认按分区、角色和视图类型确定身份。上例未读数发生变化时，`.refreshID(unreadCount)` 让同一页眉更新内容。若同一分区使用相同视图类型展示不同账户，且切换账户时需要替换页眉，可以写 `TableHeader(ProfileHeaderView.self, elementID: account.id)`。从旧版迁移时，固定的 `id:` 通常可以省略；有意控制替换的业务 ID 改用 `elementID:`。
+页眉和页脚默认按分区、角色和视图类型确定身份。省略 `elementID` 时，两者的 `context.itemID` 都是与 Collection 共用的 `DefaultSupplementaryID` 标记。要区分两个展示元素，应比较完整的 `context.identity`；需要从回调取回业务 ID 时，显式传入 `elementID`。上例未读数发生变化时，`.refreshID(unreadCount)` 让同一页眉更新内容。若同一分区使用相同视图类型展示不同账户，且切换账户时需要替换页眉，可以写 `TableHeader(ProfileHeaderView.self, elementID: account.id)`。从旧版迁移时，固定的 `id:` 通常可以省略；有意控制替换的业务 ID 改用 `elementID:`。
 
 和 `ListSection` 一样，可以从 rows 开始，链式调用 `.layout { … }`、`.header { … }`、`.footer { … }`，也可以使用初始化器的 `layout:`、`header:`、`footer:` 闭包。两种写法可以混用；每次调用只替换对应声明。`.header {}` 或 `.footer {}` 会清除对应的自定义视图，此时仍可显示已设置的系统标题。
 

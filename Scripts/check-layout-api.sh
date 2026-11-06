@@ -47,7 +47,8 @@ import ListKit
     public let provider = ProviderSupplementary("footer", view: UICollectionReusableView.self) { _, _, _ in
         UICollectionReusableView()
     }
-    public func makeBadge() -> Supplementary<DefaultCollectionSupplementaryID, UICollectionReusableView> { badge }
+    public func makeBadge() -> Supplementary<DefaultSupplementaryID, UICollectionReusableView> { badge }
+    public func legacyProvider() -> ProviderSupplementary<DefaultCollectionSupplementaryID> { provider }
 }
 SWIFT
 check_source public-collection-supplementaries pass

@@ -15,6 +15,7 @@ public struct TableListContext {
     /// 当前展示身份所属的类型擦除 Section ID。
     public var sectionID: AnyListID { identity.sectionID }
     /// 当前展示身份对应的类型擦除 Row 或 supplementary ID。
+    /// 页眉和页脚省略 elementID 时，该值包含 DefaultSupplementaryID；完整展示身份请使用 identity。
     public var itemID: AnyListID { identity.rowID }
     /// 创建上下文时保存的位置，不会随列表更新自动改变。
     /// 页眉和页脚使用所在分区的第 0 行位置；延迟处理时应通过 `identity` 重新定位。
@@ -1147,7 +1148,7 @@ public struct TableSectionSupplementary<SectionID, Role> where SectionID: Hashab
 ) -> TableSectionHeader<SectionID>
     where SectionID: Hashable & Sendable, View: UITableViewHeaderFooterView
 {
-    TableHeader(viewType, elementID: TableSectionSupplementaryKind.header, configure: configure)
+    TableHeader(viewType, elementID: DefaultSupplementaryID.inferred, configure: configure)
 }
 
 /// 创建 table section header。
@@ -1201,7 +1202,7 @@ public struct TableSectionSupplementary<SectionID, Role> where SectionID: Hashab
 ) -> TableSectionFooter<SectionID>
     where SectionID: Hashable & Sendable, View: UITableViewHeaderFooterView
 {
-    TableFooter(viewType, elementID: TableSectionSupplementaryKind.footer, configure: configure)
+    TableFooter(viewType, elementID: DefaultSupplementaryID.inferred, configure: configure)
 }
 
 /// 创建 table section footer。

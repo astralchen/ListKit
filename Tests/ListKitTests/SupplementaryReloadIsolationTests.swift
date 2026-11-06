@@ -171,10 +171,54 @@ import XCTest
         let summary = await f.adapter.apply(transaction: .disabled) { section(1) }
         f.collection.layoutIfNeeded()
         XCTAssertEqual(summary.refreshMetrics.reloadedSectionCount, 0, "No layout uses this kind")
+        XCTAssertFalse(summary.animation.layoutInvalidated)
         XCTAssertEqual(configureCount, 0, "Unrelated .never Row should not be configured")
         XCTAssertEqual(oldCell.value, 42)
         XCTAssertEqual(oldCell.reuseCount, reuseCount)
         XCTAssertTrue(f.collection.cellForItem(at: IndexPath(item: 0, section: 0)) === oldCell)
+    }
+
+    func testBuiltInLayoutIgnoresDormantDeclarationOrderAndInvalidatesChangedGeometry() async throws {
+        let f = ReviewFixture()
+        defer { f.close() }
+        let path = IndexPath(item: 0, section: 0)
+        let original = ["header", "unusedA", "unusedB"]
+        let reordered = ["unusedB", "header", "unusedA"]
+        func render(_ order: [String], height: CGFloat, enabled: String) async -> ListApplySummary {
+            await f.adapter.apply(transaction: .disabled) {
+                ListSection(0) {
+                    Row(0, model: 0, cell: ReviewCell.self) { _, _, _ in }.refresh(when: .never)
+                } layout: {
+                    GridLayout(tracks: 1).itemMainAxisSize(.fixed(40)).boundarySupplementaries {
+                        BoundarySupplementaryLayout(kind: enabled, mainAxisSize: .fixed(height),
+                            sizingAxis: .vertical, alignment: .top)
+                    }
+                } supplementaries: {
+                    for kind in order {
+                        SectionSupplementary(ReviewView.self, kind: kind) { _, _ in }.refresh(when: .never)
+                    }
+                }
+            }
+        }
+
+        _ = await render(original, height: 24, enabled: "header")
+        let header = try XCTUnwrap(f.collection.supplementaryView(forElementKind: "header", at: path))
+        let generation = f.adapter.layoutInvalidationGeneration
+        let stable = await render(reordered, height: 24, enabled: "header")
+        XCTAssertFalse(stable.animation.layoutInvalidated)
+        XCTAssertEqual(stable.refreshMetrics.reloadedSectionCount, 0)
+        XCTAssertEqual(f.adapter.layoutInvalidationGeneration, generation)
+        XCTAssertTrue(f.collection.supplementaryView(forElementKind: "header", at: path) === header)
+
+        let resized = await render(reordered, height: 48, enabled: "header")
+        XCTAssertTrue(resized.animation.layoutInvalidated)
+        let attributes = try XCTUnwrap(f.collection.layoutAttributesForSupplementaryElement(ofKind: "header", at: path))
+        XCTAssertEqual(attributes.frame.height, 48, accuracy: 1)
+
+        let switched = await render(reordered, height: 48, enabled: "unusedA")
+        XCTAssertTrue(switched.animation.layoutInvalidated)
+        XCTAssertNil(f.collection.supplementaryView(forElementKind: "header", at: path))
+        XCTAssertNotNil(f.collection.supplementaryView(forElementKind: "unusedA", at: path))
     }
 
     func testEnvironmentDisabledKindDoesNotReloadAndReenableUsesLatestContent() async throws {

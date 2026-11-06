@@ -142,6 +142,7 @@ import XCTest
             XCTAssertEqual(replaced.value, "1:0")
             XCTAssertEqual(replaced is ReplacementB, changesType)
             if changesType { XCTAssertFalse(replaced === original) }
+            XCTAssertTrue(replacement.animation.layoutInvalidated)
             XCTAssertEqual(replacement.refreshMetrics.reloadedSectionCount, 1)
             XCTAssertEqual(replacement.refreshMetrics.snapshotReconfiguredRowCount, 0)
             XCTAssertEqual(replacement.refreshMetrics.visibleReconfiguredSupplementaryCount, 0)

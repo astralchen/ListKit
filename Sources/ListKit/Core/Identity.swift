@@ -46,6 +46,15 @@ public struct AnyListID: Hashable, CustomStringConvertible, @unchecked Sendable 
     }
 }
 
+/// Table 和 Collection 附属视图省略 elementID 时共用的标记。角色、kind 和视图类型分别参与完整身份。
+public struct DefaultSupplementaryID: Hashable, Sendable {
+    @usableFromInline static let inferred = Self()
+    private init() {}
+}
+
+/// 保留已有 Collection 附属视图公开签名使用的类型名称。
+public typealias DefaultCollectionSupplementaryID = DefaultSupplementaryID
+
 /// `Row(model:cell:)` 在 `ForEach(id:)` 内使用时的占位 ID 类型。
 ///
 /// - Note: 开发者通常不会直接接触这个类型。它的存在是为了让 Swift 能推断出：

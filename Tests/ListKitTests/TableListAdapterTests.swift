@@ -46,6 +46,32 @@ final class TableListAdapterTests: XCTestCase {
         XCTAssertNotEqual(sections[0].header?.identity, sections[0].footer?.identity)
     }
 
+    func testOmittedSupplementaryIDsShareMarkerButPreserveRoleInCallbackIdentity() async throws {
+        let table = UITableView(frame: .zero)
+        let adapter = TableListAdapter<Int>(tableView: table)
+        var headerIdentity: AnyListIdentity?
+        var footerIdentity: AnyListIdentity?
+        var accountID: Int?
+        await adapter.apply(transaction: .disabled) {
+            TableSection(0) {}
+                .header { TableHeader(MessageHeaderView.self) { _, context in headerIdentity = context.identity } }
+                .footer { TableFooter(MessageHeaderView.self) { _, context in footerIdentity = context.identity } }
+            TableSection(1) {}
+                .header { TableHeader(MessageHeaderView.self, elementID: 42) { _, context in accountID = context.item() } }
+        }
+        _ = adapter.tableView(table, viewForHeaderInSection: 0)
+        _ = adapter.tableView(table, viewForFooterInSection: 0)
+        _ = adapter.tableView(table, viewForHeaderInSection: 1)
+        let header = try XCTUnwrap(headerIdentity)
+        let footer = try XCTUnwrap(footerIdentity)
+        XCTAssertNotNil(header.rowID.typed(DefaultSupplementaryID.self))
+        XCTAssertEqual(header.rowID, footer.rowID)
+        XCTAssertEqual(header.presentationID, footer.presentationID)
+        XCTAssertNotEqual(header.variant, footer.variant)
+        XCTAssertNotEqual(header, footer)
+        XCTAssertEqual(accountID, 42)
+    }
+
     func testTableAdapterApplyQueriesSelectionAndEvents() {
         let tableView = UITableView(frame: CGRect(x: 0, y: 0, width: 320, height: 240), style: .plain)
         let adapter = TableListAdapter<Section>(tableView: tableView)

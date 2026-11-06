@@ -58,6 +58,8 @@ reload：
 Section reload 覆盖同 Section 内已规划的 Row reload、Row reconfigure 和 Supplementary
 reconfigure，避免重复执行和重复计数。
 
+省略 `elementID` 时，Table 和 Collection 的附属视图共用 `DefaultSupplementaryID` 标记。Table 回调中的 `itemID` 现在对默认页眉和页脚相同；比较展示元素时使用完整的 `identity`，它还包含分区、角色和视图类型。显式传入的业务 ID 仍可从回调读取。
+
 Table 的 header/footer 业务 identity 或视图类型变化，以及自定义 header/footer 的新增、
 移除，会重载保留的 Section；这些结构更新不受 `.never` 限制。identity 稳定时，仅
 refreshID 变化仍遵循节点规则，不会自动升级为 Section reload。

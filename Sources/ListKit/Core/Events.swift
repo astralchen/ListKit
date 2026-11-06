@@ -21,11 +21,11 @@ public struct ListContext {
     public let identity: AnyListIdentity
     /// 当前 section 的稳定身份。
     public var sectionID: AnyListID { identity.sectionID }
-    /// 当前 row 或 supplementary 的稳定数据 id。
+    /// 当前 row 或 supplementary 的数据 ID。附属视图省略 elementID 时得到 DefaultSupplementaryID。
     public var itemID: AnyListID { identity.rowID }
     /// 创建上下文时保存的业务位置，不会随后续列表更新自动改变。
     /// 条目附属视图使用所属条目的位置；查询实际 UIKit 附属视图地址时使用适配器的地址转换接口。
-    /// 延迟发送事件或跨刷新使用时，应通过 `identity` 重新定位。
+    /// 若徽章事件需要在重排后找到所属条目，在回调中用 itemIdentity(at:) 保存该条目的身份，之后用 indexPath(for:) 重新定位。
     public let indexPath: IndexPath
     private let collectionViewReference: ListCollectionViewReference
 
