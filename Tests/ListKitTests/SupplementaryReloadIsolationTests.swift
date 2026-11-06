@@ -378,12 +378,14 @@ import XCTest
         }
     }
 
-    func testProviderOwnedItemSupplementaryStillReplacesItsViewType() async throws {
+    func testProviderOwnedBadgeRefreshesByRowIDAndReplacesItsViewType() async throws {
         let f = ReviewFixture()
         defer { f.close() }
         func section(_ version: Int) -> ListSection<Int> {
             ListSection(0) {
-                Row(0, model: 0, cell: ReviewCell.self) { _, _, _ in }
+                for id in [42, 7] {
+                    Row(id, model: id, cell: ReviewCell.self) { _, _, _ in }
+                }
             } layout: {
                 CustomLayout(layoutKey: "manual-item") { _ in
                     let supplementary = NSCollectionLayoutSupplementaryItem(
@@ -412,8 +414,18 @@ import XCTest
         let path = IndexPath(item: 0, section: 0)
         await f.adapter.apply(transaction: .disabled) { section(0) }
         f.collection.layoutIfNeeded()
-        XCTAssertNotNil(
-            f.collection.supplementaryView(forElementKind: "badge", at: path) as? ReviewView)
+        let secondPath = IndexPath(item: 1, section: 0)
+        let first = try XCTUnwrap(f.collection.supplementaryView(forElementKind: "badge", at: path) as? ReviewView)
+        let second = try XCTUnwrap(f.collection.supplementaryView(forElementKind: "badge", at: secondPath) as? ReviewView)
+        first.value = -1
+        second.value = -2
+        let address = try XCTUnwrap(f.adapter.supplementaryElement(ofKind: "badge", at: secondPath))
+        XCTAssertEqual(address.indexPath, secondPath)
+        XCTAssertEqual(address.elementKind, "badge")
+        XCTAssertEqual(f.adapter.reconfigureVisibleSupplementaries(ofKind: "badge", forRowID: 7, in: 0), 1)
+        XCTAssertEqual(first.value, -1)
+        XCTAssertEqual(second.value, 0)
+        XCTAssertEqual(f.adapter.reconfigureVisibleSupplementaries(ofKind: "badge", forRowID: 99, in: 0), 0)
         let replacement = await f.adapter.apply(transaction: .disabled) { section(1) }
         f.collection.layoutIfNeeded()
         XCTAssertEqual(replacement.refreshMetrics.reloadedSectionCount, 1)

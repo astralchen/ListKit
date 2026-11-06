@@ -40,6 +40,11 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
             XCTAssertEqual(badge.elementKind == "badge", lines == 1)
             XCTAssertNil(fixture.adapter.supplementaryElement(ofKind: "badge", at: pastEnd))
 
+            await render(itemCount: 2, lines: lines)
+            XCTAssertNotNil(fixture.adapter.supplementaryElement(ofKind: "badge", at: pastEnd))
+            XCTAssertNil(fixture.adapter.supplementaryElement(ofKind: "header", at: pastEnd))
+            XCTAssertEqual(fixture.adapter.reconfigureVisibleSupplementaries(ofKind: "header", forRowID: 0), 0)
+
             await render(itemCount: 0, lines: lines)
             XCTAssertNil(fixture.adapter.supplementaryElement(ofKind: "badge", at: first))
             let header = try XCTUnwrap(fixture.adapter.supplementaryElement(ofKind: "header", at: first))

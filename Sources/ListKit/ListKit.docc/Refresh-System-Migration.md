@@ -64,7 +64,7 @@ Table 的 header/footer 业务 identity 或视图类型变化，以及自定义 
 移除，会重载保留的 Section；这些结构更新不受 `.never` 限制。identity 稳定时，仅
 refreshID 变化仍遵循节点规则，不会自动升级为 Section reload。
 使用系统标题时，新增、修改或清除标题会重载对应的 Section，以更新可见文字。
-如果该角色已使用自定义视图，其备用系统标题可以变化而无需重载。
+如果该角色已使用声明的自定义视图或外部代理提供的视图，其备用系统标题可以变化而无需重载。外部代理返回 `nil` 时，系统标题仍按通常规则刷新。
 
 框架 compositional layout 按 Section identity 保持 Section reload 前的正交滚动偏移。
 这同时适用于 supplementary 身份替换、`.reloadSection` 刷新动作与主动 `reloadSections`；

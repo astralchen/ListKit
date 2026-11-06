@@ -33,7 +33,10 @@ where SectionID: Hashable & Sendable {
     /// 选择交互启用时，`willSelectRowAt` 和 `willDeselectRowAt` 的返回值原样传递给 UIKit；
     /// 返回 `nil` 可分别阻止选择或取消选择。
     public weak var tableDelegate: UITableViewDelegate? {
-        didSet { configureSelectionBehavior() }
+        didSet {
+            if oldValue !== tableDelegate { delegateViews.removeAll() }
+            configureSelectionBehavior()
+        }
     }
 
     /// UIKit data source 逃生口，仅用于 ListKit 未声明的可选能力。
@@ -72,6 +75,8 @@ where SectionID: Hashable & Sendable {
     private var displayedRowsByCell: [ObjectIdentifier: AnyTableRow] = [:]
     /// header/footer 开始展示时捕获的 supplementary 描述。
     private var displayedSupplementariesByView: [ObjectIdentifier: TableDisplayedSupplementary] = [:]
+    /// UIKit 最近实际从外部代理取得视图的分区和角色。比较描述时不额外调用视图提供者。
+    private var delegateViews: [SectionID: Set<TableSectionSupplementaryKind>] = [:]
     /// 预取开始时捕获的 Row，确保取消预取时仍回调原始对象。
     private var prefetchedRowsByIndexPath: [IndexPath: AnyTableRow] = [:]
     /// 每次接受新 apply 时递增，用于拒绝旧异步 completion 写回状态。
@@ -686,10 +691,13 @@ where SectionID: Hashable & Sendable {
         let previousSections = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
         let supplementaryReplacementSections = newSections.compactMap { section -> AnyListID? in
             guard let previous = previousSections[section.id] else { return nil }
+            let maskedTitles = tableDelegate == nil ? nil : delegateViews[section.id]
             let headerChanged = previous.header?.identity != section.header?.identity
-                || (section.header == nil && previous.headerTitle != section.headerTitle)
+                || (section.header == nil && previous.headerTitle != section.headerTitle
+                    && maskedTitles?.contains(.header) != true)
             let footerChanged = previous.footer?.identity != section.footer?.identity
-                || (section.footer == nil && previous.footerTitle != section.footerTitle)
+                || (section.footer == nil && previous.footerTitle != section.footerTitle
+                    && maskedTitles?.contains(.footer) != true)
             return headerChanged || footerChanged ? AnyListID(section.id) : nil
         }
         let applyPlan = ListApplyPlanner.makePlan(
@@ -743,6 +751,10 @@ where SectionID: Hashable & Sendable {
         applyGeneration += 1
         let generation = applyGeneration
         sections = newSections
+        if !delegateViews.isEmpty {
+            let retainedIDs = Set(newSections.map(\.id))
+            delegateViews = delegateViews.filter { retainedIDs.contains($0.key) }
+        }
         rebuildLookupTables(in: tableView)
         configureSelectionBehavior()
 
@@ -1993,7 +2005,7 @@ where SectionID: Hashable & Sendable {
     /// 返回分区声明的页眉视图；未声明时查询外部代理。
     public func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
         guard let header = sections[safe: section]?.header else {
-            return tableDelegate?.tableView?(tableView, viewForHeaderInSection: section)
+            return delegateSupplementaryView(.header, in: section, tableView: tableView)
         }
         return header.viewProvider(
             tableView,
@@ -2004,12 +2016,31 @@ where SectionID: Hashable & Sendable {
     /// 返回分区声明的页脚视图；未声明时查询外部代理。
     public func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
         guard let footer = sections[safe: section]?.footer else {
-            return tableDelegate?.tableView?(tableView, viewForFooterInSection: section)
+            return delegateSupplementaryView(.footer, in: section, tableView: tableView)
         }
         return footer.viewProvider(
             tableView,
             context(for: IndexPath(row: 0, section: section), identity: footer.identity)
         )
+    }
+
+    private func delegateSupplementaryView(
+        _ role: TableSectionSupplementaryKind, in section: Int, tableView: UITableView
+    ) -> UIView? {
+        let view: UIView?
+        switch role {
+        case .header: view = tableDelegate?.tableView?(tableView, viewForHeaderInSection: section)
+        case .footer: view = tableDelegate?.tableView?(tableView, viewForFooterInSection: section)
+        }
+        if let id = sections[safe: section]?.id {
+            if view != nil {
+                delegateViews[id, default: []].insert(role)
+            } else {
+                delegateViews[id]?.remove(role)
+                if delegateViews[id]?.isEmpty == true { delegateViews.removeValue(forKey: id) }
+            }
+        }
+        return view
     }
 
     /// 返回分区页眉标题，未声明时查询外部数据源；存在自定义页眉时返回 `nil`。

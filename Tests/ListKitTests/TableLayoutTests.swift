@@ -108,6 +108,12 @@ final class TableLayoutTests: XCTestCase {
         XCTAssertEqual(adapter.tableView(table, estimatedHeightForFooterInSection: 0), 13)
     }
 
+    private func texts(in view: UIView?) -> [String] {
+        guard let view else { return [] }
+        if let label = view as? UILabel { return [label.text].compactMap { $0 } }
+        return view.subviews.flatMap { texts(in: $0) }
+    }
+
     func testSystemTitleChangesUpdateVisibleText() async {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
         let controller = UIViewController()
@@ -117,6 +123,12 @@ final class TableLayoutTests: XCTestCase {
         window.isHidden = false
         defer { window.isHidden = true }
         let adapter = TableListAdapter<Int>(tableView: table)
+
+        let delegate = TitleDelegate()
+        delegate.providesHeader = false
+        delegate.providesFooter = false
+        adapter.tableDelegate = delegate
+        defer { withExtendedLifetime(delegate) {} }
 
         func render(header: String?, footer: String?) async {
             await adapter.apply(transaction: .disabled) {
@@ -128,12 +140,6 @@ final class TableLayoutTests: XCTestCase {
                 .layout { TableLayout().headerHeight(.fixed(40)).footerHeight(.fixed(32)) }
             }
             table.layoutIfNeeded()
-        }
-
-        func texts(in view: UIView?) -> [String] {
-            guard let view else { return [] }
-            if let label = view as? UILabel { return [label.text].compactMap { $0 } }
-            return view.subviews.flatMap { texts(in: $0) }
         }
 
         await render(header: "HEADER ONE", footer: "FOOTER ONE")
@@ -152,6 +158,57 @@ final class TableLayoutTests: XCTestCase {
         await render(header: "HEADER THREE", footer: "FOOTER THREE")
         XCTAssertTrue(texts(in: table.headerView(forSection: 0)).contains("HEADER THREE"))
         XCTAssertTrue(texts(in: table.footerView(forSection: 0)).contains("FOOTER THREE"))
+    }
+
+    func testDelegateHeaderAndFooterMaskOnlyTheirOwnFallbackTitles() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        let controller = UIViewController()
+        let table = UITableView(frame: window.bounds)
+        controller.view = table
+        window.rootViewController = controller
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let adapter = TableListAdapter<Int>(tableView: table)
+        let delegate = TitleDelegate()
+        adapter.tableDelegate = delegate
+        var rowsConfigured = 0
+
+        func render(_ header: String, _ footer: String) async -> ListApplySummary {
+            let summary = await adapter.apply(transaction: .disabled) {
+                TableSection(0) {
+                    TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in rowsConfigured += 1 }
+                        .refresh(when: .never)
+                }
+                .headerTitle(header).footerTitle(footer)
+                .layout { TableLayout().headerHeight(.fixed(36)).footerHeight(.fixed(32)) }
+            }
+            table.layoutIfNeeded()
+            return summary
+        }
+
+        _ = await render("Header A", "Footer A")
+        let header = try XCTUnwrap(table.headerView(forSection: 0))
+        let footer = try XCTUnwrap(table.footerView(forSection: 0))
+        XCTAssertEqual(header.accessibilityIdentifier, "delegate.header")
+        XCTAssertEqual(footer.accessibilityIdentifier, "delegate.footer")
+        let requests = delegate.requests
+        rowsConfigured = 0
+        let masked = await render("Header B", "Footer B")
+        XCTAssertEqual(masked.refreshMetrics.reloadedSectionCount, 0)
+        XCTAssertEqual(rowsConfigured, 0)
+        XCTAssertEqual(delegate.requests, requests)
+        XCTAssertTrue(table.headerView(forSection: 0) === header)
+        XCTAssertTrue(table.footerView(forSection: 0) === footer)
+
+        // 替换外部代理后，页脚回退到系统标题；页眉继续由代理提供。
+        let headerOnly = TitleDelegate()
+        headerOnly.providesFooter = false
+        adapter.tableDelegate = headerOnly
+        let unmasked = await render("Header B", "Footer C")
+        XCTAssertEqual(unmasked.refreshMetrics.reloadedSectionCount, 1)
+        XCTAssertTrue(texts(in: table.footerView(forSection: 0)).contains("Footer C"))
+        let headerChange = await render("Header C", "Footer C")
+        XCTAssertEqual(headerChange.refreshMetrics.reloadedSectionCount, 0)
     }
 
     func testTitlesMaskedByCustomViewsDoNotReloadSection() async {
@@ -209,6 +266,29 @@ final class TableLayoutTests: XCTestCase {
         XCTAssertEqual(table.rectForHeader(inSection: 0).height, 48, accuracy: 1)
         XCTAssertEqual(table.rectForFooter(inSection: 0).height, 36, accuracy: 1)
         XCTAssertEqual(updated.refreshMetrics.visibleReconfiguredRowCount, 0)
+    }
+}
+
+@MainActor
+private final class TitleDelegate: NSObject, UITableViewDelegate {
+    var providesHeader = true
+    var providesFooter = true
+    var requests = 0
+
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        requests += 1
+        guard providesHeader else { return nil }
+        let view = UITableViewHeaderFooterView()
+        view.accessibilityIdentifier = "delegate.header"
+        return view
+    }
+
+    func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+        requests += 1
+        guard providesFooter else { return nil }
+        let view = UITableViewHeaderFooterView()
+        view.accessibilityIdentifier = "delegate.footer"
+        return view
     }
 }
 

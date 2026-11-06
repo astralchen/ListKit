@@ -89,9 +89,8 @@ where SectionID: Hashable & Sendable {
     private var supplementaryAliases: [String: ListSupplementaryAliasKey] = [:]
     private var activeSupplementaryAliases: [AnyListID: [String: [String]]] = [:]
     private var displayedSupplementaryIndexPaths: [ObjectIdentifier: IndexPath] = [:]
-    private var activeItemSupplementaryKinds: [AnyListID: Set<String>] = [:]
     /// 最近一次成功解析的实际元素种类，包含自定义边界几何。
-    private var activeSupplementaryKinds: [AnyListID: Set<String>] = [:]
+    private var activeSupplementaryKinds: [AnyListID: ResolvedSupplementaryKinds] = [:]
     /// 最近一次实际 UIKit 布局环境，每次提供者解析此分区时更新。
     private var layoutEnvironments: [AnyListID: any NSCollectionLayoutEnvironment] = [:]
     private weak var resolvedCollectionLayout: UICollectionViewCompositionalLayout?
@@ -868,7 +867,6 @@ where SectionID: Hashable & Sendable {
         activeSupplementaryAliases = activeSupplementaryAliases.filter { activeSectionIDs.contains($0.key) }
         supplementaryAliasKinds = supplementaryAliasKinds.filter { activeSectionIDs.contains($0.key.sectionID) }
         supplementaryAliases = supplementaryAliases.filter { activeSectionIDs.contains($0.value.sectionID) }
-        activeItemSupplementaryKinds = activeItemSupplementaryKinds.filter { activeSectionIDs.contains($0.key) }
         activeSupplementaryKinds = activeSupplementaryKinds.filter { activeSectionIDs.contains($0.key) }
         layoutEnvironments = layoutEnvironments.filter { activeSectionIDs.contains($0.key) }
         orthogonalSectionIDs.formIntersection(activeSectionIDs)
@@ -2835,17 +2833,22 @@ where SectionID: Hashable & Sendable {
     /// 解析业务 kind 和所属 item 位置，得到实际 UIKit supplementary 地址。
     /// measured 多 line Grid 中，同一业务 kind 对应多个实际 kind，且各自独立编号。
     /// 返回值只适用于当前已解析布局；布局、方向或数据改变后应重新查询。未启用的 kind 返回 nil。
-    /// item 徽章要求所属条目存在；空分区的边界页眉仍可使用第 0 项的位置查询。
+    /// item 徽章要求所属条目存在；边界只接受第 0 项的位置，包括空分区。
     public func supplementaryElement(ofKind kind: String, at indexPath: IndexPath) -> ListSupplementaryElement? {
-        guard let section = sections[safe: indexPath.section], indexPath.item >= 0,
+        guard indexPath.count == 2, let section = sections[safe: indexPath.section], indexPath.item >= 0,
             section.supplementaries.contains(where: { $0.kind == kind }) else { return nil }
         let sectionID = AnyListID(section.id)
         guard let collectionView, resolvedCollectionLayout === collectionView.collectionViewLayout,
             indexPath.section < collectionView.numberOfSections,
-            activeSupplementaryKinds[sectionID]?.contains(kind) == true else { return nil }
-        if activeItemSupplementaryKinds[sectionID]?.contains(kind) == true,
-            indexPath.item >= collectionView.numberOfItems(inSection: indexPath.section) {
-            return nil
+            let activeKinds = activeSupplementaryKinds[sectionID] else { return nil }
+        if activeKinds.boundaries.contains(kind) {
+            return indexPath.item == 0 ? .init(elementKind: kind, indexPath: indexPath) : nil
+        }
+        guard indexPath.item < collectionView.numberOfItems(inSection: indexPath.section) else { return nil }
+        // 自定义 group 内手工安装的徽章没有声明元数据，当前可见的 UIKit 视图可确认其实际地址。
+        if !activeKinds.items.contains(kind) {
+            guard activeKinds.isCustom,
+                collectionView.supplementaryView(forElementKind: kind, at: indexPath) != nil else { return nil }
         }
         if let aliases = activeSupplementaryAliases[sectionID]?[kind] {
             for actual in aliases {
@@ -2946,8 +2949,7 @@ where SectionID: Hashable & Sendable {
             resolvedCollectionLayout = currentLayout
         }
         activeSupplementaryAliases[AnyListID(section.id)] = [:]
-        activeItemSupplementaryKinds[AnyListID(section.id)] = []
-        activeSupplementaryKinds[AnyListID(section.id)] = []
+        activeSupplementaryKinds[AnyListID(section.id)] = .init(items: [], boundaries: [], isCustom: false)
         layoutEnvironments[AnyListID(section.id)] = environment
         var source = section.layoutSource
         var depth = 0
@@ -3150,10 +3152,10 @@ where SectionID: Hashable & Sendable {
             }
             layoutSection.decorationItems.append(rule.makeItem(kind: content.elementKind))
         }
-        activeItemSupplementaryKinds[AnyListID(section.id)] = Set(
-            itemSupplementaries.map(\.elementKind))
-        activeSupplementaryKinds[AnyListID(section.id)] = Set(itemSupplementaries.map(\.elementKind))
-            .union(layoutSection.boundarySupplementaryItems.map(\.elementKind))
+        activeSupplementaryKinds[AnyListID(section.id)] = ResolvedSupplementaryKinds(
+            items: Set(itemSupplementaries.map(\.elementKind)),
+            boundaries: Set(layoutSection.boundarySupplementaryItems.map(\.elementKind)),
+            isCustom: isCustom)
         if layoutSection.orthogonalScrollingBehavior == .none {
             orthogonalSectionIDs.remove(AnyListID(section.id))
             orthogonalScrollStates.removeValue(forKey: AnyListID(section.id))
@@ -3657,7 +3659,8 @@ where SectionID: Hashable & Sendable {
         return attributes.compactMap { attributes -> VisibleSupplementaryTarget? in
             guard
                 attributes.representedElementCategory == .supplementaryView,
-                let elementKind = attributes.representedElementKind
+                let elementKind = attributes.representedElementKind,
+                attributes.indexPath.count == 2
             else { return nil }
             let indexPath = attributes.indexPath
             let logicalKind = supplementaryAliases[elementKind]?.kind ?? elementKind
@@ -3670,7 +3673,7 @@ where SectionID: Hashable & Sendable {
             }
             if let matchingIndexPaths {
                 guard matchingIndexPaths.contains(itemPath),
-                    isItemSupplementary(kind: logicalKind, at: itemPath)
+                    isVisibleItemSupplementary(kind: logicalKind, at: itemPath)
                 else {
                     return nil
                 }
@@ -3688,19 +3691,21 @@ where SectionID: Hashable & Sendable {
         }
     }
 
-    private func isItemSupplementary(kind: String, at indexPath: IndexPath) -> Bool {
+    /// 仅对 UIKit 已返回 supplementary attributes 的地址调用。
+    private func isVisibleItemSupplementary(kind: String, at indexPath: IndexPath) -> Bool {
         guard let section = sections[safe: indexPath.section] else { return false }
-        if let options = section.layoutSource.options {
-            return options.items.contains { $0.kind == kind }
-                && section.supplementaries.contains { $0.kind == kind }
+        let sectionID = AnyListID(section.id)
+        if let resolvedCollectionLayout, resolvedCollectionLayout === collectionView?.collectionViewLayout,
+           let activeKinds = activeSupplementaryKinds[sectionID] {
+            // activeKinds 已包含此分区的全部边界。未登记但有实际 attributes 的 kind 来自自定义 group。
+            return activeKinds.items.contains(kind) || (activeKinds.isCustom && !activeKinds.boundaries.contains(kind))
         }
-        return activeItemSupplementaryKinds[AnyListID(section.id)]?.contains(kind) == true
+        return section.layoutSource.options?.items.contains { $0.kind == kind } == true
     }
 
     private func clearResolvedLayoutState() {
         activeSupplementaryAliases.removeAll()
         activeSupplementaryKinds.removeAll()
-        activeItemSupplementaryKinds.removeAll()
         layoutEnvironments.removeAll()
         orthogonalSectionIDs.removeAll()
         orthogonalScrollStates.removeAll()
@@ -3735,7 +3740,7 @@ where SectionID: Hashable & Sendable {
             $0.identity.sectionID == AnyListID(section.id) && $0.kind == kind
         }) { return true }
         if let active = activeSupplementaryKinds[AnyListID(section.id)] {
-            return active.contains(kind)
+            return active.items.contains(kind) || active.boundaries.contains(kind)
         }
         // 未通过 makeCompositionalSection 提供的独立布局没有对应解析元数据。
         // 沿用这些布局的身份替换行为，不通过当前屏幕可见性推断是否替换。
@@ -4279,6 +4284,12 @@ private final class ListOrthogonalScrollState {
 private struct ListOrthogonalOffsetSnapshot {
     let offset: CGPoint
     let scrollRevision: UUID?
+}
+
+private struct ResolvedSupplementaryKinds {
+    let items: Set<String>
+    let boundaries: Set<String>
+    let isCustom: Bool
 }
 
 private struct SupplementaryKey: Hashable {

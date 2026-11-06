@@ -331,7 +331,7 @@ GridLayout(tracks: 2)
 
 用 `SectionSupplementary(BadgeView.self, kind: "badge")` 声明一次内容即可。configure、onTap、onDisplay 和 onEndDisplay 中的 `context.indexPath` 是所属 item 的位置。`reconfigureVisibleSupplementaries(ofKind:forRowID:in:)` 按业务 row identity 查询，在重排后仍指向该 row。
 
-查询徽章时，超出当前分区条目范围的位置返回 `nil`，包括空分区的第 0 项。分区页眉按分区定位，空分区仍可在第 0 项的位置查询已启用的页眉。
+查询徽章时，超出当前分区条目范围的位置返回 `nil`，包括空分区的第 0 项。分区边界元素只接受 `item: 0`，即使分区中有多条数据，非零位置也返回 `nil`。空分区仍可在第 0 项的位置查询已启用的页眉。自定义布局手工挂载的可见徽章也支持按 row ID 刷新；其地址由 UIKit 当前显示的徽章确认。
 
 需要直接查询 UIKit 时，先取得实际地址；不要把业务 item 的 indexPath 与实际 kind 混用，也不要缓存地址跨布局／数据更新：
 

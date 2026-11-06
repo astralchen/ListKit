@@ -324,7 +324,7 @@ TableSection(.messages) {
 
 和 `ListSection` 一样，可以从 rows 开始，链式调用 `.layout { … }`、`.header { … }`、`.footer { … }`，也可以使用初始化器的 `layout:`、`header:`、`footer:` 闭包。两种写法可以混用；每次调用只替换对应声明。`.header {}` 或 `.footer {}` 会清除对应的自定义视图，此时仍可显示已设置的系统标题。
 
-编译器会检查角色：`.header` 只接受 `TableHeader`，`.footer` 只接受 `TableFooter`。单独封装时，返回类型分别写作 `TableSectionHeader<SectionID>` 和 `TableSectionFooter<SectionID>`。系统标题的增删和文字变更会随 `apply` 更新；自定义视图覆盖该角色时，修改其备用标题不会触发分区重载。
+编译器会检查角色：`.header` 只接受 `TableHeader`，`.footer` 只接受 `TableFooter`。单独封装时，返回类型分别写作 `TableSectionHeader<SectionID>` 和 `TableSectionFooter<SectionID>`。系统标题的增删和文字变更会随 `apply` 更新；已声明自定义视图，或 UIKit 实际从外部代理取得了该角色的视图时，修改备用标题不会触发分区重载。代理返回 `nil` 时，该角色按系统标题更新。
 
 `TableLayout` 作用于当前 Section。普通消息继承分区规则，时间分隔行的 `.height(.fixed(28))` 同时将实际高度和估算高度设为 28。自定义视图和系统标题都使用分区的页眉、页脚规则；上例在 `hasMore == false` 时不会因为 `.footerHeight(.fixed(44))` 而预留 44 点。
 
