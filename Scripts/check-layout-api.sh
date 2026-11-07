@@ -25,13 +25,17 @@ check_source() {
     echo "$expected: $name"
 }
 check table-layout pass 'let _ = TableSection(0) {
-    TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.height(.fixed(28))
+    TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }
 }.layout {
     TableLayout().rowHeight(.estimated(64)).headerHeight(.automatic).footerHeight(.fixed(44))
 }.header {
     TableHeader(UITableViewHeaderFooterView.self) { _, _ in }.refreshID(3)
 }.footer {
     TableFooter(UITableViewHeaderFooterView.self) { _, _ in }
+}'
+check table-row-height-by-id pass 'enum ChatID: Hashable, Sendable { case divider, message(Int) }
+let _ = TableLayout().rowHeight { id in
+    id.typed(ChatID.self) == .divider ? .fixed(28) : .estimated(68)
 }'
 check table-footer-in-header fail 'let _ = TableSection(0) {}.header {
     TableFooter(UITableViewHeaderFooterView.self) { _, _ in }.refreshID(1)
@@ -52,6 +56,7 @@ import ListKit
 }
 SWIFT
 check_source public-collection-supplementaries pass
+check table-legacy-row-height fail 'let _ = TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.height(.estimated(68))'
 check table-legacy-height-type fail 'let _: TableRowHeight = .fixed(28)'
 check table-legacy-automatic-estimate fail 'let _: TableHeight = .automatic(estimated: 64)'
 check table-legacy-independent-estimate fail 'let _ = TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.estimatedHeight(64)'

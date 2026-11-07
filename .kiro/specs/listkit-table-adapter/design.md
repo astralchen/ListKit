@@ -9,7 +9,7 @@
 ```swift
 private lazy var adapter = TableListAdapter<Section>(tableView: tableView)
 
-adapter.apply(animatingDifferences: false) {
+adapter.apply(transaction: .disabled) {
     TableSection(.messages) {
         TableForEach(messages, id: \.messageID) { message in
             TableRow(model: message, cell: MessageCell.self) { cell, message, context in
@@ -21,11 +21,11 @@ adapter.apply(animatingDifferences: false) {
             }
         }
     } header: {
-        TableHeader(TitleHeaderView.self, id: "title") { view, _ in
+        TableHeader(TitleHeaderView.self, elementID: "title") { view, _ in
             view.titleLabel.text = "消息"
         }
-        .height(.estimated(44))
     }
+    .layout { TableLayout().rowHeight(.estimated(68)).headerHeight(.estimated(44)) }
 }
 ```
 
@@ -105,7 +105,7 @@ Adapter 接管：
 - `scrollDelegate: UIScrollViewDelegate?`
 - `tableDelegate: UITableViewDelegate?`
 
-adapter 消费 row DSL 已声明的 selection、display、height、context menu、editing、swipe 和 prefetch；未声明或 ListKit 不处理的 delegate 方法再转发给 `tableDelegate`。如果某个回调同时存在 row handler 和 tableDelegate，先执行 row handler，再按 UIKit 语义返回可组合结果；不可组合的返回值优先使用 row 声明。
+adapter 消费 row DSL 已声明的 selection、display、context menu、editing、swipe 和 prefetch；未声明或 ListKit 不处理的 delegate 方法再转发给 `tableDelegate`。如果某个回调同时存在 row handler 和 tableDelegate，先执行 row handler，再按 UIKit 语义返回可组合结果；不可组合的返回值优先使用 row 声明。
 
 ## Table DSL
 
@@ -117,17 +117,23 @@ TableSection(.main) {
         cell.configure(user)
     }
 } header: {
-    TableHeader(UserHeaderView.self, id: "header") { view, _ in
+    TableHeader(UserHeaderView.self, elementID: "header") { view, _ in
         view.configure(title)
     }
-    .height(.fixed(48))
 } footer: {
-    TableFooter(LoadingFooterView.self, id: "footer") { view, _ in
+    TableFooter(LoadingFooterView.self, elementID: "footer") { view, _ in
         view.isLoading = isLoading
     }
-    .height(.automatic(estimated: 52))
+}
+.layout {
+    TableLayout()
+        .rowHeight(.estimated(68))
+        .headerHeight(.fixed(48))
+        .footerHeight(.estimated(52))
 }
 ```
+
+`TableLayout.rowHeight` 接受统一的 `TableHeight`，也接受从 `AnyListID` 返回 `TableHeight` 的闭包。adapter 在 `apply` 或 `reloadAll` 的提交阶段内按行求值，用展示身份保存结果；闭包中重入的 `apply` 进入更新队列。高度代理读取这份快照，下一次提交时比较已有行的结果来决定是否重新测量。
 
 `TableRow` 支持：
 
@@ -135,7 +141,6 @@ TableSection(.main) {
 - `variant(_:)`
 - `refreshID(_:)`
 - `refresh(_:)` / `refresh(when:scope:action:)`
-- `height(_:)` / `estimatedHeight(_:)`
 - `selected(_:)`
 - `onSelect` / `onDeselect` / `onSelectionChange`
 - `onDisplay` / `onEndDisplay`
@@ -146,7 +151,7 @@ TableSection(.main) {
 - `canMove(_:)` / `onMove(...)`
 - `leadingSwipeActions(_:)` / `trailingSwipeActions(_:)`
 
-`TableHeader` 和 `TableFooter` 使用 `UITableViewHeaderFooterView`，支持 `refreshID`、`refresh(_:)`、`height`、`onDisplay` 和 `onEndDisplay`。
+`TableHeader` 和 `TableFooter` 使用 `UITableViewHeaderFooterView`，支持 `refreshID`、`refresh(_:)`、`onDisplay` 和 `onEndDisplay`。
 
 ## Reusable Namespace
 

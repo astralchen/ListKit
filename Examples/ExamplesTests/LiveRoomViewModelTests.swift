@@ -29,6 +29,33 @@ struct LiveRoomViewModelTests {
         #expect(viewModel.tableSections.compactMap(\.indexTitle).isEmpty)
     }
 
+    @Test func adminSelectionChangesOnlyTheTargetRowAndKeepsOtherSelections() throws {
+        let viewModel = LiveRoomViewModel()
+        let initial = try #require(viewModel.tableSections.first)
+        #expect(initial.selectionMode == .multiple)
+        #expect(initial.rows.map(\.isSelected) == [true, false, true, false, false, false, false])
+        #expect(initial.rows.allSatisfy { $0.primaryActionHandler == nil })
+
+        viewModel.setModerationSelection("mod-2", isSelected: true)
+        let selected = try #require(viewModel.tableSections.first).rows
+        #expect(selected.map(\.isSelected) == [true, true, true, false, false, false, false])
+        for index in initial.rows.indices {
+            #expect((initial.rows[index].refreshID != selected[index].refreshID) == (index == 1))
+        }
+
+        viewModel.setModerationSelection("mod-1", isSelected: false)
+        let deselected = try #require(viewModel.tableSections.first).rows
+        #expect(deselected.map(\.isSelected) == [false, true, true, false, false, false, false])
+        for index in selected.indices {
+            #expect((selected[index].refreshID != deselected[index].refreshID) == (index == 0))
+        }
+
+        viewModel.setModerationSelection("mod-1", isSelected: false)
+        viewModel.setModerationSelection("missing", isSelected: true)
+        #expect(viewModel.tableSections.first?.rows.map(\.refreshID) == deselected.map(\.refreshID))
+        #expect(viewModel.tableSections.first?.rows.map(\.isSelected) == deselected.map(\.isSelected))
+    }
+
     @Test func applyDiagnosticsExposeSectionAndRowChangesSeparately() {
         let viewModel = LiveRoomViewModel()
 

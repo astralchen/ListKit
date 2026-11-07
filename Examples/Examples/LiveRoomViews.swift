@@ -1121,13 +1121,20 @@ final class AdminEventTableCell: UITableViewCell {
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
-        selectionStyle = .none
+        selectionStyle = .default
         backgroundColor = .clear
         contentView.backgroundColor = .clear
 
         let rowBackgroundView = UIView()
         rowBackgroundView.backgroundColor = .secondarySystemGroupedBackground
         backgroundView = rowBackgroundView
+
+        let selectedBackground = UIView()
+        selectedBackground.backgroundColor = .secondarySystemGroupedBackground
+        selectedBackgroundView = selectedBackground
+        let multipleSelectedBackground = UIView()
+        multipleSelectedBackground.backgroundColor = .secondarySystemGroupedBackground
+        multipleSelectionBackgroundView = multipleSelectedBackground
 
         selectionImageView.contentMode = .scaleAspectFit
         selectionImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -1163,8 +1170,13 @@ final class AdminEventTableCell: UITableViewCell {
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
 
+        // 编辑模式隐藏这两个 arrangedSubview，由系统提供选择控件和重排手柄。
+        let selectionWidth = selectionImageView.widthAnchor.constraint(equalToConstant: 24)
+        selectionWidth.priority = .defaultHigh
+        let chevronWidth = chevronView.widthAnchor.constraint(equalToConstant: 16)
+        chevronWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            selectionImageView.widthAnchor.constraint(equalToConstant: 24),
+            selectionWidth,
             selectionImageView.heightAnchor.constraint(equalToConstant: 24),
             iconContainer.widthAnchor.constraint(equalToConstant: 44),
             iconContainer.heightAnchor.constraint(equalToConstant: 44),
@@ -1172,7 +1184,7 @@ final class AdminEventTableCell: UITableViewCell {
             iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 24),
             iconView.heightAnchor.constraint(equalToConstant: 24),
-            chevronView.widthAnchor.constraint(equalToConstant: 16),
+            chevronWidth,
             chevronView.heightAnchor.constraint(equalToConstant: 16),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 18),
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -18),
@@ -1194,6 +1206,12 @@ final class AdminEventTableCell: UITableViewCell {
         iconView.tintColor = iconColor(for: model.kind)
         iconContainer.backgroundColor = iconColor(for: model.kind).withAlphaComponent(0.14)
         accessibilityIdentifier = "admin-event-\(model.id)"
+    }
+
+    override func updateConfiguration(using state: UICellConfigurationState) {
+        super.updateConfiguration(using: state)
+        selectionImageView.isHidden = state.isEditing
+        chevronView.isHidden = state.isEditing
     }
 
     private func iconName(for kind: ModerationEventKind) -> String {

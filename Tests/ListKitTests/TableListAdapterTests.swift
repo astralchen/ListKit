@@ -119,8 +119,8 @@ final class TableListAdapterTests: XCTestCase {
         _ = await adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(1, model: "Anchor", cell: MessageTableCell.self) { _, _, _ in }
-                    .height(.fixed(44))
             }
+            .layout { TableLayout().rowHeight(.fixed(44)) }
         }
         tableView.layoutIfNeeded()
 
@@ -131,10 +131,9 @@ final class TableListAdapterTests: XCTestCase {
         ) {
             TableSection(.messages) {
                 TableRow(1, model: "Anchor", cell: MessageTableCell.self) { _, _, _ in }
-                    .height(.fixed(44))
                 TableRow(2, model: "Trailing", cell: MessageTableCell.self) { _, _, _ in }
-                    .height(.fixed(44))
             }
+            .layout { TableLayout().rowHeight(.fixed(44)) }
         }
 
         XCTAssertEqual(result.animation.anchorCompensation, 0)
@@ -162,10 +161,10 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(1, model: "A", cell: MessageTableCell.self) { cell, value, _ in
                     cell.textValue = value
                 }
-                .height(.fixed(60))
                 .refreshID(1)
                 .refresh(when: .automatic)
             }
+            .layout { TableLayout().rowHeight(.fixed(60)) }
             TableSection(.empty) {
                 TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -191,11 +190,11 @@ final class TableListAdapterTests: XCTestCase {
                             transitionStarted.fulfill()
                         }
                     }
-                    .height(.fixed(60))
                     .refreshID(2)
                     .refresh(when: .automatic)
                     .contentTransition(.opacity(duration: 0.35))
                 }
+                .layout { TableLayout().rowHeight(.fixed(60)) }
             }
         }
 
@@ -205,10 +204,10 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(1, model: "C", cell: MessageTableCell.self) { cell, value, _ in
                     cell.textValue = value
                 }
-                .height(.fixed(60))
                 .refreshID(3)
                 .refresh(when: .automatic)
             }
+            .layout { TableLayout().rowHeight(.fixed(60)) }
             TableSection(.empty) {
                 TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -248,10 +247,10 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(1, model: "A", cell: MessageTableCell.self) { cell, value, _ in
                     cell.textValue = value
                 }
-                .height(.fixed(60))
                 .refreshID(1)
                 .refresh(when: .automatic)
             }
+            .layout { TableLayout().rowHeight(.fixed(60)) }
             TableSection(.empty) {
                 TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
             }
@@ -278,11 +277,11 @@ final class TableListAdapterTests: XCTestCase {
                             transitionStarted.fulfill()
                         }
                     }
-                    .height(.fixed(60))
                     .refreshID(2)
                     .refresh(when: .automatic)
                     .contentTransition(.opacity(duration: 0.35))
                 }
+                .layout { TableLayout().rowHeight(.fixed(60)) }
             }
         }
 
@@ -295,10 +294,10 @@ final class TableListAdapterTests: XCTestCase {
                     TableRow(1, model: "C", cell: MessageTableCell.self) { cell, value, _ in
                         cell.textValue = value
                     }
-                    .height(.fixed(60))
                     .refreshID(3)
                     .refresh(when: .automatic)
                 }
+                .layout { TableLayout().rowHeight(.fixed(60)) }
                 TableSection(.empty) {
                     TableRow(2, model: "Side", cell: MessageTableCell.self) { _, _, _ in }
                 }
@@ -337,10 +336,10 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(1, model: "A", cell: MessageTableCell.self) { cell, value, _ in
                     cell.textValue = value
                 }
-                .height(.fixed(60))
                 .refreshID(1)
                 .refresh(when: .refreshIDChanges)
             }
+            .layout { TableLayout().rowHeight(.fixed(60)) }
         }
         tableView.layoutIfNeeded()
         let cell = try XCTUnwrap(
@@ -354,10 +353,10 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(1, model: "B", cell: MessageTableCell.self) { cell, value, _ in
                     cell.textValue = value
                 }
-                .height(.fixed(60))
                 .refreshID(2)
                 .refresh(when: .refreshIDChanges)
             }
+            .layout { TableLayout().rowHeight(.fixed(60)) }
         }
 
         XCTAssertEqual(result.rowRefreshIDChangedCount, 1)
@@ -606,9 +605,9 @@ final class TableListAdapterTests: XCTestCase {
             TableSection(id) {
                 TableForEach(rows, id: \.self) { row in
                     TableRow("\(id)-\(row)", model: row, cell: MessageTableCell.self) { _, _, _ in }
-                        .height(.fixed(44))
                 }
             }
+            .layout { TableLayout().rowHeight(.fixed(44)) }
         }
 
         _ = await adapter.apply(
@@ -618,12 +617,11 @@ final class TableListAdapterTests: XCTestCase {
             section(1, rows: 0..<6)
             TableSection(2) {
                 TableRow("anchor", model: 0, cell: MessageTableCell.self) { _, _, _ in }
-                    .height(.fixed(44))
                 TableForEach(1..<6, id: \.self) { row in
                     TableRow("anchor-trailing-\(row)", model: row, cell: MessageTableCell.self) { _, _, _ in }
-                        .height(.fixed(44))
                 }
             }
+            .layout { TableLayout().rowHeight(.fixed(44)) }
         }
         tableView.layoutIfNeeded()
         let initialAnchorPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 2).first)
@@ -640,12 +638,11 @@ final class TableListAdapterTests: XCTestCase {
             section(1, rows: 0..<6)
             TableSection(2) {
                 TableRow("anchor", model: 0, cell: MessageTableCell.self) { _, _, _ in }
-                    .height(.fixed(44))
                 TableForEach(1..<6, id: \.self) { row in
                     TableRow("anchor-trailing-\(row)", model: row, cell: MessageTableCell.self) { _, _, _ in }
-                        .height(.fixed(44))
                 }
             }
+            .layout { TableLayout().rowHeight(.fixed(44)) }
         }
         tableView.layoutIfNeeded()
         let shiftedAnchorPath = try XCTUnwrap(adapter.indexPaths(forRowID: "anchor", in: 2).first)
@@ -679,7 +676,6 @@ final class TableListAdapterTests: XCTestCase {
         func decoratedSection(version: Int) -> TableSection<Section> {
             TableSection(.empty) {
                 TableRow(2, model: "Decorated", cell: MessageTableCell.self) { _, _, _ in }
-                    .height(.fixed(44))
             } header: {
                 TableHeader(MessageHeaderView.self, elementID: "header") { view, _ in
                     view.title = "Header \(version)"
@@ -693,7 +689,12 @@ final class TableListAdapterTests: XCTestCase {
                 .refreshID(version)
                 .refresh(when: .refreshIDChanges)
             }
-            .layout { TableLayout().headerHeight(.fixed(32)).footerHeight(.fixed(28)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(44))
+                    .headerHeight(.fixed(32))
+                    .footerHeight(.fixed(28))
+            }
         }
 
         _ = await adapter.apply(
@@ -801,7 +802,6 @@ final class TableListAdapterTests: XCTestCase {
                     model: Message(id: 1, text: "A", version: 1),
                     cell: MessageTableCell.self
                 ) { _, _, _ in }
-                .height(.fixed(72))
                 .onDisplay { message, _, _ in displayedID = message.id }
                 .onEndDisplay { message, _, _ in endedID = message.id }
                 .onPrefetch { message, _ in prefetchedID = message.id }
@@ -814,6 +814,7 @@ final class TableListAdapterTests: XCTestCase {
                 .trailingSwipeActions { _ in UISwipeActionsConfiguration(actions: []) }
                 .contextMenu { _ in UIContextMenuConfiguration(identifier: nil, previewProvider: nil, actionProvider: nil) }
             }
+            .layout { TableLayout().rowHeight(.fixed(72)) }
         }
 
         let indexPath = IndexPath(row: 0, section: 0)
@@ -1205,7 +1206,6 @@ final class TableListAdapterTests: XCTestCase {
                 TableRow(1, model: (), cell: MessageTableCell.self) { cell, _, _ in
                     cell.textValue = rowText
                 }
-                .height(.fixed(44))
                 .refreshID("stable-row")
                 .refresh(when: .never)
             } header: {
@@ -1221,7 +1221,12 @@ final class TableListAdapterTests: XCTestCase {
                 .refreshID("stable-footer")
                 .refresh(when: .never)
             }
-            .layout { TableLayout().headerHeight(.fixed(40)).footerHeight(.fixed(40)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(44))
+                    .headerHeight(.fixed(40))
+                    .footerHeight(.fixed(40))
+            }
         }
         wait(for: [initialApplyCompleted], timeout: 1)
         tableView.reloadData()
@@ -1288,11 +1293,11 @@ final class TableListAdapterTests: XCTestCase {
                     TableRow(rowID, model: (), cell: MessageTableCell.self) { cell, _, _ in
                         cell.textValue = rowTexts[rowID]
                     }
-                    .height(.fixed(44))
                     .refreshID("stable-\(rowID)")
                     .refresh(when: .never)
                 }
             }
+            .layout { TableLayout().rowHeight(.fixed(44)) }
         }
         wait(for: [initialApplyCompleted], timeout: 1)
         tableView.reloadData()
@@ -1381,7 +1386,6 @@ final class TableListAdapterTests: XCTestCase {
         }) {
             TableSection(.messages) {
                 TableRow(1, model: (), cell: MessageTableCell.self) { _, _, _ in }
-                    .height(.fixed(44))
             } header: {
                 TableHeader(MessageHeaderView.self, elementID: "messages-header") { view, _ in
                     view.title = messagesHeader
@@ -1389,12 +1393,15 @@ final class TableListAdapterTests: XCTestCase {
                 .refreshID("stable-messages-header")
                 .refresh(when: .never)
             }
-            .layout { TableLayout().headerHeight(.fixed(40)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(44))
+                    .headerHeight(.fixed(40))
+            }
             .indexTitle("M")
 
             TableSection(.empty) {
                 TableRow(2, model: (), cell: MessageTableCell.self) { _, _, _ in }
-                    .height(.fixed(44))
             } header: {
                 TableHeader(MessageHeaderView.self, elementID: "empty-header") { view, _ in
                     view.title = emptyHeader
@@ -1402,7 +1409,11 @@ final class TableListAdapterTests: XCTestCase {
                 .refreshID("stable-empty-header")
                 .refresh(when: .never)
             }
-            .layout { TableLayout().headerHeight(.fixed(40)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(44))
+                    .headerHeight(.fixed(40))
+            }
             .indexTitle("E")
         }
         wait(for: [initialApplyCompleted], timeout: 1)
@@ -1515,7 +1526,6 @@ final class TableListAdapterTests: XCTestCase {
                     TableRow(1, model: "Row", cell: MessageTableCell.self) { cell, text, _ in
                         cell.textValue = text
                     }
-                    .height(.fixed(44))
                 } header: {
                     TableHeader(MessageHeaderView.self, elementID: "header") { view, _ in
                         view.title = headerTitle
@@ -1529,7 +1539,12 @@ final class TableListAdapterTests: XCTestCase {
                     .refreshID(version)
                     .refresh(when: .refreshIDChanges)
                 }
-                .layout { TableLayout().headerHeight(.fixed(40)).footerHeight(.fixed(40)) }
+                .layout {
+                    TableLayout()
+                        .rowHeight(.fixed(44))
+                        .headerHeight(.fixed(40))
+                        .footerHeight(.fixed(40))
+                }
             }
             wait(for: [applyCompleted], timeout: 1)
             return result

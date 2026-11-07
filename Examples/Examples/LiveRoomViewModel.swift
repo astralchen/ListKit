@@ -13,7 +13,7 @@ enum LiveRoomCollectionEvent: ListEvent {
 }
 
 enum LiveRoomAdminEvent: ListEvent {
-    case select(String)
+    case selectionChanged(String, Bool)
     case resolve(String)
 }
 
@@ -1000,12 +1000,12 @@ final class LiveRoomViewModel {
             }
             .refreshID(moderationCount)
         }
-        .selectionMode(.single)
+        .selectionMode(.multiple)
     }
 
     private func moderationRows() -> TableRowGroup {
         TableForEach(state.moderationEvents, id: \.id) { [weak self] event in
-            let row = TableRow(model: event, cell: AdminEventTableCell.self) { cell, event, _ in
+            TableRow(model: event, cell: AdminEventTableCell.self) { cell, event, _ in
                 cell.configure(event)
             }
             .refreshID(event.refreshToken)
@@ -1015,8 +1015,8 @@ final class LiveRoomViewModel {
             .selectionFollowsFocus()
             .springLoadingEnabled()
             .indentWhileEditing(false)
-            .onSelect { event, context in
-                context.send(LiveRoomAdminEvent.select(event.id))
+            .onSelectionChange { event, isSelected, context in
+                context.send(LiveRoomAdminEvent.selectionChanged(event.id, isSelected))
             }
             .contextMenu { context in
                 UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
@@ -1055,21 +1055,14 @@ final class LiveRoomViewModel {
             .onMove { _, source, destination in
                 self?.moveModeration(from: source, to: destination)
             }
-            if #available(iOS 16.0, *) {
-                row.onPrimaryAction { event, context in
-                    context.send(LiveRoomAdminEvent.select(event.id))
-                }
-            } else {
-                row
-            }
         }
     }
 
-    func selectModeration(_ id: String) {
-        for index in state.moderationEvents.indices {
-            state.moderationEvents[index].isSelected = state.moderationEvents[index].id == id
-            state.moderationEvents[index].version += 1
-        }
+    func setModerationSelection(_ id: String, isSelected: Bool) {
+        guard let index = state.moderationEvents.firstIndex(where: { $0.id == id }),
+              state.moderationEvents[index].isSelected != isSelected else { return }
+        state.moderationEvents[index].isSelected = isSelected
+        state.moderationEvents[index].version += 1
     }
 
     private func nextMessageText() -> String {

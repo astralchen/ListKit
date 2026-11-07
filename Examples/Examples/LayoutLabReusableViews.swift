@@ -63,7 +63,8 @@ final class LayoutLabHeader: UICollectionReusableView {
     private let label = UILabel()
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .secondarySystemGroupedBackground
+        // 橙色标出 header/footer 的完整布局范围。
+        backgroundColor = UIColor.systemOrange.withAlphaComponent(0.28)
         label.font = .preferredFont(forTextStyle: .subheadline)
         label.adjustsFontForContentSizeCategory = true
         label.numberOfLines = 2
@@ -83,7 +84,8 @@ final class LayoutLabHeader: UICollectionReusableView {
 final class LayoutLabBackground: UICollectionReusableView {
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .secondarySystemGroupedBackground
+        // 绿色标出 Section decoration 的实际范围。
+        backgroundColor = UIColor.systemGreen.withAlphaComponent(0.22)
         layer.cornerRadius = 12
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }

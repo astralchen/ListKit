@@ -268,11 +268,6 @@ private lazy var adapter = TableListAdapter<Section>(tableView: tableView)
 func render(messages: [Message]) {
     adapter.apply {
         TableSection(.messages) {
-            TableRow("today-divider", model: "今天", cell: TimeDividerCell.self) { cell, title, _ in
-                cell.configure(title: title)
-            }
-            .height(.fixed(28))
-
             TableForEach(messages, id: \.id) { message in
                 TableRow(model: message, cell: MessageCell.self) { cell, message, _ in
                     cell.configure(with: message)
@@ -289,7 +284,7 @@ func render(messages: [Message]) {
 }
 ```
 
-`TableRow` 还提供原生 table 能力，例如高度、editing、move、swipe actions、context menu 和 accessory button 回调。
+`TableRow` 还提供原生 table 能力，例如 editing、move、swipe actions、context menu 和 accessory button 回调。
 
 ### 自定义 Table Header / Footer
 
@@ -326,7 +321,7 @@ TableSection(.messages) {
 
 编译器会检查角色：`.header` 只接受 `TableHeader`，`.footer` 只接受 `TableFooter`。单独封装时，返回类型分别写作 `TableSectionHeader<SectionID>` 和 `TableSectionFooter<SectionID>`。系统标题的增删和文字变更会随 `apply` 更新；已声明自定义视图，或 UIKit 实际从外部代理取得了该角色的视图时，修改备用标题不会触发分区重载。代理返回 `nil` 时，该角色按系统标题更新。
 
-`TableLayout` 作用于当前 Section。普通消息继承分区规则，时间分隔行的 `.height(.fixed(28))` 同时将实际高度和估算高度设为 28。自定义视图和系统标题都使用分区的页眉、页脚规则；上例在 `hasMore == false` 时不会因为 `.footerHeight(.fixed(44))` 而预留 44 点。
+`TableLayout` 作用于当前 Section。`.rowHeight(.estimated(64))` 让每行先按 64 点估算，再根据各自的内容测量实际高度。自定义视图和系统标题都使用分区的页眉、页脚规则；上例在 `hasMore == false` 时不会因为 `.footerHeight(.fixed(44))` 而预留 44 点。
 
 | 高度规则 | 实际高度 | 估算高度 |
 | --- | --- | --- |
@@ -334,7 +329,36 @@ TableSection(.messages) {
 | `.automatic` | UIKit 按内容测量 | UIKit 自动估算 |
 | `.estimated(64)` | UIKit 按内容测量 | 64 点 |
 
-实际行高与估算行高分别按「单行 → 分区 → 外部 delegate 对应方法 → UITableView 对应属性」解析。显式 `.automatic` 会完整覆盖分区规则，省略才会继承。页眉、页脚仅在声明了相应视图或标题时使用分区高度，其他情况沿用 delegate 和表格默认值。再次 `apply` 改变已有内容的高度规则时，adapter 会重新测量布局，即使内容的 `refreshID` 相同。
+同一分区可以在 `rowHeight` 闭包里按稳定行 ID 选择规则。例如，时间分隔行固定为 28 点，其余消息先按 68 点估算：
+
+```swift
+enum ChatRowID: Hashable, Sendable {
+    case divider
+    case message(Int)
+}
+
+TableSection(0) {
+    TableRow(ChatRowID.divider, model: "今天", cell: TimeDividerCell.self) { cell, title, _ in
+        cell.configure(title: title)
+    }
+    for message in messages {
+        TableRow(ChatRowID.message(message.id), model: message, cell: MessageCell.self) { cell, message, _ in
+            cell.configure(with: message)
+        }
+    }
+}
+.layout {
+    TableLayout().rowHeight { id in
+        id.typed(ChatRowID.self) == .divider ? .fixed(28) : .estimated(68)
+    }
+}
+```
+
+闭包收到的是该行实际使用的 ID。上例显式传入 `ChatRowID.message(message.id)`，所以即使 `Message` 遵守 `Identifiable`，也可以用 `typed(ChatRowID.self)` 匹配消息。直接写 `TableRow(model:cell:)` 时，`Identifiable` 模型优先使用 `model.id`；使用继承 ID 的初始化器时才取外层 `TableForEach` 的 ID。
+
+每次执行 `apply` 或 `reloadAll`，adapter 都为每行求值一次，实际高度与估算高度共用该结果。行高闭包中同步发起的 `apply` 按当前更新策略入队。统一规则和闭包可以互相替换，最后一次 `rowHeight` 调用生效。
+
+实际行高与估算行高分别按「分区的 `rowHeight` → 外部 delegate 对应方法 → UITableView 对应属性」解析。页眉、页脚仅在声明了相应视图或标题时使用分区高度，其他情况沿用 delegate 和表格默认值。再次 `apply` 改变已有内容的高度规则时，adapter 会重新测量布局，即使内容的 `refreshID` 相同。
 
 **从旧版高度 API 迁移**
 
@@ -342,11 +366,12 @@ TableSection(.messages) {
 | --- | --- |
 | `TableRowHeight` | 共用的 `TableHeight` |
 | `.automatic()` / `.automatic(estimated: 64)` | `.automatic` / `.estimated(64)` |
-| 每行重复同一 `.height(...)` | 分区 `.layout { TableLayout().rowHeight(...) }`，例外行保留 `.height(...)` |
+| 整个分区原本都使用 `.height(.estimated(68))` | 在所属分区声明一次 `.layout { TableLayout().rowHeight(.estimated(68)) }` |
+| 原来只有个别行用 `.height(...)` 覆盖分区规则 | 使用上例的 `.rowHeight { id in … }`，匹配例外行，其余行返回原分区规则 |
 | `TableHeader.height(...)` / `TableFooter.height(...)` | 分区布局的 `.headerHeight(...)` / `.footerHeight(...)` |
-| 单行 `.estimatedHeight(64)` | 内容自适应时使用 `.height(.estimated(64))`；若实际和估算高度需要独立计算，省略 DSL 规则，分别实现 delegate 的两个行高方法 |
+| 单行 `.estimatedHeight(64)` | 在 `rowHeight` 闭包里为对应 ID 返回 `.estimated(64)`，并保留其余行的原规则 |
 
-新版对已存在但未声明高度规则的行也会查询外部 delegate 的估算方法，然后回退到 `tableView.estimatedRowHeight`。
+`rowHeight` 闭包必须为每个 ID 返回一个 `TableHeight`。如果原来只有个别行声明高度，其余行依赖 delegate 或表格默认值，应省略该分区的 `rowHeight`，在 delegate 的 `heightForRowAt` 和 `estimatedHeightForRowAt` 中处理例外行，并让其余行沿用原有计算或返回对应的 `UITableView` 默认值。
 
 ### Collection 上下文菜单
 
@@ -434,7 +459,6 @@ iOS 13.0 引入、iOS 16.0 弃用；显示与结束通知从 iOS 13.2 引入。a
 TableRow(model: message, id: \.id, cell: MessageCell.self) { cell, message, _ in
     cell.configure(with: message)
 }
-.height(.estimated(72))
 .editing(.delete) { message, _, _ in
     store.delete(message.id)
 }
@@ -676,10 +700,11 @@ let result = await adapter.reloadAll()
 `reloadAll` 有意复用当前 diffable snapshot / outline 状态，不提交一份新的结构；内部调用
 `reloadData()` 只会让 diffable data source 重新提供当前内容，不会修改 snapshot。ListKit
 会避开正在提交的 snapshot 和 `hasUncommittedUpdates`，避免丢弃拖放或重排中的占位状态。
+Table 和 Collection 中已排队的 `.reloadData` 模式 `apply` 同样会在队首等待 `hasUncommittedUpdates` 变为 `false`。它完成后，队列才会执行随后入队的 `reloadAll`。
 
 `reloadAll` 不会重新执行 section builder。如果旧描述树已经把本地化字符串保存成值，
 请先更新 model，再使用 `apply` 重建 sections；配置闭包在执行时动态读取语言或主题时，
-直接 `reloadAll` 即可。若不需要过渡，可显式关闭：
+直接 `reloadAll` 即可。Table 的 `reloadAll` 会在 UIKit 重载前重新执行当前分区的行高闭包，因此环境变化也能更新已有行的高度。若不需要过渡，可显式关闭：
 
 ```swift
 adapter.reloadAll(transaction: .disabled, transition: .identity)
@@ -768,6 +793,8 @@ ListSection(.gifts) {
 Section 默认使用 `.automatic`：声明了 `.onSelect(...)`、`.onDeselect(...)`、`.selected(...)`、`.onSelectionChange(...)`、`.selectionFollowsFocus()` 或 outline disclosure 的 Row 自动参与 section 内单选，纯展示 Row 不会进入选中态；外部 UIKit delegate 声明选择回调时也会自动启用。显式 `.selectionMode(.single)` 会让 section 内所有未禁用 Row 可选；多选使用 `.selectionMode(.multiple)`，系统多选手势需再声明 `.multipleSelectionInteraction()`；`.selectionMode(.none)` 会关闭选择及其回调。`.onHighlightChange(...)` 可以单独使用，包括在 `.selectionDisabled()` 的 Row 上；键盘、鼠标和 tvOS 风格交互还可以组合 `.focusable()` 与 `.onPrimaryAction(...)`。
 
 `Row.onPrimaryAction(...)` 和 `TableRow.onPrimaryAction(...)` 要求 iOS 16.0 / tvOS 16.0；`CollectionListAdapter.contextMenuForItems(...)` 要求 iOS 16.0 / tvOS 17.0。部署目标为 iOS 15 时，调用这些 API 需要放在 `if #available(iOS 16.0, *)` 分支中。
+
+Collection 按当前行判断 primary action 能力，未配置动作的行不会因 adapter 提供动作转发而改变普通触摸多选。默认仅 Row 配置了 `.onPrimaryAction(...)` 或 `collectionDelegate` 实现了 `performPrimaryActionForItemAt` 时启用；外部代理若实现 `canPerformPrimaryActionForItemAt`，其显式判断优先。执行动作时仍先调用 Row 闭包，再转发给外部代理。已启用的 primary action 保留 UIKit 的独占选择语义。
 
 ## Layout 与 Supplementary
 
@@ -973,6 +1000,10 @@ ListSection(.files) {
 ```
 
 展开状态由调用方保存。下一次 render 时继续把状态传给 `isExpanded`，即可保持声明式单向数据流。
+
+展开和收起操作使用与 `apply` 共用的队列。`onExpansionChange` 中同步提交的更新会等待本次展开状态提交完成，再按更新策略执行。点击行与系统展开按钮都走这条路径。
+
+折叠后，选择、预取以及位置查询按 diffable data source 的当前快照定位。`indexPath(for:)` 对隐藏的后代返回 `nil`，`indexPaths(forRowID:in:)` 跳过这些后代；`contains(_:)` 仍可确认它们存在于描述树中。
 
 ## Apply、动画与滚动
 

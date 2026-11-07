@@ -94,15 +94,16 @@
 
 ### Requirement 8: 高度和估算高度
 
-**User Story:** 作为 UIKit 页面维护者，我希望不同 row/header/footer 可以声明高度，兼容自动高度和固定高度列表。
+**User Story:** 作为 UIKit 页面维护者，我希望在 section 的 layout 中配置行高、页眉高和页脚高，兼容自动高度和固定高度列表。
 
 #### Acceptance Criteria
 
-- WHEN row 声明 fixed height THE SYSTEM SHALL 在 `heightForRowAt` 返回固定值。
-- WHEN row 声明 automatic height THE SYSTEM SHALL 返回 `UITableView.automaticDimension`。
-- WHEN row 声明 estimated height THE SYSTEM SHALL 在 `estimatedHeightForRowAt` 返回估算值。
+- WHEN section 声明固定行高 THE SYSTEM SHALL 在 `heightForRowAt` 返回固定值。
+- WHEN section 声明自动行高 THE SYSTEM SHALL 返回 `UITableView.automaticDimension`。
+- WHEN section 声明估算行高 THE SYSTEM SHALL 对该分区所有行在 `estimatedHeightForRowAt` 返回估算值，在 `heightForRowAt` 返回 `UITableView.automaticDimension`。
+- WHEN section 通过 `rowHeight` 闭包配置行高 THE SYSTEM SHALL 用稳定行 ID 为每行求值，并将结果用于实际行高与估算行高。再次提交时按已有行的结果变化触发重新测量。`reloadAll` 须在重载前为当前行重新求值，行高闭包中的同步 `apply` 按更新策略入队。
 - WHEN section header/footer 声明高度 THE SYSTEM SHALL 转发到对应 delegate 方法。
-- WHEN 未声明高度 THE SYSTEM SHALL 尊重 table view 当前默认配置。
+- WHEN section 省略行高 THE SYSTEM SHALL 分别查询外部 delegate 的行高和估算行高方法，再回退到 table view 对应属性。
 
 ### Requirement 9: Context Menu、Editing 和 Swipe
 

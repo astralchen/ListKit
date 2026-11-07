@@ -66,7 +66,8 @@ final class LayoutLabViewController: UIViewController {
         explanation.textColor = .secondaryLabel
         explanation.numberOfLines = 3
         explanation.accessibilityIdentifier = "lab-explanation"
-        collection.backgroundColor = .secondarySystemGroupedBackground
+        // 蓝色标出容器范围，便于区分内容结束后的剩余空间。
+        collection.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.16)
         collection.layer.cornerRadius = 12
         collection.contentInsetAdjustmentBehavior = .never
         collection.accessibilityIdentifier = "layout-lab-collection"
