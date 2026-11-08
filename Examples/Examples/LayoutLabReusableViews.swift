@@ -4,7 +4,7 @@ import UIKit
 final class LayoutLabCell: UICollectionViewCell {
     private let label = UILabel()
     private let measurement = UILabel()
-    private var sizingAxis: ListLayoutScrollDirection?
+    private var sizingAxis: ListAxis?
     override init(frame: CGRect) {
         super.init(frame: frame)
         contentView.layer.cornerRadius = 10

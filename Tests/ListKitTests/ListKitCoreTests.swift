@@ -1981,7 +1981,7 @@ final class ListKitCoreTests: XCTestCase {
             SectionSupplementary(
                 HeaderView.self, kind: UICollectionView.elementKindSectionHeader
                 ,
-                elementID: "header") { _, _ in }.onTap { context in
+                elementID: "header") { _, _ in }.onTapGesture { context in
                     context.send(UserEvent.headerTap)
                 }
         }
@@ -2285,7 +2285,7 @@ final class ListKitCoreTests: XCTestCase {
                 Row(1, model: User(id: 1, name: "A", isVIP: false, version: 1), cell: NormalUserCell.self) {
                     _, _, _ in
                 }
-                .onEndDisplay { _, _ in endedUserID = 1 }
+                .onDisappear { _, _ in endedUserID = 1 }
                 .onCancelPrefetch { user, _ in cancelledUserID = user.id }
             }
         }
@@ -2321,7 +2321,7 @@ final class ListKitCoreTests: XCTestCase {
         _ = await adapter.apply(transaction: .disabled) {
             ListSection(0) {
                 Row("old", model: "Old", cell: NormalUserCell.self) { _, _, _ in }
-                    .onEndDisplay { _, _ in endedRowID = "old" }
+                    .onDisappear { _, _ in endedRowID = "old" }
                     .onCancelPrefetch { _, _ in cancelledRowID = "old" }
             }
             ListSection(1) {
@@ -2763,7 +2763,7 @@ final class ListKitCoreTests: XCTestCase {
                 _, _, _ in
             }
         } layout: {
-            GridLayout(tracks: 1).itemMainAxisSize(.estimated(20)).gridCrossAxisSize(.fixed(20)).orthogonalScrolling(.continuous)
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(20)).crossAxisSize(.fixed(20)).orthogonalScrolling(.continuous)
                 .trackSpacing(8).lineSpacing(8).sectionInsets(.init(top: 0, leading: 14, bottom: 0, trailing: 14))
         }
 
@@ -2789,7 +2789,7 @@ final class ListKitCoreTests: XCTestCase {
                 Row(1, model: "3333", cell: NormalUserCell.self) { _, _, _ in }
                 Row(2, model: "800003", cell: NormalUserCell.self) { _, _, _ in }
             } layout: {
-                GridLayout(tracks: 1).itemMainAxisSize(.estimated(20)).gridCrossAxisSize(.fixed(20)).orthogonalScrolling(
+                GridLayout(tracks: 1).itemMainAxisSize(.estimated(20)).crossAxisSize(.fixed(20)).orthogonalScrolling(
                     .continuous
                 ).trackSpacing(8).lineSpacing(8).sectionInsets(.init(top: 0, leading: 14, bottom: 0, trailing: 14))
                 .boundarySupplementaries {
@@ -3401,7 +3401,7 @@ final class ListKitCoreTests: XCTestCase {
                 Row("first", model: "A", cell: NormalUserCell.self) { cell, model, _ in
                     cell.name = model
                 }
-                .onDisplay { _, _ in
+                .onAppear { _, _ in
                     displayCount += 1
                 }
                 Row("second", model: "B", cell: NormalUserCell.self) { cell, model, _ in
@@ -3597,7 +3597,7 @@ final class ListKitCoreTests: XCTestCase {
                 BadgeView.self, kind: kind, elementID: "badge"
             ) { _, _ in }.refresh(when: .never)
             if hasTapHandler {
-                supplementary = supplementary.onTap { _ in }
+                supplementary = supplementary.onTapGesture { _ in }
             }
 
             let applyCompleted = expectation(description: "tap handler apply \(hasTapHandler)")

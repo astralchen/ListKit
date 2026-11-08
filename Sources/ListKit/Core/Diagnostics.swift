@@ -100,6 +100,12 @@ public enum ListDiagnostics {
             issues.append(contentsOf: duplicateSupplementaryKindIssues(in: section, sectionID: sectionID))
             if case .builtIn(let layout) = section.layoutSource {
                 issues += invalidSectionLayoutIssues(layout, sectionID: sectionID)
+                if case .waterfallConfiguration = layout {
+                    if section.hasOutlineHierarchy || section.rows.contains(where: { $0.measurement == nil }) {
+                        issues.append(.init(kind: .invalidLayout,
+                            message: "ListKit: WaterfallLayout requires flat typed Rows; ProviderRow/outline are unsupported"))
+                    }
+                }
                 if layout.uiKitListLayout != nil && layout.options.items.contains(where: { rule in
                     section.supplementaries.contains { $0.kind == rule.kind }
                 }) {
@@ -158,6 +164,10 @@ public enum ListDiagnostics {
         switch layout {
         case .gridConfiguration(let grid):
             return grid.validationErrors.map {
+                .init(kind: .invalidLayout, message: "ListKit: section \(sectionID): " + $0)
+            }
+        case .waterfallConfiguration(let waterfall):
+            return waterfall.validationErrors.map {
                 .init(kind: .invalidLayout, message: "ListKit: section \(sectionID): " + $0)
             }
         case .uiKitListConfiguration(let list):

@@ -95,7 +95,8 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
     /// - Parameter handler: supplementary 被点击时调用的闭包。
     /// - Returns: 绑定点击事件后的 supplementary。
     /// - Note: ListKit 只移除自己安装的点击手势，不会清理 view 上已有的其他手势。
-    public func onTap(_ handler: @escaping @MainActor (ListContext) -> Void) -> Self {
+    /// - Note: 识别 supplementary 上的单击手势。
+    public func onTapGesture(_ handler: @escaping @MainActor (ListContext) -> Void) -> Self {
         mapSupplementary { supplementary in
             AnySupplementary(
                 identity: supplementary.identity,
@@ -121,7 +122,8 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
     ///
     /// - Parameter handler: supplementary 即将展示时调用的闭包。
     /// - Returns: 绑定展示事件后的 supplementary。
-    public func onDisplay(
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(
         _ handler: @escaping @MainActor (UICollectionReusableView, ListContext) -> Void
     ) -> Self {
         mapSupplementary { supplementary in
@@ -145,7 +147,8 @@ public struct ListSectionSupplementary<SectionID> where SectionID: Hashable & Se
     ///
     /// - Parameter handler: supplementary 结束展示时调用的闭包。
     /// - Returns: 绑定结束展示事件后的 supplementary。
-    public func onEndDisplay(
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(
         _ handler: @escaping @MainActor (UICollectionReusableView, ListContext) -> Void
     ) -> Self {
         mapSupplementary { supplementary in
@@ -292,7 +295,8 @@ where ID: Hashable & Sendable, View: UICollectionReusableView {
     ///
     /// - Parameter handler: supplementary 被点击时调用的闭包。
     /// - Returns: 绑定点击事件后的 supplementary。
-    public func onTap(_ handler: @escaping @MainActor (ListContext) -> Void) -> Self {
+    /// - Note: 识别 supplementary 上的单击手势。
+    public func onTapGesture(_ handler: @escaping @MainActor (ListContext) -> Void) -> Self {
         var copy = self
         copy.supplementaryTapHandler = handler
         return copy
@@ -302,7 +306,8 @@ where ID: Hashable & Sendable, View: UICollectionReusableView {
     ///
     /// - Parameter handler: supplementary 即将展示时调用的闭包。
     /// - Returns: 绑定展示事件后的 supplementary。
-    public func onDisplay(_ handler: @escaping @MainActor (View, ListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (View, ListContext) -> Void) -> Self {
         var copy = self
         copy.supplementaryDisplayHandler = handler
         return copy
@@ -312,7 +317,8 @@ where ID: Hashable & Sendable, View: UICollectionReusableView {
     ///
     /// - Parameter handler: supplementary 结束展示时调用的闭包。
     /// - Returns: 绑定结束展示事件后的 supplementary。
-    public func onEndDisplay(_ handler: @escaping @MainActor (View, ListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (View, ListContext) -> Void) -> Self {
         var copy = self
         copy.supplementaryEndDisplayHandler = handler
         return copy
@@ -514,7 +520,8 @@ public struct ProviderSupplementary<ID> where ID: Hashable & Sendable {
     ///
     /// - Parameter handler: supplementary 被点击时调用的闭包。
     /// - Returns: 绑定点击事件后的 provider supplementary。
-    public func onTap(_ handler: @escaping @MainActor (ListContext) -> Void) -> Self {
+    /// - Note: 识别 supplementary 上的单击手势。
+    public func onTapGesture(_ handler: @escaping @MainActor (ListContext) -> Void) -> Self {
         var copy = self
         copy.supplementaryTapHandler = handler
         return copy

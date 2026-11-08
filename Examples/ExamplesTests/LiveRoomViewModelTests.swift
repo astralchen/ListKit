@@ -451,6 +451,8 @@ extension ListSectionLayout {
         switch self {
         case .gridConfiguration(let configuration):
             return configuration.sectionInsets
+        case .waterfallConfiguration(let configuration):
+            return configuration.grid.sectionInsets
         case .uiKitListConfiguration:
             return .zero
         }

@@ -20,7 +20,7 @@
 | 项目数量 | 在 17、1、0 项之间循环，观察尾组和空 Section。 |
 | 轨道选项 | 单轨道、3 条弹性轨道、3 条固定轨道、自适应轨道、混合轨道；横向显示 3 rows。 |
 | itemMainAxisSize | 自适应 `.estimated(44)`、固定 56、宽高比 1、同组统一 `.uniform(estimated: 44)`。同组统一在 iOS 17 起可选。 |
-| trackGroupAlignment | 起始、居中、末尾。限制弹性／自适应轨道上限后更容易观察剩余空间中的对齐。单轨道保持占满交叉轴，固定轨道保持固定尺寸。 |
+| alignment | 起始、居中、末尾。限制弹性／自适应轨道上限后更容易观察剩余空间中的对齐。单轨道保持占满交叉轴，固定轨道保持固定尺寸。 |
 | 每组行／列 | 1～4，结合组内间距观察 lineGrouping。 |
 | 间距 | `trackSpacing` 控制轨道间距，`lineSpacing` 控制组内与默认组间距；开启「覆盖组间距」后编辑 `groupSpacing`，关闭恢复跟随。代码只在覆盖启用时输出 `.groupSpacing(...)`。 |
 | 边界吸附 | 控制主 Section 标题的 `pinToVisibleBounds`。 |

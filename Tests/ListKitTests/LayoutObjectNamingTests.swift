@@ -11,11 +11,11 @@ final class LayoutObjectNamingTests: XCTestCase {
                 let f = LayoutFixture(width: 360, count: 6, horizontal: outerHorizontal)
                 defer { f.close() }
                 let grid = GridLayout(tracks: [
-                    ListGridTrack(.fixed(40), spacingAfter: 6),
-                    ListGridTrack(.fixed(50), spacingAfter: 100)
+                    ListGridTrack(.fixed(40), spacing: 6),
+                    ListGridTrack(.fixed(50), spacing: 100)
                 ])
-                    .gridCrossAxisSize(.fixed(200))
-                    .trackGroupAlignment(.center)
+                    .crossAxisSize(.fixed(200))
+                    .alignment(.center)
                     .trackSpacing(10).lineSpacing(10).lineSpacing(8).groupSpacing(12)
                     .lineGrouping(.count(lines: 2))
                     .itemMainAxisSize(.fixed(30))
@@ -24,7 +24,7 @@ final class LayoutObjectNamingTests: XCTestCase {
                 f.apply(grid); f.render()
                 let first = try f.frame(0), second = try f.frame(1)
                 let nextLine = try f.frame(2), nextGroup = try f.frame(4)
-                // The two tracks span 96 points; the final spacingAfter adds no outer padding.
+                // The two tracks span 96 points; the final spacing adds no outer padding.
                 XCTAssertEqual(horizontal ? second.maxY - first.minY : second.maxX - first.minX, 96, accuracy: 0.5)
                 // Center the entire track group in 200 points, then apply the Section inset.
                 XCTAssertEqual(horizontal ? first.minY : first.minX, 52 + (horizontal ? 11 : 13), accuracy: 0.5)

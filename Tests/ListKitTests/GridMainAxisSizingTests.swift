@@ -220,9 +220,9 @@ private final class SizingFixture {
         source.horizontal = horizontal
         let tracks =
         adaptive
-        ? [ListGridTrack(.adaptive(minimumForCount: 90), spacingAfter: 10)]
+        ? [ListGridTrack(.adaptive(minimum: 90), spacing: 10)]
         : [
-            ListGridTrack(.fixed(100), spacingAfter: 10), ListGridTrack(.fixed(140), spacingAfter: 10),
+            ListGridTrack(.fixed(100), spacing: 10), ListGridTrack(.fixed(140), spacing: 10),
         ]
         let config = UICollectionViewCompositionalLayoutConfiguration()
         config.scrollDirection = horizontal ? .horizontal : .vertical

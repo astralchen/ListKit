@@ -83,6 +83,8 @@ where SectionID: Hashable & Sendable {
     private weak var collectionView: UICollectionView?
     /// 最近一次已接受 apply 的声明式 Section 描述树。
     private var sections: [ListSection<SectionID>] = []
+    private var cellMeasurements: ListCellMeasurementCache?
+    private var measuredSectionIDs: Set<AnyListID> = []
     /// 用于判断 compositional layout 元数据是否变化的轻量签名。
     // 实际 kind 按模板位置稳定复用；旧地址保留到 Section 移除，保证结束展示回调可解析。
     private var supplementaryAliasKinds: [ListSupplementaryAliasKey: String] = [:]
@@ -865,8 +867,27 @@ where SectionID: Hashable & Sendable {
 
         applyGeneration += 1
         let generation = applyGeneration
+        let measuredSections = newSections.filter { section in
+            switch section.layoutSource {
+            case .builtIn(.waterfallConfiguration): true
+            case .environment: measuredSectionIDs.contains(AnyListID(section.id))
+            default: false
+            }
+        }
+        let measuredContentChanged = measuredSections.contains { next in
+            guard let previous = sections.first(where: { $0.id == next.id }),
+                previous.rows.count == next.rows.count else { return true }
+            return zip(previous.rows, next.rows).contains { old, new in
+                old.identity != new.identity || new.refreshID == nil || old.refreshID != new.refreshID
+                    || old.isSelected != new.isSelected
+            }
+        }
+        shouldInvalidateLayout = shouldInvalidateLayout || measuredContentChanged
+        cellMeasurements?.synchronize(rows: measuredSections.flatMap(\.rows),
+            reload: options.applicationMode == .reloadData)
         sections = newSections
         let activeSectionIDs = Set(newSections.map { AnyListID($0.id) })
+        measuredSectionIDs.formIntersection(activeSectionIDs)
         activeSupplementaryAliases = activeSupplementaryAliases.filter { activeSectionIDs.contains($0.key) }
         supplementaryAliasKinds = supplementaryAliasKinds.filter { activeSectionIDs.contains($0.key.sectionID) }
         supplementaryAliases = supplementaryAliases.filter { activeSectionIDs.contains($0.value.sectionID) }
@@ -2944,7 +2965,7 @@ where SectionID: Hashable & Sendable {
     public func makeCompositionalSection(
         for sectionIndex: Int,
         environment: any NSCollectionLayoutEnvironment,
-        scrollDirection: ListLayoutScrollDirection = .vertical,
+        scrollDirection: ListAxis = .vertical,
         diagnostics: ListDiagnosticsOptions = .debugDefault
     ) -> NSCollectionLayoutSection? {
         lastLayoutDiagnostics = []
@@ -2971,6 +2992,11 @@ where SectionID: Hashable & Sendable {
             depth += 1
         }
         guard let options = source.options else { return nil }
+        if case .builtIn(.waterfallConfiguration) = source {
+            measuredSectionIDs.insert(AnyListID(section.id))
+        } else {
+            measuredSectionIDs.remove(AnyListID(section.id))
+        }
         let isCustom: Bool
         if case .custom = source { isCustom = true } else { isCustom = false }
         var issues = options.issues(in: section, custom: isCustom)
@@ -3047,7 +3073,31 @@ where SectionID: Hashable & Sendable {
                 recordLayoutDiagnostics(issues, options: diagnostics)
                 return nil
             }
-            if let list = layout.uiKitListLayout {
+            if case .waterfallConfiguration(let waterfall) = layout {
+                do {
+                    guard !section.hasOutlineHierarchy, itemSupplementaries.isEmpty,
+                        section.rows.allSatisfy({ $0.measurement != nil }) else {
+                        throw ListWaterfallError("requires flat typed Rows without item supplementaries")
+                    }
+                    guard let collectionView else { return nil }
+                    if cellMeasurements == nil { cellMeasurements = ListCellMeasurementCache() }
+                    guard let cellMeasurements else { return nil }
+                    layoutSection = try waterfall.makeSection(environment: environment,
+                        scrollDirection: scrollDirection, itemCount: section.rows.count) { item, cross, axis in
+                        let row = section.rows[item]
+                        let context = ListContext(identity: row.identity,
+                            indexPath: IndexPath(item: item, section: sectionIndex),
+                            collectionView: collectionView, isMeasuring: true,
+                            eventDispatcher: { _, _ in })
+                        return try cellMeasurements.extent(for: row, crossExtent: cross,
+                            axis: axis, context: context, environment: environment)
+                    }
+                } catch {
+                    recordLayoutDiagnostics([.init(kind: .invalidLayout,
+                        message: "ListKit: section \(section.id): \(error)")], options: diagnostics)
+                    return nil
+                }
+            } else if let list = layout.uiKitListLayout {
                 var configuration = list.makeConfiguration()
                 configuration.leadingSwipeActionsConfigurationProvider = { [weak self] indexPath in
                     guard let self, let collectionView = self.collectionView else { return nil }

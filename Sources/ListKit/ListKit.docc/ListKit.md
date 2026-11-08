@@ -39,7 +39,7 @@ diffable snapshot、可见内容配置、布局重测量、滚动、动画、取
 - ``ListGridItemMainAxisSize``
 - ``ListGridLineGrouping``
 - ``ListGridGroupMainAxisSize``
-- ``ListGridTrackGroupAlignment``
+- ``ListGridAlignment``
 - ``ListGridCrossAxisSize``
 - ``CustomLayoutBoundary``
 - ``ListBoundaryLayout``
@@ -49,7 +49,7 @@ diffable snapshot、可见内容配置、布局重测量、滚动、动画、取
 - <doc:Declarative-Layouts>
 - ``ListCompositionalLayoutConfiguration``
 - ``ListContentInsetsReference``
-- ``ListLayoutScrollDirection``
+- ``ListAxis``
 - <doc:Layout-Inset-Coordination>
 
 ### 提交与观测

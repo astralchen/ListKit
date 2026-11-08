@@ -758,7 +758,7 @@ final class LiveRoomViewModel {
             GridLayout(tracks: 1)
                 .itemMainAxisSize(.fixed(92))
                 .lineGrouping(.fitting(mainAxisSize: .fixed(environment.container.effectiveContentSize.width)))
-                .gridCrossAxisSize(.fixed(112))
+                .crossAxisSize(.fixed(112))
                 .orthogonalScrolling(.continuousGroupLeadingBoundary)
                 .trackSpacing(10).lineSpacing(10)
                 .sectionInsets(Self.cardContentInsets(top: 8, bottom: 12))

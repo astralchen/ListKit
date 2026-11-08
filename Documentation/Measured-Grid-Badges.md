@@ -22,14 +22,14 @@ UIKit supplementary = (item / (L * T)) * T + item % T
 所属 line = (item / T) % L
 ```
 
-以上除法为整数除法。adapter 负责转换，业务声明仍使用同一个 kind。configure、onTap、onDisplay、onEndDisplay 以及可见刷新使用所属 item 位置；dequeue 和原始 UIKit delegate 使用实际 UIKit 地址。kind 按 Section、视图展示类型和分组模板隔离，轨道数变化后重新解析当前映射。
+以上除法为整数除法。adapter 负责转换，业务声明仍使用同一个 kind。configure、onTapGesture、onAppear、onDisappear 以及可见刷新使用所属 item 位置；dequeue 和原始 UIKit delegate 使用实际 UIKit 地址。kind 按 Section、视图展示类型和分组模板隔离，轨道数变化后重新解析当前映射。
 
 ## 使用与迁移
 
 ```swift
 GridLayout(tracks: 2)
     .itemMainAxisSize(.estimated(44))
-    .gridCrossAxisSize(.fixed(210))
+    .crossAxisSize(.fixed(210))
     .lineGrouping(.count(lines: 3))
     .trackSpacing(10)
     .lineSpacing(12)

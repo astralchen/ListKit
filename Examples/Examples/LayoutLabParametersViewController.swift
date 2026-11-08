@@ -104,7 +104,7 @@ final class LayoutLabParametersViewController: UIViewController, UITableViewData
             cell.accessoryView = button
             cell.detailTextLabel?.text = "自适应使用默认 estimated(44)；同组统一需 iOS 17。"
         case .alignment:
-            cell.textLabel?.text = "trackGroupAlignment"
+            cell.textLabel?.text = "alignment"
             let selected: Int = configuration.alignment == .start ? 0 : configuration.alignment == .center ? 1 : 2
             let control = UISegmentedControl(items: ["起始", "居中", "末尾"])
             control.selectedSegmentIndex = selected

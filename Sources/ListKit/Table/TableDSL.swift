@@ -501,7 +501,8 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 监听 cell 即将展示。
     ///
     /// - Parameter handler: 展示回调。
-    public func onDisplay(_ handler: @escaping @MainActor (Cell, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (Cell, TableListContext) -> Void) -> Self {
         var copy = self
         copy.rowDisplayHandler = handler
         return copy
@@ -510,9 +511,10 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 监听 cell 即将展示，并传入当前 model。
     ///
     /// - Parameter handler: 展示回调。
-    public func onDisplay(_ handler: @escaping @MainActor (Model, Cell, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (Model, Cell, TableListContext) -> Void) -> Self {
         let boxedModel = TableMainActorValueBox(value: model)
-        return onDisplay { cell, context in
+        return onAppear { cell, context in
             handler(boxedModel.value, cell, context)
         }
     }
@@ -520,7 +522,8 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 监听 cell 结束展示。
     ///
     /// - Parameter handler: 结束展示回调。
-    public func onEndDisplay(_ handler: @escaping @MainActor (Cell, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (Cell, TableListContext) -> Void) -> Self {
         var copy = self
         copy.rowEndDisplayHandler = handler
         return copy
@@ -529,9 +532,10 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 监听 cell 结束展示，并传入当前 model。
     ///
     /// - Parameter handler: 结束展示回调。
-    public func onEndDisplay(_ handler: @escaping @MainActor (Model, Cell, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (Model, Cell, TableListContext) -> Void) -> Self {
         let boxedModel = TableMainActorValueBox(value: model)
-        return onEndDisplay { cell, context in
+        return onDisappear { cell, context in
             handler(boxedModel.value, cell, context)
         }
     }
@@ -1084,7 +1088,8 @@ public struct TableSectionSupplementary<SectionID, Role> where SectionID: Hashab
     /// 监听 header/footer 即将展示。
     ///
     /// - Parameter handler: 展示回调。
-    public func onDisplay(_ handler: @escaping @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void) -> Self {
         mapSupplementary { supplementary in
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,
@@ -1102,7 +1107,8 @@ public struct TableSectionSupplementary<SectionID, Role> where SectionID: Hashab
     /// 监听 header/footer 结束展示。
     ///
     /// - Parameter handler: 结束展示回调。
-    public func onEndDisplay(_ handler: @escaping @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void) -> Self {
         mapSupplementary { supplementary in
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,

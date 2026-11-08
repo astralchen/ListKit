@@ -19,7 +19,7 @@ public struct ListSectionGridLayout: Hashable, Sendable {
     public var tracks: Tracks
     /// 每个条目沿内容延伸方向的尺寸策略，默认使用 44 点估算值并由内容自适应。
     public var itemMainAxisSize: ListGridItemMainAxisSize = .estimated(44)
-    /// 相邻轨道的默认间距，可由单条轨道的 spacingAfter 覆盖。
+    /// 相邻轨道的默认间距，可由单条轨道的 spacing 覆盖。
     public var trackSpacing: CGFloat = 0
     /// 内容方向上相邻行／列的间距；未覆盖 groupSpacing 时也用于组间，默认 0。
     public var lineSpacing: CGFloat = 0
@@ -34,7 +34,7 @@ public struct ListSectionGridLayout: Hashable, Sendable {
     /// 顶层组的行数与主轴尺寸策略，默认每组包含一行。
     var grouping: ListGridLineGrouping = .count(lines: 1)
     /// 轨道整体在交叉轴剩余空间中的对齐方式，默认靠起始侧。
-    var crossAlignment: ListGridTrackGroupAlignment = .start
+    var crossAlignment: ListGridAlignment = .start
     /// 通过通用选项读写分区内边距，未指定时按零处理。
     var sectionInsets: ListLayoutInsets {
         get { options.sectionInsets ?? .zero }
@@ -43,7 +43,7 @@ public struct ListSectionGridLayout: Hashable, Sendable {
     /// 保存轨道声明，其余布局配置使用默认值。
     init(tracks: Tracks) { self.tracks = tracks }
     /// 根据外层滚动方向与正交滚动配置，确定网格内容的主轴方向。
-    func contentAxis(for outer: ListLayoutScrollDirection) -> ListLayoutScrollDirection {
+    func contentAxis(for outer: ListAxis) -> ListAxis {
         scrollingBehavior == nil ? outer : (outer == .vertical ? .horizontal : .vertical)
     }
     /// 将数量声明转为弹性轨道定义；数量在展开时限制范围，原始非法值仍由验证报告。
@@ -73,7 +73,7 @@ public struct ListSectionGridLayout: Hashable, Sendable {
         if let dimension = crossAxisSizing {
             switch dimension {
             case .fixed(let value), .estimated(let value):
-                if !value.isFinite || value <= 0 { errors.append("gridCrossAxisSize must be finite and positive") }
+                if !value.isFinite || value <= 0 { errors.append("crossAxisSize must be finite and positive") }
             }
         }
         switch grouping {
@@ -83,7 +83,7 @@ public struct ListSectionGridLayout: Hashable, Sendable {
         case .fitting(let size): if !size.isValid { errors.append("invalid group size") }
         }
         for (index, track) in definitions.enumerated() {
-            let gap = track.spacingAfter ?? trackSpacing
+            let gap = track.spacing ?? trackSpacing
             if !gap.isFinite || gap < 0 {
                 errors.append("grid track \(index) spacing must be finite and nonnegative")
             }
@@ -103,7 +103,7 @@ public struct ListSectionGridLayout: Hashable, Sendable {
     /// 在实际容器环境中尝试解析几何信息，将尺寸溢出或不兼容的配置转换为错误描述。
     @MainActor func environmentValidationErrors(
         in environment: any NSCollectionLayoutEnvironment,
-        scrollDirection: ListLayoutScrollDirection = .vertical
+        scrollDirection: ListAxis = .vertical
     ) -> [String] {
         do { _ = try geometry(in: environment, scrollDirection: scrollDirection); return [] } catch {
             return [String(describing: error)]
@@ -113,7 +113,7 @@ public struct ListSectionGridLayout: Hashable, Sendable {
     /// 几何解析失败时返回 false；比较尺寸和间距时允许小于 0.001 点的误差。
     @MainActor func supportsItemSupplementaries(
         in environment: any NSCollectionLayoutEnvironment,
-        scrollDirection: ListLayoutScrollDirection = .vertical
+        scrollDirection: ListAxis = .vertical
     ) -> Bool {
         guard let geometry = try? geometry(in: environment, scrollDirection: scrollDirection),
             let first = geometry.tracks.first
@@ -126,7 +126,7 @@ public struct ListSectionGridLayout: Hashable, Sendable {
     @MainActor func makeSection(
         environment: any NSCollectionLayoutEnvironment,
         itemSupplementaries: [NSCollectionLayoutSupplementaryItem],
-        scrollDirection: ListLayoutScrollDirection = .vertical,
+        scrollDirection: ListAxis = .vertical,
         lineSupplementaries: [[NSCollectionLayoutSupplementaryItem]]? = nil
     ) -> NSCollectionLayoutSection {
         do {
@@ -159,7 +159,7 @@ extension ListSectionGridLayout {
     /// 当前容器环境下解析出的几何快照，供 UIKit 布局构建阶段直接使用。
     struct Geometry {
         /// 网格内容实际延伸的主轴方向。
-        let axis: ListLayoutScrollDirection
+        let axis: ListAxis
         /// 已展开自适应定义的实际轨道，包含交叉轴尺寸与尾部间距。
         let tracks: [ListGridLayoutBuilder.Track]
         /// 与实际轨道逐一对应的条目主轴尺寸；自适应内容在此保存估算值。
@@ -185,7 +185,7 @@ extension ListSectionGridLayout {
     /// 主轴沿内容方向延伸，交叉轴用于排列轨道；容器尺寸取自当前布局环境。
     @MainActor func geometry(
         in environment: any NSCollectionLayoutEnvironment,
-        scrollDirection: ListLayoutScrollDirection
+        scrollDirection: ListAxis
     ) throws -> Geometry {
         func fail(_ message: String) -> ListGridLayoutBuilder.ResolutionError { .init(description: message) }
         guard validationErrors.isEmpty else { throw fail(validationErrors.joined(separator: "; ")) }
@@ -212,15 +212,15 @@ extension ListSectionGridLayout {
             availableExtent: available, defaultSpacing: trackSpacing)
         // 估算交叉轴仅支持单轨道，且不能作为宽高比计算所需的最终尺寸。
         if crossEstimate != nil {
-            guard case .count(1) = tracks else { throw fail("estimated gridCrossAxisSize requires tracks: 1") }
+            guard case .count(1) = tracks else { throw fail("estimated crossAxisSize requires tracks: 1") }
             if case .measured(let measured) = itemMainAxisSize.storage, measured.requiresResolvedCrossExtent {
-                throw fail("aspectRatio requires a resolved cross size; estimated gridCrossAxisSize is not a final size")
+                throw fail("aspectRatio requires a resolved cross size; estimated crossAxisSize is not a final size")
             }
         }
         let totalCross = resolved.reduce(0) { $0 + $1.extent + $1.spacing }
         guard totalCross.isFinite, totalCross > 0 else { throw fail("grid cross extent overflow") }
         if case .fixed = crossSize, totalCross > available + 0.001 {
-            throw fail("tracks and spacing overflow fixed gridCrossAxisSize")
+            throw fail("tracks and spacing overflow fixed crossAxisSize")
         }
         let requestedCount: Int?
         let explicitSize: ListGridGroupMainAxisSize?
@@ -482,7 +482,7 @@ extension ListSectionGridLayout {
             throw ResolutionError(description: "grid requires finite extent and 1...10000 track definitions")
         }
         // 定义之间的间距先行扣除；最后一个定义无需尾部间距。
-        let gaps = definitions.map { $0.spacingAfter ?? defaultSpacing }
+        let gaps = definitions.map { $0.spacing ?? defaultSpacing }
         var remaining = availableExtent - gaps.dropLast().reduce(0, +)
         guard remaining.isFinite else {
             throw ResolutionError(description: "grid track spacing sum overflow")

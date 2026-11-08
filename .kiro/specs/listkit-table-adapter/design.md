@@ -143,7 +143,7 @@ TableSection(.main) {
 - `refresh(_:)` / `refresh(when:scope:action:)`
 - `selected(_:)`
 - `onSelect` / `onDeselect` / `onSelectionChange`
-- `onDisplay` / `onEndDisplay`
+- `onAppear` / `onDisappear`
 - `onPrefetch` / `onCancelPrefetch`
 - `onCellEvent`
 - `contextMenu(_:)`
@@ -151,7 +151,7 @@ TableSection(.main) {
 - `canMove(_:)` / `onMove(...)`
 - `leadingSwipeActions(_:)` / `trailingSwipeActions(_:)`
 
-`TableHeader` 和 `TableFooter` 使用 `UITableViewHeaderFooterView`，支持 `refreshID`、`refresh(_:)`、`onDisplay` 和 `onEndDisplay`。
+`TableHeader` 和 `TableFooter` 使用 `UITableViewHeaderFooterView`，支持 `refreshID`、`refresh(_:)`、`onAppear` 和 `onDisappear`。
 
 ## Reusable Namespace
 

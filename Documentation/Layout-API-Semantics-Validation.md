@@ -1,5 +1,7 @@
 # 布局 API 语义重构验证
 
+> 后续 adaptive 参数已参照 SwiftUI 改为 `minimum:`；下文的 `minimumForCount:` 为当时命名，尺寸分配行为不变。
+
 > 后续间距 API 已统一：删除 gridSpacing，groupLineSpacing 改为 lineSpacing，groupSpacing 改为可选覆盖（nil 跟随 lineSpacing）。下文为当时的实现与验证记录；当前契约见 [布局指南](Layout-API.md#滚动与间距)。
 
 > 本文保留首轮重构的验证结果。后续复查将 DSL 的 contentInsets 统一改为 sectionInsets，并修复 provider 边界的类型转换漏洞；最新结果见 [Layout-API-Review.md](Layout-API-Review.md)。

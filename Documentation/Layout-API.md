@@ -21,22 +21,25 @@
 
 ## 名称与作用对象
 
-修饰方法优先写出被修改的布局对象。已经由接收类型限定的值（如 BoundarySupplementaryLayout.size、alignment、zIndex）不重复加前缀；存在多个合理作用对象或参考基准时，在名称中区分。
+参照 SwiftUI 的命名习惯，已由接收类型限定的值（如 BoundarySupplementaryLayout.size、alignment、zIndex）不重复加前缀；存在多个合理作用对象或参考基准时，在名称中区分。
 
 | 旧入口 | 当前入口 | 作用对象与参考基准 |
 | --- | --- | --- |
-| crossAxisSize | gridCrossAxisSize | 全部轨道共同占用的交叉轴区域，不是单个 item 或整个 collection |
+| gridCrossAxisSize | crossAxisSize | 全部轨道共同占用的交叉轴区域，不是单个 item 或整个 collection |
 | groupLineSpacing | lineSpacing | 内容方向上相邻行／列的统一间距，默认也用于组间 |
 | spacing / gridSpacing | trackSpacing + lineSpacing | 分别设置轨道与内容方向间距；特殊组间距用可选 groupSpacing 覆盖 |
 | group / ListGridGrouping | lineGrouping / ListGridLineGrouping | 将基本行／列组合成顶层 group；不直接按 item 数量分组 |
-| trackAlignment / ListGridTrackAlignment | trackGroupAlignment / ListGridTrackGroupAlignment | 整组轨道在 gridCrossAxisSize 内的对齐，不是每个 cell 的内部对齐 |
-| ListGridTrack.spacing | ListGridTrack.spacingAfter | 每条展开轨道到下一条轨道的交叉轴间距；最后一条后不加间距 |
+| trackGroupAlignment / ListGridTrackGroupAlignment | alignment / ListGridAlignment | 整组轨道在 crossAxisSize 内的对齐，不是每个 cell 的内部对齐 |
+| ListLayoutScrollDirection | ListAxis | 水平／垂直轴，同时用于外层滚动方向和边界 sizingAxis |
+| ListGridTrack.spacingAfter | ListGridTrack.spacing | 每条展开轨道到下一条轨道的交叉轴间距；最后一条后不加间距 |
 | BoundarySupplementaryLayout 的 axis: | sizingAxis: | 仅决定尺寸推导轴，不改变边界位置或滚动轴 |
 | pinned | pinToVisibleBounds | 将边界固定到可见区域的对应边缘，支持吸顶和横向吸边 |
 | offset | absoluteOffset | 边界相对 alignment 的点数偏移 |
 | ItemSupplementaryLayout 的 anchor: / anchor | itemAnchor: / itemAnchor | 相对于所属 item 的 containerAnchor |
 | fractionalOffset | anchorFractionalOffset | item 补充视图的 containerAnchor 比例偏移，与边界绝对偏移区分 |
 | DecorationItemLayout 的 insets: / insets | backgroundInsets: / backgroundInsets | 背景 decoration 自身的收缩量，不改变 item 或 Section 布局 |
+
+GridLayout 与 WaterfallLayout 统一使用 `alignment` 和 `crossAxisSize`。`alignment` 的类型为 `ListGridAlignment`，保留随内容轴解释的 `.start / .center / .end`；起止方向在纵向内容中为 leading/trailing，在横向内容中为 top/bottom。Grid 的 `crossAxisSize` 接受 `.fixed / .estimated`，Waterfall 仅接受固定点数，两者传 nil 均恢复环境尺寸。
 
 上述旧入口已移除，不保留兼容别名。`lineSpacing` 默认 0，同时用于组内和未覆盖的组间距；每组只有一个基本行／列时仍通过组间距生效。`groupSpacing` 默认 nil，显式值（包括 0）覆盖组间距，传 nil 恢复跟随当前 lineSpacing。`orthogonalScrolling` 仅设置当前 Section 的正交滚动行为；外层方向由 ListCompositionalLayoutConfiguration.scrollDirection 配置。`sectionInsets`、`itemMainAxisSize`、`trackSpacing`、`lineSpacing`、`groupSpacing`、`boundarySupplementaries`、`itemSupplementaries` 已能区分作用对象，继续保留。
 
@@ -58,13 +61,13 @@ GridLayout(tracks: 1).itemMainAxisSize(.estimated(60)).trackSpacing(8).lineSpaci
 // 纵向页面中的单行横向卡片。
 GridLayout(tracks: 1)
     .itemMainAxisSize(.fixed(92)).trackSpacing(10).lineSpacing(10)
-    .gridCrossAxisSize(.fixed(112))
+    .crossAxisSize(.fixed(112))
     .orthogonalScrolling(.continuous)
 
 // 横向页面中的两列纵向内容。
 GridLayout(tracks: 2)
     .itemMainAxisSize(.fixed(72)).trackSpacing(10).lineSpacing(10)
-    .gridCrossAxisSize(.fixed(300))
+    .crossAxisSize(.fixed(300))
     .orthogonalScrolling(.continuous)
 ```
 
@@ -74,19 +77,19 @@ GridLayout(tracks: 2)
 GridLayout(tracks: [
     ListGridTrack(.fixed(80)),
     ListGridTrack(.flexible(minimum: 100, maximum: 180)),
-    ListGridTrack(.adaptive(minimumForCount: 72), spacingAfter: 6)
+    ListGridTrack(.adaptive(minimum: 72), spacing: 6)
 ])
 .itemMainAxisSize(.aspectRatio(4.0 / 3.0))
 .trackSpacing(12).lineSpacing(12)
-.trackGroupAlignment(.center)
+.alignment(.center)
 .sectionInsets(.init(16))
 ```
 
 `tracks: Int` 创建最小尺寸为 1 点的等分弹性轨道。`ListGridTrack(.flexible())` 默认 minimum 为 10。数量范围 1...10000。adaptive 可以展开为多条，定义数量不是最终轨道数量，更不是数据 item 数量。
 
-先预留固定尺寸和间距，再按定义顺序分配非固定轨道，最后展开 adaptive。已分配的轨道不再次分配。fixed/flexible 在空间不足时仍保留固定值/最小值；adaptive 的 minimumForCount 用于计算展开数量，窄空间下实际尺寸可能更小。maximum 限制后的剩余空间不会重新分配。算法不复刻 SwiftUI 的多轮提议尺寸测量。
+先预留固定尺寸和间距，再按定义顺序分配非固定轨道，最后展开 adaptive。已分配的轨道不再次分配。fixed/flexible 在空间不足时仍保留固定值/最小值；adaptive 的 minimum 用于计算展开数量，窄空间下实际尺寸可能更小。maximum 限制后的剩余空间不会重新分配。算法不复刻 SwiftUI 的多轮提议尺寸测量。
 
-`.trackGroupAlignment(.start)` 是默认值。它控制整组轨道在剩余交叉轴空间中的位置：
+`.alignment(.start)` 是默认值。它控制整组轨道在剩余交叉轴空间中的位置：
 
 | 对齐 | 纵向内容 | 横向内容 |
 | --- | --- | --- |
@@ -103,10 +106,10 @@ GridLayout(tracks: [
 ```swift
 GridLayout(tracks: 2)
     .sectionInsets(.init(top: 8, leading: 16, bottom: 12, trailing: 16))
-    .gridCrossAxisSize(.fixed(220))
+    .crossAxisSize(.fixed(220))
 ```
 
-未指定 gridCrossAxisSize 时，网格按环境的有效交叉轴长度减去 Section 对应两侧 inset 分配轨道。显式 gridCrossAxisSize 已是轨道区域尺寸，不再从中扣 inset；例如横向内容的主体高 220，Section top/bottom 各 8，则主体与两侧 inset 合计占 236 点，boundary 额外占位另按 UIKit 规则计算。fractionalViewport 从环境的内容主轴长度扣除相应两侧 Section inset。
+未指定 crossAxisSize 时，网格按环境的有效交叉轴长度减去 Section 对应两侧 inset 分配轨道。显式 crossAxisSize 已是轨道区域尺寸，不再从中扣 inset；例如横向内容的主体高 220，Section top/bottom 各 8，则主体与两侧 inset 合计占 236 点，boundary 额外占位另按 UIKit 规则计算。fractionalViewport 从环境的内容主轴长度扣除相应两侧 Section inset。
 
 Grid 默认 inset 为零；UIKitListLayout 省略时保留系统值，显式 `.sectionInsets(.zero)` 会覆盖它。CustomLayout 使用构造参数 `sectionInsets:`，provider 从 `context.sectionInsets` 读取并在构建几何时消费，返回的 UIKit Section.contentInsets 必须一致。重复设置取最后一次，不累加。
 
@@ -130,24 +133,24 @@ Section inset 不等于“给所有 header/footer 加 padding”；边界的位�
 
 边界视图使用独立的 `ListBoundaryMainAxisSize`，只提供 fixed、estimated 和 aspectRatio，不接受 uniform、fillGroup 或分页比例。item 与 boundary 不共享公开尺寸类型；二维 boundary 尺寸中的 `ListLayoutDimension.absolute` 等保持不变。
 
-### gridCrossAxisSize：整个轨道区域的交叉轴尺寸
+### crossAxisSize：整个轨道区域的交叉轴尺寸
 
 ```swift
-.gridCrossAxisSize(.fixed(220))     // 纵向内容为宽 220；横向内容为高 220
-.gridCrossAxisSize(.estimated(80))  // 单轨道的交叉轴估算值
-.gridCrossAxisSize(nil)             // 恢复使用环境可用尺寸
+.crossAxisSize(.fixed(220))     // 纵向内容为宽 220；横向内容为高 220
+.crossAxisSize(.estimated(80))  // 单轨道的交叉轴估算值
+.crossAxisSize(nil)             // 恢复使用环境可用尺寸
 ```
 
 它控制整个网格主体的轨道区域，不包含 Section inset 或 boundary 的额外占位。内容方向改变时尺寸随轴解释；不提供物理 width/height 参数，也不控制主轴 viewport、cell 内部 frame 或裁剪。
 
-fixed 完整预留指定区域，剩余空间按 trackGroupAlignment 分配。轨道及间距超出指定区域时会诊断。未指定时，轨道可用空间取 environment.container.effectiveContentSize 并扣除 Section 交叉轴 inset 一次；显式值已是内容尺寸，不再扣 inset。
+fixed 完整预留指定区域，剩余空间按 alignment 分配。轨道及间距超出指定区域时会诊断。未指定时，轨道可用空间取 environment.container.effectiveContentSize 并扣除 Section 交叉轴 inset 一次；显式值已是内容尺寸，不再扣 inset。
 
 estimated 同时设置 item 和 group 的交叉轴估算值，需要 cell 实现 self-sizing。仅支持 `tracks: 1`，且不能配合 `.aspectRatio(...)`。例如：
 
 ```swift
 GridLayout(tracks: 1)
     .itemMainAxisSize(.fixed(92))
-    .gridCrossAxisSize(.estimated(80))
+    .crossAxisSize(.estimated(80))
     .orthogonalScrolling(.continuous)
 ```
 
@@ -175,7 +178,7 @@ estimated/uniform 主轴内容使用内容推导的 group，不支持固定容�
 
 ## 滚动与间距
 
-`.orthogonalScrolling(...)` 开启正交滚动，并让内容轴与外层轴垂直。tracks、itemMainAxisSize 和 gridCrossAxisSize 都随内容轴解释；它不改写这些策略或分组配置。省略或 `.orthogonalScrolling(nil)` 跟随外层方向，nil 可用于关闭复用布局值上的正交滚动。
+`.orthogonalScrolling(...)` 开启正交滚动，并让内容轴与外层轴垂直。tracks、itemMainAxisSize 和 crossAxisSize 都随内容轴解释；它不改写这些策略或分组配置。省略或 `.orthogonalScrolling(nil)` 跟随外层方向，nil 可用于关闭复用布局值上的正交滚动。
 
 | 行为 | 含义 |
 | --- | --- |
@@ -191,7 +194,7 @@ estimated/uniform 主轴内容使用内容推导的 group，不支持固定容�
 // 两行、每组 3 列，共 6 个 item；纵向外层。
 GridLayout(tracks: 2)
     .itemMainAxisSize(.fillGroup).trackSpacing(10).lineSpacing(10)
-    .gridCrossAxisSize(.fixed(220))
+    .crossAxisSize(.fixed(220))
     .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1)))
     .groupSpacing(16)
     .orthogonalScrolling(.groupPaging)
@@ -200,7 +203,7 @@ GridLayout(tracks: 2)
 - trackSpacing：轨道间的默认交叉轴间距，默认 0。
 - lineSpacing：沿内容方向相邻行／列的统一间距，默认 0；用于组内，也作为组间距的默认值。
 - groupSpacing：顶层 group 之间的可选覆盖，类型 CGFloat?，默认 nil；实际组间距为 `groupSpacing ?? lineSpacing`。0 表示明确无组间距，nil 恢复跟随。
-- ListGridTrack.spacingAfter：单条轨道的显式间距覆盖；最后一条实际轨道后不追加间距，nil 使用 trackSpacing。
+- ListGridTrack.spacing：单条轨道的显式间距覆盖；最后一条实际轨道后不追加间距，nil 使用 trackSpacing。
 - 显式 groupSpacing 与 lineSpacing 的调用顺序无关：`.groupSpacing(20).lineSpacing(8)` 和 `.lineSpacing(8).groupSpacing(20)` 的组间距都为 20。对同一属性重复设置仍以后一次为准。
 - `gridSpacing` 已删除，无兼容别名。统一间距改写为 `.trackSpacing(8).lineSpacing(8)`；不修改 sectionInsets 或 interSectionSpacing。
 
@@ -229,8 +232,8 @@ fillGroup 必须与显式 `.count(lines:mainAxisSize:)` 配合；从 group 长�
 | `ListLayout(itemHeight: .estimated(44))` | `GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0)` |
 | `GridLayout(columns: n)` | `GridLayout(tracks: n)`，核实实际内容方向仍纵向 |
 | `GridLayout(rows: n)` | `GridLayout(tracks: n)`，核实实际内容方向仍横向 |
-| columns/rows 的 alignment | `.trackGroupAlignment(.start/.center/.end)` |
-| 固定尺寸 HorizontalLayout | 单轨道 Grid + gridCrossAxisSize + fitting + orthogonalScrolling |
+| columns/rows 的 alignment | `.alignment(.start/.center/.end)` |
+| 固定尺寸 HorizontalLayout | 单轨道 Grid + crossAxisSize + fitting + orthogonalScrolling |
 
 原普通 List 总是以高度描述尺寸，新 Grid 是内容主轴尺寸；非纵向使用必须审查，不能只替换名称。Grid 默认 trackSpacing 与 lineSpacing 均为 0，groupSpacing 为 nil（跟随 lineSpacing）；需要视觉间隔时显式设置 trackSpacing 和 lineSpacing，特殊组间距再设置 groupSpacing。
 
@@ -240,7 +243,7 @@ fillGroup 必须与显式 `.count(lines:mainAxisSize:)` 配合；从 group 长�
 EnvironmentLayout(layoutKey: "legacy-fixed-strip") { environment in
     GridLayout(tracks: 1)
         .itemMainAxisSize(.fixed(92)).trackSpacing(10).lineSpacing(10)
-        .gridCrossAxisSize(.fixed(112))
+        .crossAxisSize(.fixed(112))
         .lineGrouping(.fitting(mainAxisSize: .fixed(environment.container.effectiveContentSize.width)))
         .groupSpacing(10)
         .orthogonalScrolling(.continuousGroupLeadingBoundary)
@@ -250,7 +253,7 @@ EnvironmentLayout(layoutKey: "legacy-fixed-strip") { environment in
 
 旧 `.fractionalWidth(1)` group 使用环境的完整有效宽度；新 `.fractionalViewport(1)` 则扣除 section 主轴 inset。存在 inset 时二者不等价，会改变容量和停靠点。上例通过 EnvironmentLayout 在尺寸变化时重算完整 group 宽度。
 
-省略 fitting 会改成一个 item 一个 group，停靠点随之改变。旧 itemHeight 实际是 group 高度；新 gridCrossAxisSize 明确表示区域交叉尺寸。
+省略 fitting 会改成一个 item 一个 group，停靠点随之改变。旧 itemHeight 实际是 group 高度；新 crossAxisSize 明确表示区域交叉尺寸。
 
 旧 estimated 宽度 + 整宽分页、复杂 fractionalWidth/fractionalHeight 或 `.none` 如果必须逐层保持原 UIKit 参考对象，使用 CustomLayout：
 
@@ -271,9 +274,9 @@ CustomLayout(layoutKey: "legacy-estimated-strip") { context in
 }
 ```
 
-按照原布局替换各层 dimension 与行为；捕获业务参数时纳入 layoutKey。不要把旧 estimated 直接改为固定 gridCrossAxisSize，也不要把所有 fractionalWidth 都替换为 fractionalViewport；它们的父级参考对象可能不同。
+按照原布局替换各层 dimension 与行为；捕获业务参数时纳入 layoutKey。不要把旧 estimated 直接改为固定 crossAxisSize，也不要把所有 fractionalWidth 都替换为 fractionalViewport；它们的父级参考对象可能不同。
 
-如果产品意图是按内容尺寸逐卡片滚动，可以有意迁移为 `.itemMainAxisSize(.estimated(...)).gridCrossAxisSize(.estimated(...)).orthogonalScrolling(.continuous)` 的自然分组；这不是旧整宽 group 的完全等价替换。
+如果产品意图是按内容尺寸逐卡片滚动，可以有意迁移为 `.itemMainAxisSize(.estimated(...)).crossAxisSize(.estimated(...)).orthogonalScrolling(.continuous)` 的自然分组；这不是旧整宽 group 的完全等价替换。
 
 ## 边界与 item 补充视图
 
@@ -329,7 +332,7 @@ GridLayout(tracks: 2)
 
 对于 item 徽章，身份标识该分区的内容声明，同一 kind 的各行徽章共享这份声明的身份。省略 `elementID` 时，`context.itemID` 是 `DefaultSupplementaryID`。若需在重排后找到原条目，可在回调中保存 `adapter.itemIdentity(at: context.indexPath)` 的结果，之后通过 `adapter.indexPath(for:)` 重新定位。自定义 provider 若要根据内容版本重新执行创建闭包，需选用 `.reloadSection` 刷新动作。
 
-用 `SectionSupplementary(BadgeView.self, kind: "badge")` 声明一次内容即可。configure、onTap、onDisplay 和 onEndDisplay 中的 `context.indexPath` 是所属 item 的位置。`reconfigureVisibleSupplementaries(ofKind:forRowID:in:)` 按业务 row identity 查询，在重排后仍指向该 row。
+用 `SectionSupplementary(BadgeView.self, kind: "badge")` 声明一次内容即可。configure、onTapGesture、onAppear 和 onDisappear 中的 `context.indexPath` 是所属 item 的位置。`reconfigureVisibleSupplementaries(ofKind:forRowID:in:)` 按业务 row identity 查询，在重排后仍指向该 row。
 
 查询徽章时，超出当前分区条目范围的位置返回 `nil`，包括空分区的第 0 项。分区边界元素只接受 `item: 0`，即使分区中有多条数据，非零位置也返回 `nil`。空分区仍可在第 0 项的位置查询已启用的页眉。自定义布局手工挂载的可见徽章也支持按 row ID 刷新；其地址由 UIKit 当前显示的徽章确认。
 
@@ -363,7 +366,7 @@ Section 重载同时覆盖该 Section 的其他 supplementary 和 Row，与逐�
 
 框架创建的 compositional layout 在身份替换时按 Section identity 保留正交滚动偏移，包括 Section 移动和屏幕外 Section 返回可见范围；内容缩短时限制在新布局的有效范围内。恢复先于调用方的显式滚动行为执行。此行为不修改业务 cell 内部嵌套的滚动视图。身份保持不变、仅 refreshID 改变时，继续按刷新规则重配可见 supplementary；默认动作不重新加载 Section，也不额外失效布局。
 
-几何引用缺失内容默认报错；`.whenContentExists()` 显式允许当前 Section 缺少相同 kind 的内容声明，缺少时跳过对应几何。它不按屏幕可见性或逐 item 状态筛选，也不跳过尺寸、kind 唯一性和 provider 所有权校验。声明了内容但当前布局未使用该 kind 时，只保留注册，不生成隐式边界。事件直接使用内容的 `.onTap`、`.onDisplay` 等方法。
+几何引用缺失内容默认报错；`.whenContentExists()` 显式允许当前 Section 缺少相同 kind 的内容声明，缺少时跳过对应几何。它不按屏幕可见性或逐 item 状态筛选，也不跳过尺寸、kind 唯一性和 provider 所有权校验。声明了内容但当前布局未使用该 kind 时，只保留注册，不生成隐式边界。事件直接使用内容的 `.onTapGesture`、`.onAppear` 等方法。
 
 ## Decoration 集合
 
@@ -511,9 +514,9 @@ Grid 和 UIKitListLayout 的 boundarySupplementaries 只接受 BoundarySupplemen
 
 所有相关布局、注册、可见 supplementary 刷新和 attributes 查询都应同步使用新名称；不要把本次迁移当作保持 identity 的纯语法替换。布局复用通过接收 kind 参数的工厂实现；CustomLayout 捕获的 kind 改变时，必须同步更新其 layoutKey。Decoration 的自定义 provider 仍可按固定逻辑 kind 查询本次内容的实际 elementKind，以支持视图类型或手动注册标识切换。
 
-## 布局语义重构迁移（2026-10-29）
+## 布局 API 迁移
 
-本次为破坏兼容的 API 迁移，不提供旧入口别名。历史验证报告中的旧名称描述当时的源码，不作为当前 API 参考。
+下表汇总各轮 API 迁移，右列为当前名称与行为，不提供已移除入口的兼容别名。历史验证报告中的旧名称描述当时的源码，不作为当前 API 参考。
 
 | 旧入口 | 当前入口与行为 |
 | --- | --- |
@@ -521,12 +524,12 @@ Grid 和 UIKitListLayout 的 boundarySupplementaries 只接受 BoundarySupplemen
 | ListGridItem | ListGridTrack，描述轨道而非数据 item |
 | ListGridItemSize / itemSize | ListGridItemMainAxisSize / itemMainAxisSize |
 | ListGridGroupSize | ListGridGroupMainAxisSize |
-| frame / estimatedFrame | gridCrossAxisSize(.fixed / .estimated)，随内容轴解释；nil 恢复环境尺寸 |
-| alignment / ListGridAlignment | trackGroupAlignment / ListGridTrackGroupAlignment |
+| frame / estimatedFrame | crossAxisSize(.fixed / .estimated)，随内容轴解释；nil 恢复环境尺寸 |
+| trackAlignment / trackGroupAlignment / ListGridTrackAlignment / ListGridTrackGroupAlignment | alignment / ListGridAlignment，控制整个轨道组的交叉轴对齐 |
 | group(.count(n, size: ...)) | lineGrouping(.count(lines: n, mainAxisSize: ...)) |
 | group(.fit(size: ...)) | lineGrouping(.fitting(mainAxisSize: ...)) |
 | fill | fillGroup，要求显式分组数量与长度 |
-| adaptive(minimum:) | adaptive(minimumForCount:)，用于计算轨道展开数量；不足时可小于此值 |
+| adaptive(minimumForCount:) | adaptive(minimum:)，用于计算轨道展开数量；不足时可小于此值 |
 | ListGridSize 用于边界 | ListBoundaryMainAxisSize；uniform 不再可用 |
 | EnvironmentLayout(id:) / CustomLayout(id:) | layoutKey:，包含影响布局的外部捕获状态 |
 | CustomLayout(...).sectionInsets(...) | CustomLayout(layoutKey:sectionInsets:)，provider 构建时消费输入 |
@@ -537,4 +540,4 @@ Grid 和 UIKitListLayout 的 boundarySupplementaries 只接受 BoundarySupplemen
 
 所有不带 adding 的集合修饰方法替换此前集合；同一次 builder 内按顺序组合。addingSupplementaries 和 addingDecorations 追加内容／注册，重复 kind 仍会诊断。空 layout builder 的含义维持“默认单轨道估算布局”，不会隐藏 Section；需要隐藏时在内容 builder 中省略 Section。
 
-旧 `gridSpacing(v)` 改为 `.trackSpacing(v).lineSpacing(v)`；`groupLineSpacing(v)` 改为 `.lineSpacing(v)`，但现在它默认也影响组间距。若需保留旧的零组间距，显式追加 `.groupSpacing(0)`。旧代码先设置 groupSpacing、再用 gridSpacing 覆盖全部间距时，迁移后应删除该覆盖或调用 `.groupSpacing(nil)`。显式 groupSpacing 不再被 lineSpacing 覆盖；轨道自身显式 spacingAfter 仍优先于全局 trackSpacing。
+旧 `gridSpacing(v)` 改为 `.trackSpacing(v).lineSpacing(v)`；`groupLineSpacing(v)` 改为 `.lineSpacing(v)`，但现在它默认也影响组间距。若需保留旧的零组间距，显式追加 `.groupSpacing(0)`。旧代码先设置 groupSpacing、再用 gridSpacing 覆盖全部间距时，迁移后应删除该覆盖或调用 `.groupSpacing(nil)`。显式 groupSpacing 不再被 lineSpacing 覆盖；轨道自身显式 spacing 仍优先于全局 trackSpacing。

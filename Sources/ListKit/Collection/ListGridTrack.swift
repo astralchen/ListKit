@@ -33,18 +33,18 @@ public struct ListGridTrack: Hashable, Sendable {
 
         /// 在分得的区域内创建一条或多条自适应轨道。
         ///
-        /// 布局根据 minimumForCount 和轨道间距计算能容纳的数量，再均分该区域并对每条轨道
+        /// 布局根据 minimum 和轨道间距计算能容纳的数量，再均分该区域并对每条轨道
         /// 应用 maximum。达到最大尺寸后可能留下未使用空间，不会将该余量重新分配给其他定义。
         ///
-        /// minimumForCount 用于决定展开数量，不是空间不足时的硬性下限。
-        /// 此时单条轨道可以小于 minimumForCount。分配区域与应用 maximum 前的轨道尺寸均至少取 1 点；
+        /// minimum 用于决定展开数量，不是空间不足时的硬性下限。
+        /// 此时单条轨道可以小于 minimum。分配区域与应用 maximum 前的轨道尺寸均至少取 1 点；
         /// 若 maximum 本身小于 1 点，最终轨道仍按 maximum 限制。
         ///
         /// - Parameters:
-        ///   - minimumForCount: 计算展开数量时使用的最小尺寸，单位为点。必须是有限正数。
-        ///   - maximum: 每条展开轨道的最大尺寸，单位为点。不得小于 minimumForCount，
+        ///   - minimum: 计算展开数量时使用的最小尺寸，单位为点。必须是有限正数。
+        ///   - maximum: 每条展开轨道的最大尺寸，单位为点。不得小于 minimum，
         ///     默认值为正无穷大。
-        case adaptive(minimumForCount: CGFloat, maximum: CGFloat = .infinity)
+        case adaptive(minimum: CGFloat, maximum: CGFloat = .infinity)
     }
 
     /// 此行或列使用的尺寸分配规则。
@@ -53,16 +53,16 @@ public struct ListGridTrack: Hashable, Sendable {
     ///
     /// nil 继承 GridLayout.trackSpacing，默认 0。自适应定义展开出的轨道之间也使用此间距，
     /// 最后一条实际轨道之后不添加间距。此属性不控制滚动方向上的行间距或列间距。
-    public var spacingAfter: CGFloat?
+    public var spacing: CGFloat?
 
     /// 使用指定的尺寸规则和间距创建网格轨道定义。
     ///
     /// - Parameters:
     ///   - size: 行或列的尺寸规则，默认值为 flexible(minimum: 10, maximum: .infinity)。
-    ///   - spacingAfter: 与下一条轨道的间距，单位为点。必须是有限非负数；nil 继承 GridLayout.trackSpacing。
+    ///   - spacing: 与下一条轨道的间距，单位为点。必须是有限非负数；nil 继承 GridLayout.trackSpacing。
     /// - Important: adapter 在 apply/环境解析时诊断参数；内部几何生成器同时保留前置条件。
-    public init(_ size: Size = .flexible(), spacingAfter: CGFloat? = nil) {
+    public init(_ size: Size = .flexible(), spacing: CGFloat? = nil) {
         self.size = size
-        self.spacingAfter = spacingAfter
+        self.spacing = spacing
     }
 }

@@ -160,7 +160,7 @@ ListSection(.users) {
 
 ## Section Metadata
 
-- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTap；具体契约见 Documentation/Layout-API.md。
+- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTapGesture；具体契约见 Documentation/Layout-API.md。
 
 ## Selection
 

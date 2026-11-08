@@ -29,7 +29,7 @@ struct ListKitLayoutTests {
             ListSection(0) {
                 Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
             } layout: {
-                GridLayout(tracks: 1).itemMainAxisSize(.fixed(92)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).gridCrossAxisSize(.fixed(112)).orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0)
+                GridLayout(tracks: 1).itemMainAxisSize(.fixed(92)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).crossAxisSize(.fixed(112)).orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0)
             }
         }
 
@@ -42,7 +42,7 @@ struct ListKitLayoutTests {
         let section = ListSection(0) {
             Row(1, model: "A", cell: UICollectionViewCell.self) { _, _, _ in }
         } layout: {
-            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).gridCrossAxisSize(.estimated(44)).orthogonalScrolling(
+            GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).crossAxisSize(.estimated(44)).orthogonalScrolling(
                 .groupPagingCentered
             ).trackSpacing(0).lineSpacing(0)
         }

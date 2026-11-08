@@ -67,7 +67,7 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
                     var size = ListGridItemMainAxisSize.estimated(44)
                     if #available(iOS 17.0, *), uniform { size = .uniform(estimated: 44) }
                     var grid = GridLayout(tracks: 2).itemMainAxisSize(size)
-                        .gridCrossAxisSize(.fixed(210)).lineGrouping(.count(lines: 3))
+                        .crossAxisSize(.fixed(210)).lineGrouping(.count(lines: 3))
                         .trackSpacing(10).lineSpacing(10).groupSpacing(20)
                         .itemSupplementaries {
                             ItemSupplementaryLayout(
@@ -164,8 +164,8 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
                         view.version = version
                         configurations[context.indexPath.item, default: 0] += 1
                     }.refreshID(version)
-                        .onDisplay { _, context in displayed.append(context.indexPath.item) }
-                        .onEndDisplay { _, context in ended.append(context.indexPath.item) }
+                        .onAppear { _, context in displayed.append(context.indexPath.item) }
+                        .onDisappear { _, context in ended.append(context.indexPath.item) }
                 }
             }
         }
@@ -330,7 +330,7 @@ final class MeasuredBadgeLayoutTests: XCTestCase {
                     }
                 }
             } layout: {
-                GridLayout(tracks: [.init(.adaptive(minimumForCount: 100))])
+                GridLayout(tracks: [.init(.adaptive(minimum: 100))])
                     .trackSpacing(10).lineSpacing(10).lineGrouping(.count(lines: 3))
                     .itemSupplementaries {
                         ItemSupplementaryLayout(

@@ -2,11 +2,11 @@ import UIKit
 
 // MARK: - Layout Model
 
-/// 组合布局的主滚动方向。
-public enum ListLayoutScrollDirection: Hashable, Sendable {
-    /// Section 沿垂直方向排列。
+/// 二维布局的水平轴或垂直轴，可用于滚动方向与尺寸计算。
+public enum ListAxis: Hashable, Sendable {
+    /// 垂直轴；用于滚动方向时，Section 沿垂直方向排列。
     case vertical
-    /// Section 沿水平方向排列。
+    /// 水平轴；用于滚动方向时，Section 沿水平方向排列。
     case horizontal
 
     var uiKitValue: UICollectionView.ScrollDirection {
@@ -50,7 +50,7 @@ public enum ListContentInsetsReference: Hashable, Sendable {
 /// 组合布局的全局滚动方向、分区间距与内边距参考配置。
 public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
     /// compositional layout 的主滚动方向；`nil` 保留 UIKit 默认值。
-    public var scrollDirection: ListLayoutScrollDirection?
+    public var scrollDirection: ListAxis?
     /// 相邻 Section 之间的间距，须为有限非负数；`nil` 保留 UIKit 默认值。
     public var interSectionSpacing: CGFloat?
     /// 全局内容区域采用的系统 inset 参考；默认保留 UIKit 的系统设置。
@@ -64,7 +64,7 @@ public struct ListCompositionalLayoutConfiguration: Hashable, Sendable {
     ///   - contentInsetsReference: 全局内容 inset 参考。默认 `.systemDefault`，ListKit
     ///     不主动改写 UIKit；只有传入其他值时才显式覆盖。
     public init(
-        scrollDirection: ListLayoutScrollDirection? = nil,
+        scrollDirection: ListAxis? = nil,
         interSectionSpacing: CGFloat? = nil,
         contentInsetsReference: ListContentInsetsReference = .systemDefault
     ) {
@@ -313,6 +313,8 @@ public func UIKitListLayout(
 public enum ListSectionLayout: Hashable, Sendable {
     /// 使用网格配置生成分区布局。
     case gridConfiguration(ListSectionGridLayout)
+    /// 自动测量标准 Row 的纵向或横向瀑布流。
+    case waterfallConfiguration(ListSectionWaterfallLayout)
     /// 使用 UIKit 原生列表配置生成分区布局。
     case uiKitListConfiguration(ListUIKitListLayout)
 
@@ -324,13 +326,15 @@ public enum ListSectionLayout: Hashable, Sendable {
     @MainActor func makeCompositionalSection(
         environment: any NSCollectionLayoutEnvironment,
         itemSupplementaries: [NSCollectionLayoutSupplementaryItem],
-        scrollDirection: ListLayoutScrollDirection = .vertical
+        scrollDirection: ListAxis = .vertical
     ) -> NSCollectionLayoutSection {
         switch self {
         case .gridConfiguration(let configuration):
             return configuration.makeSection(
                 environment: environment,
                 itemSupplementaries: itemSupplementaries, scrollDirection: scrollDirection)
+        case .waterfallConfiguration:
+            preconditionFailure("ListKit: WaterfallLayout requires adapter measurement")
         case .uiKitListConfiguration:
             preconditionFailure("ListKit: UIKitListLayout requires adapter configuration")
         }

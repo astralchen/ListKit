@@ -802,30 +802,33 @@ Collection 按当前行判断 primary action 能力，未配置动作的行不�
 
 | 布局入口 | 适用场景与默认行为 |
 | --- | --- |
-| `GridLayout(tracks: 1)` | 单行或单列；默认主轴 `.estimated(44)`、间距 0、`.trackGroupAlignment(.start)` |
+| `GridLayout(tracks: 1)` | 单行或单列；默认主轴 `.estimated(44)`、间距 0、`.alignment(.start)` |
 | `GridLayout(tracks: n)` | n 条等分轨道，自动适配方向 |
 | `GridLayout(tracks: [ListGridTrack])` | fixed / flexible / adaptive 混合轨道 |
+| `WaterfallLayout(tracks:)` | 标准 Row 默认自动测量，支持纵向、横向及正交滚动的最短轨道排布 |
 | `UIKitListLayout(...)` | UIKit 原生列表、分隔线和 swipe actions |
 | `CustomLayout(layoutKey:)` | 根据真实 context 构建自定义 UIKit section |
 | `EnvironmentLayout(layoutKey:)` | 按环境返回完整布局 |
 
 Grid 未开启正交滚动时跟随外层方向，开启后沿垂直于外层的方向展开。纵向内容中 tracks 表示列宽，横向内容中表示行高；单轨道替代普通 ListLayout，正交修饰替代 HorizontalLayout。columns:/rows: 入口已移除。
 
-固定 gridCrossAxisSize 完整预留交叉轴区域；估算 gridCrossAxisSize 不支持宽高比。带 badge 的 estimated/uniform 支持多基本行／列 group；业务 kind 只声明一次，框架负责实际 kind/indexPath 映射。自定义 provider 与 UIKit 查询迁移见[自适应徽标实现与验证](Documentation/Measured-Grid-Badges.md)。估算主轴 group 的精确吸附仍有 UIKit 实测偏差，动态内容示例使用连续滚动；精确分页使用确定尺寸。旧 Horizontal 整宽 group 与 fractionalViewport 的 inset 参考不同，精确迁移见[布局文档](Documentation/Layout-API.md#从旧布局迁移)。
+固定 crossAxisSize 完整预留交叉轴区域；估算 crossAxisSize 不支持宽高比。带 badge 的 estimated/uniform 支持多基本行／列 group；业务 kind 只声明一次，框架负责实际 kind/indexPath 映射。自定义 provider 与 UIKit 查询迁移见[自适应徽标实现与验证](Documentation/Measured-Grid-Badges.md)。估算主轴 group 的精确吸附仍有 UIKit 实测偏差，动态内容示例使用连续滚动；精确分页使用确定尺寸。旧 Horizontal 整宽 group 与 fractionalViewport 的 inset 参考不同，精确迁移见[布局文档](Documentation/Layout-API.md#从旧布局迁移)。
 
 ```swift
 // 纵向页面中的两行横向分页，每组 3 列，共 6 个 item。
 GridLayout(tracks: 2)
     .itemMainAxisSize(.fillGroup).trackSpacing(10).lineSpacing(10)
-    .gridCrossAxisSize(.fixed(220))
+    .crossAxisSize(.fixed(220))
     .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1)))
     .groupSpacing(16)
     .orthogonalScrolling(.groupPaging)
 ```
 
-itemMainAxisSize 控制内容主轴尺寸；轨道控制交叉尺寸；gridCrossAxisSize 设置所有轨道共同占用的交叉轴区域；lineGrouping 配置基本行／列数量与主轴长度。gridCrossAxisSize 不含 section inset，随内容方向解释。`.gridCrossAxisSize(.estimated(...))` 支持单轨道估算交叉尺寸；estimated/uniform 主轴使用内容推导的 group，不能与 fitting 或显式 group 长度混用。
+itemMainAxisSize 控制内容主轴尺寸；轨道控制交叉尺寸；crossAxisSize 设置所有轨道共同占用的交叉轴区域；lineGrouping 配置基本行／列数量与主轴长度。crossAxisSize 不含 section inset，随内容方向解释。`.crossAxisSize(.estimated(...))` 支持单轨道估算交叉尺寸；estimated/uniform 主轴使用内容推导的 group，不能与 fitting 或显式 group 长度混用。
 
-`.trackGroupAlignment(.start/.center/.end)` 对齐整组轨道，默认 start；不控制 cell 内部内容或分页。trackSpacing 控制轨道间距，lineSpacing 控制内容方向的组内与默认组间距，两者默认 0。groupSpacing 为可选覆盖，默认 nil 跟随当前 lineSpacing；显式值（包括 0）只覆盖组间距，调用 `.groupSpacing(nil)` 恢复跟随。
+`.alignment(.start/.center/.end)` 对齐整组轨道，默认 start；不控制 cell 内部内容或分页。trackSpacing 控制轨道间距，lineSpacing 控制内容方向的组内与默认组间距，两者默认 0。groupSpacing 为可选覆盖，默认 nil 跟随当前 lineSpacing；显式值（包括 0）只覆盖组间距，调用 `.groupSpacing(nil)` 恢复跟随。
+
+自动测量瀑布流的 Cell 约束、缓存失效、方向配置和边界说明见 [WaterfallLayout](Documentation/Waterfall-Layouts.md)。示例列表页导航栏的 **Waterfall** 可切换纵向、横向、正交滚动和轨道数，并验证追加及展开内容后的自动重排。
 
 布局使用以下替换与默认规则：
 
@@ -851,7 +854,7 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
     analytics.trackSelection(id: context.itemID)
     openProfile(user)
 }
-.onDisplay { cell, context in
+.onAppear { cell, context in
     analytics.trackImpression(id: context.itemID)
 }
 ```
@@ -903,11 +906,11 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
 Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
     cell.configure(with: user)
 }
-.onDisplay { cell, context in
+.onAppear { cell, context in
     analytics.trackImpression(id: context.itemID)
     cell.startAnimation()
 }
-.onEndDisplay { cell, _ in
+.onDisappear { cell, _ in
     cell.stopAnimation()
 }
 .onPrefetch { user, _ in
@@ -1310,27 +1313,44 @@ adapter.apply(transaction: .disabled) {
 
 ## 布局 API 语义与迁移
 
-布局尺寸按内容轴解释：`ListGridTrack` 定义交叉轴轨道，`itemMainAxisSize` 定义 cell 的主轴尺寸，`gridCrossAxisSize` 定义所有轨道共同占用的交叉轴区域。`lineGrouping(.count(lines:mainAxisSize:))` 的数量单位是基本行／列，不是 item。
+布局尺寸按内容轴解释：`ListGridTrack` 定义交叉轴轨道，`itemMainAxisSize` 定义 cell 的主轴尺寸，`crossAxisSize` 定义所有轨道共同占用的交叉轴区域。`lineGrouping(.count(lines:mainAxisSize:))` 的数量单位是基本行／列，不是 item。
 
 ```swift
 // 外层纵向时：两行、每组三列，最多六个 item。
 GridLayout(tracks: 2)
-    .gridCrossAxisSize(.fixed(220))
+    .crossAxisSize(.fixed(220))
     .trackSpacing(10)
     .lineSpacing(12)
     .groupSpacing(20)
     .itemMainAxisSize(.fillGroup)
     .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1)))
-    .trackGroupAlignment(.start)
+    .alignment(.start)
     .orthogonalScrolling(.groupPaging)
 ```
 
-`gridSpacing` 已删除；统一间距使用 `.trackSpacing(value).lineSpacing(value)`。`lineSpacing` 不覆盖显式 groupSpacing，二者调用顺序无关；`.groupSpacing(nil)` 清除覆盖。`.orthogonalScrolling(nil)` 关闭正交滚动；`.gridCrossAxisSize(nil)` 恢复环境尺寸。背景可以显式使用 `.decorationItems(.none)` 关闭，或 `.decorationItems(.registeredBackgrounds)` 恢复默认生成。 本轮验证见[统一行间距验证](Documentation/Layout-Spacing-Validation.md)。
+`gridSpacing` 已删除；统一间距使用 `.trackSpacing(value).lineSpacing(value)`。`lineSpacing` 不覆盖显式 groupSpacing，二者调用顺序无关；`.groupSpacing(nil)` 清除覆盖。`.orthogonalScrolling(nil)` 关闭正交滚动；`.crossAxisSize(nil)` 恢复环境尺寸。背景可以显式使用 `.decorationItems(.none)` 关闭，或 `.decorationItems(.registeredBackgrounds)` 恢复默认生成。 本轮验证见[统一行间距验证](Documentation/Layout-Spacing-Validation.md)。
 
 本次不兼容旧 frame、itemSize、ListGridItem、无单位 group count 等入口；完整改名表、layoutKey 捕获状态规则、CustomLayout 输入与边界所有权规则见 [布局 API 与迁移](Documentation/Layout-API.md)。历史验证报告保留旧名称与当时的结果。
 
 布局 DSL 的 `.sectionInsets(...)` 明确作用于当前 Section，CustomLayout 使用同名构造参数与 `context.sectionInsets`。它映射到 UIKit Section.contentInsets，不替代 collection view 的 contentInset、cell padding 或 DecorationItemLayout.backgroundInsets。详见[Section 内边距语义](Documentation/Layout-API.md#section-内边距)。
 
-其余布局修饰方法同样明确作用对象：`gridCrossAxisSize`、`trackSpacing`、`lineSpacing`、`groupSpacing`、`lineGrouping`、`trackGroupAlignment`；轨道使用 `spacingAfter`，背景使用 `backgroundInsets`，补充视图区分 `absoluteOffset` 与 `anchorFractionalOffset`。完整说明见[名称与作用对象](Documentation/Layout-API.md#名称与作用对象)。
+其余布局修饰方法同样明确作用对象：`crossAxisSize`、`trackSpacing`、`lineSpacing`、`groupSpacing`、`lineGrouping`、`alignment`；轨道使用 `spacing`，背景使用 `backgroundInsets`，补充视图区分 `absoluteOffset` 与 `anchorFractionalOffset`。完整说明见[名称与作用对象](Documentation/Layout-API.md#名称与作用对象)。
+
+公开 API 参照 SwiftUI 统一命名，迁移时对应替换：
+
+| 原名称 | 当前名称 |
+| --- | --- |
+| `adaptive(minimumForCount:maximum:)` | `adaptive(minimum:maximum:)` |
+| `ListGridTrack.spacingAfter` / `spacingAfter:` | `ListGridTrack.spacing` / `spacing:` |
+| `onDisplay` / `onEndDisplay` | `onAppear` / `onDisappear` |
+| `onTap` | `onTapGesture` |
+| `gridCrossAxisSize` | `crossAxisSize` |
+| `trackGroupAlignment` / `ListGridTrackGroupAlignment` | `alignment` / `ListGridAlignment` |
+| `ListLayoutScrollDirection` | `ListAxis` |
+
+`onAppear` / `onDisappear` 仍对应 UIKit 的 willDisplay / didEndDisplaying 回调，闭包继续接收视图、上下文及适用的 model；它们可能随复用多次触发，测量 cell 不触发展示回调。`onTapGesture` 仅用于支持点击手势的 supplementary，仍识别单击。Row 的选择、主操作与刷新继续使用 `onSelect`、`onPrimaryAction`、`refresh`。
+
+命名参考：[SwiftUI 生命周期与手势](https://developer.apple.com/documentation/swiftui/view-input-and-events)、[LazyVGrid](https://developer.apple.com/documentation/swiftui/lazyvgrid)、[Axis](https://developer.apple.com/documentation/swiftui/axis)。这些调整只改变公开名称，布局、复用和回调时机保持原有契约；旧名称不保留兼容别名。
+
 
 Grid 默认 item 主轴尺寸为 `.estimated(44)`：纵向估算高度、横向估算宽度，44 不是固定尺寸，最终由 cell 的 self-sizing 决定。需要正方形时显式设置 `.itemMainAxisSize(.aspectRatio(1))`。

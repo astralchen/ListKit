@@ -1,5 +1,9 @@
 # 布局 API 作用对象命名审查
 
+> 后续公开 API 已统一命名：`gridCrossAxisSize` → `crossAxisSize`，`trackGroupAlignment` → `alignment`，`ListGridTrackGroupAlignment` → `ListGridAlignment`，`ListLayoutScrollDirection` → `ListAxis`。下文保留历史命名；当前用法见 [布局指南](Layout-API.md)。
+
+> 后续单轨道间距命名已参照 SwiftUI 改为 `ListGridTrack.spacing`（初始化标签为 `spacing:`）；下文 `spacingAfter` 为历史命名，间距行为不变。
+
 > 后续间距 API 已统一：删除 gridSpacing，groupLineSpacing 改为 lineSpacing，groupSpacing 改为可选覆盖（nil 跟随 lineSpacing）。下文为当时的实现与验证记录；当前契约见 [布局指南](Layout-API.md#滚动与间距)。
 
 > 默认值后续调整为 estimated(44) 和三层零间距，详见 [布局默认值验证](Layout-Defaults-Validation.md)。以下各阶段记录保留当时结果。

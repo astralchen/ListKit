@@ -514,7 +514,7 @@ extension CompleteSectionLayoutTests {
             frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collection)
         let layouts: [ListSectionGridLayout] = [
-            GridLayout(tracks: [ListGridTrack(.adaptive(minimumForCount: 0.01))]).trackSpacing(0).lineSpacing(0),
+            GridLayout(tracks: [ListGridTrack(.adaptive(minimum: 0.01))]).trackSpacing(0).lineSpacing(0),
             GridLayout(tracks: [ListGridTrack(.fixed(100))]).itemMainAxisSize(
                 .aspectRatio(CGFloat.leastNonzeroMagnitude)),
             GridLayout(tracks: [ListGridTrack(.fixed(100))]).itemMainAxisSize(

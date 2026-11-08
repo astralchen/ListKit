@@ -1,5 +1,7 @@
 # 统一行间距与可选组间距覆盖
 
+> 后续单轨道间距命名已参照 SwiftUI 改为 `ListGridTrack.spacing`（初始化标签为 `spacing:`）；下文 `spacingAfter` 为历史命名，间距行为不变。
+
 日期：2026-10-29。当前 API 说明见 [布局指南](Layout-API.md#滚动与间距)。
 
 ## 当前契约

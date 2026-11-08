@@ -27,6 +27,9 @@ public struct ListContext {
     /// 条目附属视图使用所属条目的位置；查询实际 UIKit 附属视图地址时使用适配器的地址转换接口。
     /// 若徽章事件需要在重排后找到所属条目，在回调中用 itemIdentity(at:) 保存该条目的身份，之后用 indexPath(for:) 重新定位。
     public let indexPath: IndexPath
+    /// 离屏尺寸测量时为 true。配置闭包可能重复执行，可据此跳过图片请求等非布局副作用。
+    /// 测量期间 send 不派发事件，框架也不执行展示、预取及交互事件绑定。
+    public let isMeasuring: Bool
     private let collectionViewReference: ListCollectionViewReference
 
     /// 当前 collection view。
@@ -60,8 +63,10 @@ public struct ListContext {
         identity: AnyListIdentity,
         indexPath: IndexPath,
         collectionView: UICollectionView,
+        isMeasuring: Bool = false,
         eventDispatcher: @escaping @MainActor (any ListEvent, ListContext) -> Void
     ) {
+        self.isMeasuring = isMeasuring
         self.identity = identity
         self.indexPath = indexPath
         self.collectionViewReference = ListCollectionViewReference(collectionView)
@@ -72,6 +77,7 @@ public struct ListContext {
     ///
     /// - Parameter event: 遵守 `ListEvent` 的事件值。
     @MainActor public func send<Event>(_ event: Event) where Event: ListEvent {
+        guard !isMeasuring else { return }
         eventDispatcher(event, self)
     }
 

@@ -44,7 +44,7 @@ struct LayoutLabConfiguration: Hashable {
     var horizontal = false
     var narrow = false
     var count = 17
-    var alignment = ListGridTrackGroupAlignment.start
+    var alignment = ListGridAlignment.start
     var trackSpacing: CGFloat = 10
     var lineSpacing: CGFloat = 10
     var groupSpacing: CGFloat? = nil
@@ -53,7 +53,7 @@ struct LayoutLabConfiguration: Hashable {
     var limitMaximum = false
     var expanded = false
 
-    var outerAxis: ListLayoutScrollDirection { horizontal ? .horizontal : .vertical }
+    var outerAxis: ListAxis { horizontal ? .horizontal : .vertical }
     var titleExtent: Int { horizontal ? 100 : 44 }
     var summaryExtent: Int { horizontal ? 100 : 36 }
     var sectionCount: Int { scene == .mixedSections ? 3 : 1 }
@@ -102,9 +102,9 @@ struct LayoutLabConfiguration: Hashable {
             case .list: tracks = [.init(.flexible(minimum: 1))]
             case .equal: tracks = Array(repeating: .init(.flexible(minimum: 1, maximum: maximum)), count: 3)
             case .fixed: tracks = Array(repeating: .init(.fixed(60)), count: 3)
-            case .adaptive: tracks = [.init(.adaptive(minimumForCount: 90, maximum: maximum))]
-            case .mixed: tracks = [.init(.fixed(60), spacingAfter: 6), .init(.flexible(minimum: 50, maximum: 100)),
-                                  .init(.adaptive(minimumForCount: 50, maximum: maximum))]
+            case .adaptive: tracks = [.init(.adaptive(minimum: 90, maximum: maximum))]
+            case .mixed: tracks = [.init(.fixed(60), spacing: 6), .init(.flexible(minimum: 50, maximum: 100)),
+                                  .init(.adaptive(minimum: 50, maximum: maximum))]
             }
             let size: LayoutLabGridRecipe.Size
             switch sizing {
@@ -219,7 +219,7 @@ struct LayoutLabConfiguration: Hashable {
 struct LayoutLabItem: Hashable, Sendable {
     let index: Int
     let text: String
-    let sizingAxis: ListLayoutScrollDirection?
+    let sizingAxis: ListAxis?
 }
 
 /// 一份解析后的配置同时生成真实 Grid 和可读代码，避免另写一套展示用 preset。
@@ -259,25 +259,25 @@ struct LayoutLabGridRecipe {
     var groupSpacing: CGFloat? = nil
     var grouping = ListGridLineGrouping.count(lines: 1)
     var orthogonal: ListOrthogonalScrollingBehavior? = nil
-    var alignment = ListGridTrackGroupAlignment.start
+    var alignment = ListGridAlignment.start
 
     func makeGrid() -> ListSectionGridLayout {
         let grid = tracks.map { GridLayout(tracks: $0) } ?? GridLayout(tracks: trackCount)
         return grid
             .itemMainAxisSize(size.value)
-            .gridCrossAxisSize(crossExtent.map { .fixed($0) })
+            .crossAxisSize(crossExtent.map { .fixed($0) })
             .trackSpacing(trackSpacing)
             .lineSpacing(lineSpacing)
             .groupSpacing(groupSpacing)
             .lineGrouping(grouping)
-            .trackGroupAlignment(alignment)
+            .alignment(alignment)
             .sectionInsets(.init(12))
             .orthogonalScrolling(orthogonal)
     }
     var code: String {
         let trackCode = tracks.map { "[\n" + $0.map { "    " + Self.trackCode($0) }.joined(separator: ",\n") + "\n]" } ?? "\(trackCount)"
         var result = "GridLayout(tracks: \(trackCode))\n    .itemMainAxisSize(\(size.code))"
-        if let crossExtent { result += "\n    .gridCrossAxisSize(.fixed(\(number(crossExtent))))" }
+        if let crossExtent { result += "\n    .crossAxisSize(.fixed(\(number(crossExtent))))" }
         result += "\n    .trackSpacing(\(number(trackSpacing)))\n    .lineSpacing(\(number(lineSpacing)))"
         if let groupSpacing { result += "\n    .groupSpacing(\(number(groupSpacing)))" }
         let groupingCode: String
@@ -285,7 +285,7 @@ struct LayoutLabGridRecipe {
         case .count(let lines, let size): groupingCode = ".count(lines: \(lines)" + (size.map { ", mainAxisSize: \(Self.groupSizeCode($0))" } ?? "") + ")"
         case .fitting(let size): groupingCode = ".fitting(mainAxisSize: \(Self.groupSizeCode(size)))"
         }
-        result += "\n    .lineGrouping(\(groupingCode))\n    .trackGroupAlignment(.\(alignment))\n    .sectionInsets(.init(12))"
+        result += "\n    .lineGrouping(\(groupingCode))\n    .alignment(.\(alignment))\n    .sectionInsets(.init(12))"
         if let orthogonal { result += "\n    .orthogonalScrolling(.\(orthogonal))" }
         return result
     }
@@ -297,9 +297,9 @@ struct LayoutLabGridRecipe {
         switch track.size {
         case .fixed(let n): size = ".fixed(\(number(n)))"
         case .flexible(let minimum, let maximum): size = ".flexible(minimum: \(number(minimum)), maximum: \(number(maximum)))"
-        case .adaptive(let minimum, let maximum): size = ".adaptive(minimumForCount: \(number(minimum)), maximum: \(number(maximum)))"
+        case .adaptive(let minimum, let maximum): size = ".adaptive(minimum: \(number(minimum)), maximum: \(number(maximum)))"
         }
-        return "ListGridTrack(\(size)" + (track.spacingAfter.map { ", spacingAfter: \(number($0))" } ?? "") + ")"
+        return "ListGridTrack(\(size)" + (track.spacing.map { ", spacing: \(number($0))" } ?? "") + ")"
     }
 }
 

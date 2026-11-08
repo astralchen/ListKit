@@ -13,7 +13,7 @@ final class LayoutAPIReviewTests: XCTestCase {
                     defer { f.close() }
                     let horizontal = outerHorizontal != orthogonal
                     let grid = GridLayout(tracks: 2).itemMainAxisSize(.fixed(40)).trackSpacing(0).lineSpacing(0)
-                        .sectionInsets(insets).gridCrossAxisSize(fixedCross ? .fixed(220) : nil)
+                        .sectionInsets(insets).crossAxisSize(fixedCross ? .fixed(220) : nil)
                         .orthogonalScrolling(orthogonal ? .continuous : nil)
                     f.apply(grid); f.render()
                     let first = try f.frame(0), second = try f.frame(1)
@@ -31,10 +31,10 @@ final class LayoutAPIReviewTests: XCTestCase {
 
     func testViewportFractionDeductsOnlySectionMainAxisInsets() throws {
         let env = TestLayoutEnvironment()
-        for outer in [ListLayoutScrollDirection.vertical, .horizontal] {
+        for outer in [ListAxis.vertical, .horizontal] {
             for orthogonal in [false, true] {
                 let grid = GridLayout(tracks: 1).sectionInsets(.init(top: 11, leading: 13, bottom: 17, trailing: 19))
-                    .gridCrossAxisSize(.fixed(220)).itemMainAxisSize(.fractionalViewport(0.5))
+                    .crossAxisSize(.fixed(220)).itemMainAxisSize(.fractionalViewport(0.5))
                     .orthogonalScrolling(orthogonal ? .continuous : nil)
                 let geometry = try grid.geometry(in: env, scrollDirection: outer)
                 let viewport = geometry.axis == .vertical ? env.container.effectiveContentSize.height - 28
@@ -53,7 +53,7 @@ final class LayoutAPIReviewTests: XCTestCase {
                 ListSection(0) {
                     for i in 0..<4 { Row(i, model: i, cell: UICollectionViewCell.self) { _, _, _ in } }
                 } layout: {
-                    GridLayout(tracks: 2).itemMainAxisSize(.fixed(40)).gridCrossAxisSize(.fixed(220))
+                    GridLayout(tracks: 2).itemMainAxisSize(.fixed(40)).crossAxisSize(.fixed(220))
                         .sectionInsets(.init(top: 11, leading: 13, bottom: 17, trailing: 19))
                         .boundarySupplementaries {
                             BoundarySupplementaryLayout(kind: "header", mainAxisSize: .aspectRatio(2),
@@ -79,7 +79,7 @@ final class LayoutAPIReviewTests: XCTestCase {
                 ListSection(0) {
                     for i in 0..<7 { Row(i, model: i, cell: UICollectionViewCell.self) { _, _, _ in } }
                 } layout: {
-                    GridLayout(tracks: 2).gridCrossAxisSize(.fixed(220)).itemMainAxisSize(.fillGroup)
+                    GridLayout(tracks: 2).crossAxisSize(.fixed(220)).itemMainAxisSize(.fillGroup)
                         .trackSpacing(10).lineSpacing(12).groupSpacing(20)
                         .lineGrouping(.count(lines: 3, mainAxisSize: .fixed(300)))
                         .itemSupplementaries {

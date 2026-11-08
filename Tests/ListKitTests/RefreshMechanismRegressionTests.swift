@@ -531,7 +531,7 @@ import XCTest
                     }.refresh(when: .never)
                 }
             } layout: {
-                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).gridCrossAxisSize(.fixed(80))
+                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).crossAxisSize(.fixed(80))
                     .orthogonalScrolling(behavior).trackSpacing(0).lineSpacing(0)
                     .boundarySupplementaries {
                         BoundarySupplementaryLayout(

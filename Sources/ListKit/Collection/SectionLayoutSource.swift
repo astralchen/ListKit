@@ -109,6 +109,7 @@ extension ListSectionLayout {
     var options: ListSectionLayoutOptions {
         switch self {
         case .gridConfiguration(let value): value.options
+        case .waterfallConfiguration(let value): value.options
         case .uiKitListConfiguration(let value): value.options
         }
     }

@@ -160,7 +160,7 @@ final class LayoutLabViewController: UIViewController {
             if configuration.scene == .badges {
                 SectionSupplementary(LayoutLabBadge.self, kind: LayoutLabElementKind.badge) { view, context in
                     view.configure(item: context.indexPath.item)
-                }.onTap { [weak self] context in
+                }.onTapGesture { [weak self] context in
                     self?.explanation.text = "点击徽标：item \(context.indexPath.item)"
                 }
             }

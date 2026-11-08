@@ -7,13 +7,13 @@ import XCTest
 final class GridReviewRegressionTests: XCTestCase {
     func testFixedFrameReservesFullRegionWhenTracksDoNotFillIt() throws {
         for horizontal in [false, true] {
-            for alignment in [ListGridTrackGroupAlignment.start, .center, .end] {
+            for alignment in [ListGridAlignment.start, .center, .end] {
                 for paged in [false, true] {
                     let f = LayoutFixture(width: 360, count: 8, horizontal: horizontal)
                     defer { f.close() }
                     let grid = GridLayout(tracks: [.init(.fixed(80))]).itemMainAxisSize(.fixed(90))
-                        .gridCrossAxisSize(.fixed(220))
-                        .trackGroupAlignment(alignment).trackSpacing(10).lineSpacing(10).orthogonalScrolling(.continuous)
+                        .crossAxisSize(.fixed(220))
+                        .alignment(alignment).trackSpacing(10).lineSpacing(10).orthogonalScrolling(.continuous)
                         .lineGrouping(paged ? .count(lines: 2, mainAxisSize: .fixed(320)) : .count(lines: 1))
                     f.adapter.apply(transaction: .disabled) {
                         ListSection(0) {
@@ -48,7 +48,7 @@ final class GridReviewRegressionTests: XCTestCase {
     func testEstimatedCrossSizeCannotBeUsedAsFinalAspectRatioInput() {
         for horizontal in [false, true] {
             let grid = GridLayout(tracks: 1).itemMainAxisSize(.aspectRatio(1))
-                .gridCrossAxisSize(.estimated(80))
+                .crossAxisSize(.estimated(80))
                 .orthogonalScrolling(.continuous)
             XCTAssertFalse(
                 grid.environmentValidationErrors(
@@ -135,10 +135,10 @@ final class GridReviewRegressionTests: XCTestCase {
 
     func testFixedFrameRejectsOverflowingTracks() {
         let grid = GridLayout(tracks: [.init(.fixed(100)), .init(.fixed(100))])
-            .gridCrossAxisSize(.fixed(150)).trackSpacing(10).lineSpacing(10)
+            .crossAxisSize(.fixed(150)).trackSpacing(10).lineSpacing(10)
         XCTAssertTrue(
             grid.environmentValidationErrors(in: TestLayoutEnvironment()).contains {
-                $0.contains("overflow fixed gridCrossAxisSize")
+                $0.contains("overflow fixed crossAxisSize")
             })
     }
 
@@ -146,7 +146,7 @@ final class GridReviewRegressionTests: XCTestCase {
         for width in [CGFloat(150), 240, 390, 600] {
             let f = LayoutFixture(width: width, count: 12)
             defer { f.close() }
-            let migrated = GridLayout(tracks: 1).itemMainAxisSize(.fixed(92)).gridCrossAxisSize(.fixed(112)).trackSpacing(10).lineSpacing(10)
+            let migrated = GridLayout(tracks: 1).itemMainAxisSize(.fixed(92)).crossAxisSize(.fixed(112)).trackSpacing(10).lineSpacing(10)
                 .sectionInsets(.init(top: 8, leading: 14, bottom: 12, trailing: 14))
                 .lineGrouping(.fitting(mainAxisSize: .fixed(width))).orthogonalScrolling(.continuousGroupLeadingBoundary)
             f.apply(migrated)

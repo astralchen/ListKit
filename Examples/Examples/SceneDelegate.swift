@@ -16,7 +16,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         let window = UIWindow(windowScene: windowScene)
-        if ProcessInfo.processInfo.arguments.contains("-LeafSelectionProbe") {
+        if ProcessInfo.processInfo.arguments.contains("-WaterfallDemo") {
+            window.rootViewController = UINavigationController(rootViewController: WaterfallDemoViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-LeafSelectionProbe") {
             window.rootViewController = UINavigationController(rootViewController: LeafSelectionProbeViewController())
         } else if ProcessInfo.processInfo.arguments.contains("-StablePagingProbe") {
             window.rootViewController = UINavigationController(rootViewController: StablePagingProbeViewController())

@@ -802,8 +802,8 @@ final class TableListAdapterTests: XCTestCase {
                     model: Message(id: 1, text: "A", version: 1),
                     cell: MessageTableCell.self
                 ) { _, _, _ in }
-                .onDisplay { message, _, _ in displayedID = message.id }
-                .onEndDisplay { message, _, _ in endedID = message.id }
+                .onAppear { message, _, _ in displayedID = message.id }
+                .onDisappear { message, _, _ in endedID = message.id }
                 .onPrefetch { message, _ in prefetchedID = message.id }
                 .onCancelPrefetch { message, _ in cancelledID = message.id }
                 .editing(.delete) { message, _, _ in committedDeleteID = message.id }
@@ -853,7 +853,7 @@ final class TableListAdapterTests: XCTestCase {
         adapter.apply(transaction: .disabled) {
             TableSection(.messages) {
                 TableRow(model: Message(id: 1, text: "A", version: 1), cell: MessageTableCell.self) { _, _, _ in }
-                    .onEndDisplay { message, _, _ in endedMessageID = message.id }
+                    .onDisappear { message, _, _ in endedMessageID = message.id }
                     .onCancelPrefetch { message, _ in cancelledMessageID = message.id }
             }
         }
@@ -886,7 +886,7 @@ final class TableListAdapterTests: XCTestCase {
         _ = await adapter.apply(transaction: .disabled) {
             TableSection(0) {
                 TableRow("old", model: "Old", cell: MessageTableCell.self) { _, _, _ in }
-                    .onEndDisplay { _, _, _ in endedRowID = "old" }
+                    .onDisappear { _, _, _ in endedRowID = "old" }
                     .onCancelPrefetch { _, _ in cancelledRowID = "old" }
             }
             TableSection(1) {
@@ -1147,14 +1147,14 @@ final class TableListAdapterTests: XCTestCase {
                 TableHeader(MessageHeaderView.self, elementID: "header") { view, _ in
                     view.title = "Header"
                 }
-                .onDisplay { _, _ in
+                .onAppear { _, _ in
                     displayedHeader = true
                 }
             } footer: {
                 TableFooter(MessageHeaderView.self, elementID: "footer") { view, _ in
                     view.title = "Footer"
                 }
-                .onEndDisplay { _, _ in
+                .onDisappear { _, _ in
                     endedFooter = true
                 }
             }
