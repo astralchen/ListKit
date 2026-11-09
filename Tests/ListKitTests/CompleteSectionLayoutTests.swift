@@ -514,7 +514,7 @@ extension CompleteSectionLayoutTests {
             frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         let adapter = CollectionListAdapter<Int>(collectionView: collection)
         let layouts: [ListSectionGridLayout] = [
-            GridLayout(tracks: [ListGridTrack(.adaptive(minimumForCount: 0.01))]).trackSpacing(0).lineSpacing(0),
+            GridLayout(tracks: [ListGridTrack(.adaptive(minimum: 0.01))]).trackSpacing(0).lineSpacing(0),
             GridLayout(tracks: [ListGridTrack(.fixed(100))]).itemMainAxisSize(
                 .aspectRatio(CGFloat.leastNonzeroMagnitude)),
             GridLayout(tracks: [ListGridTrack(.fixed(100))]).itemMainAxisSize(
@@ -735,6 +735,7 @@ extension CompleteSectionLayoutTests {
 
 extension CompleteSectionLayoutTests {
     func testDecorationKindsAndActiveGeometryConflicts() async {
+        let card = self.card
         let alias = "alias"
         let typed = SectionDecoration(ReplacementDecorationA.self, kind: card)
         let manual = SectionDecoration(kind: alias, elementKind: typed.elementKind)
@@ -761,7 +762,6 @@ extension CompleteSectionLayoutTests {
             }
         }
         XCTAssertTrue(ListDiagnostics.validate([onlyTyped]).isEmpty)
-        let card = self.card
         let environment = both.layout {
             EnvironmentLayout(layoutKey: 0) { _ in
                 GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).trackSpacing(0).lineSpacing(0).decorationItems {

@@ -66,7 +66,8 @@ final class LayoutLabViewController: UIViewController {
         explanation.textColor = .secondaryLabel
         explanation.numberOfLines = 3
         explanation.accessibilityIdentifier = "lab-explanation"
-        collection.backgroundColor = .secondarySystemGroupedBackground
+        // 蓝色标出容器范围，便于区分内容结束后的剩余空间。
+        collection.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.16)
         collection.layer.cornerRadius = 12
         collection.contentInsetAdjustmentBehavior = .never
         collection.accessibilityIdentifier = "layout-lab-collection"
@@ -159,7 +160,7 @@ final class LayoutLabViewController: UIViewController {
             if configuration.scene == .badges {
                 SectionSupplementary(LayoutLabBadge.self, kind: LayoutLabElementKind.badge) { view, context in
                     view.configure(item: context.indexPath.item)
-                }.onTap { [weak self] context in
+                }.onTapGesture { [weak self] context in
                     self?.explanation.text = "点击徽标：item \(context.indexPath.item)"
                 }
             }

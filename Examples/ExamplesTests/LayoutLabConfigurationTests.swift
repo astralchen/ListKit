@@ -34,7 +34,7 @@ struct LayoutLabConfigurationTests {
         let geometry = try grid.geometry(in: TestLayoutEnvironment(), scrollDirection: .vertical)
         #expect(geometry.tracks.map(\.extent) == [60, 60, 60])
         for fragment in [".aspectRatio(1)", ".trackSpacing(12)", ".lineSpacing(4)", ".groupSpacing(18)",
-                         ".count(lines: 3)", ".trackGroupAlignment(.center)", ".pinToVisibleBounds(false)"] {
+                         ".count(lines: 3)", ".alignment(.center)", ".pinToVisibleBounds(false)"] {
             #expect(config.code.contains(fragment))
         }
     }
@@ -150,6 +150,6 @@ struct LayoutLabConfigurationTests {
         let tracks = config.recipe(section: 0).tracks!
         #expect(tracks[0].size == .fixed(60))
         #expect(tracks[1].size == .flexible(minimum: 50, maximum: 100))
-        #expect(tracks[2].size == .adaptive(minimumForCount: 50, maximum: 112))
+        #expect(tracks[2].size == .adaptive(minimum: 50, maximum: 112))
     }
 }

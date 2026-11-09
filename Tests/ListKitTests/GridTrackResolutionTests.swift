@@ -8,9 +8,9 @@ import XCTest
 final class TrackResolutionTests: XCTestCase {
     private var mixed: [ListGridTrack] {
         [
-            ListGridTrack(.fixed(70), spacingAfter: 12),
-            ListGridTrack(.flexible(minimum: 80, maximum: 140), spacingAfter: 12),
-            ListGridTrack(.adaptive(minimumForCount: 60), spacingAfter: 12),
+            ListGridTrack(.fixed(70), spacing: 12),
+            ListGridTrack(.flexible(minimum: 80, maximum: 140), spacing: 12),
+            ListGridTrack(.adaptive(minimum: 60), spacing: 12),
         ]
     }
 
@@ -58,8 +58,8 @@ final class TrackResolutionTests: XCTestCase {
     func testMixedMaximumCapsLeaveUnusedSpace() {
         let columns = [
             mixed[0],
-            ListGridTrack(.flexible(minimum: 80, maximum: 112), spacingAfter: 12),
-            ListGridTrack(.adaptive(minimumForCount: 60, maximum: 64), spacingAfter: 12),
+            ListGridTrack(.flexible(minimum: 80, maximum: 112), spacing: 12),
+            ListGridTrack(.adaptive(minimum: 60, maximum: 64), spacing: 12),
         ]
         let result = ListGridLayoutBuilder.resolve(columns, availableExtent: 340)
         XCTAssertEqual(result.map(\.extent), [70, 112, 61, 61])
@@ -70,10 +70,10 @@ final class TrackResolutionTests: XCTestCase {
 
     func testMultipleAdaptiveDefinitionsKeepTheirOwnGaps() {
         let columns = [
-            ListGridTrack(.fixed(40), spacingAfter: 4),
-            ListGridTrack(.adaptive(minimumForCount: 40), spacingAfter: 8),
-            ListGridTrack(.flexible(minimum: 50, maximum: 60), spacingAfter: 12),
-            ListGridTrack(.adaptive(minimumForCount: 30), spacingAfter: 6),
+            ListGridTrack(.fixed(40), spacing: 4),
+            ListGridTrack(.adaptive(minimum: 40), spacing: 8),
+            ListGridTrack(.flexible(minimum: 50, maximum: 60), spacing: 12),
+            ListGridTrack(.adaptive(minimum: 30), spacing: 6),
         ]
         let result = ListGridLayoutBuilder.resolve(columns, availableExtent: 364)
         XCTAssertEqual(result.map(\.extent), [40, 46, 46, 60, 30.5, 30.5, 30.5, 30.5])
@@ -82,7 +82,7 @@ final class TrackResolutionTests: XCTestCase {
     }
 
     func testAdaptiveThresholdIncludesSpacing() {
-        let columns = [ListGridTrack(.adaptive(minimumForCount: 80), spacingAfter: 12)]
+        let columns = [ListGridTrack(.adaptive(minimum: 80), spacing: 12)]
         XCTAssertEqual(ListGridLayoutBuilder.resolve(columns, availableExtent: 263).count, 2)
         let atThreshold = ListGridLayoutBuilder.resolve(columns, availableExtent: 264)
         XCTAssertEqual(atThreshold.count, 3)
@@ -92,8 +92,8 @@ final class TrackResolutionTests: XCTestCase {
 
     func testFixedAndFlexibleHaveIndependentBounds() {
         let columns = [
-            ListGridTrack(.fixed(100), spacingAfter: 10),
-            ListGridTrack(.flexible(minimum: 40, maximum: 70), spacingAfter: 20),
+            ListGridTrack(.fixed(100), spacing: 10),
+            ListGridTrack(.flexible(minimum: 40, maximum: 70), spacing: 20),
             ListGridTrack(.flexible(minimum: 40)),
         ]
         let result = ListGridLayoutBuilder.resolve(columns, availableExtent: 350)
@@ -102,21 +102,21 @@ final class TrackResolutionTests: XCTestCase {
     }
 
     func testAdaptiveMaximumLeavesUnusedSpace() {
-        let rows = [ListGridTrack(.adaptive(minimumForCount: 80, maximum: 112), spacingAfter: 12)]
+        let rows = [ListGridTrack(.adaptive(minimum: 80, maximum: 112), spacing: 12)]
         let result = ListGridLayoutBuilder.resolve(rows, availableExtent: 260)
         XCTAssertEqual(result.map(\.extent), [112, 112])
     }
 
     func testNarrowContainerPolicy() {
         let adaptive = ListGridLayoutBuilder.resolve(
-            [ListGridTrack(.adaptive(minimumForCount: 80))], availableExtent: 40)
+            [ListGridTrack(.adaptive(minimum: 80))], availableExtent: 40)
         XCTAssertEqual(adaptive.map(\.extent), [40])
         let flexible = ListGridLayoutBuilder.resolve(
             [ListGridTrack(.flexible(minimum: 80))], availableExtent: 40)
         XCTAssertEqual(flexible.map(\.extent), [80])
     }
     func testCheckedResolutionLimitsTotalAdaptiveExpansion() throws {
-        let definitions = [ListGridTrack(.adaptive(minimumForCount: 1)), ListGridTrack(.adaptive(minimumForCount: 1))]
+        let definitions = [ListGridTrack(.adaptive(minimum: 1)), ListGridTrack(.adaptive(minimum: 1))]
         XCTAssertEqual(
             try ListGridLayoutBuilder.checkedResolve(definitions, availableExtent: 10000, defaultSpacing: 0)
                 .count, 10000)

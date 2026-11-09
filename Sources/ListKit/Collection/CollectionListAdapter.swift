@@ -83,6 +83,8 @@ where SectionID: Hashable & Sendable {
     private weak var collectionView: UICollectionView?
     /// 最近一次已接受 apply 的声明式 Section 描述树。
     private var sections: [ListSection<SectionID>] = []
+    private var cellMeasurements: ListCellMeasurementCache?
+    private var measuredSectionIDs: Set<AnyListID> = []
     /// 用于判断 compositional layout 元数据是否变化的轻量签名。
     // 实际 kind 按模板位置稳定复用；旧地址保留到 Section 移除，保证结束展示回调可解析。
     private var supplementaryAliasKinds: [ListSupplementaryAliasKey: String] = [:]
@@ -133,8 +135,8 @@ where SectionID: Hashable & Sendable {
     private var preservedAnchorBottomInsetCompensation: CGFloat = 0
     /// 应用锚点补偿前调用方设置的原始 bottom inset。
     private var temporaryAnchorBaseBottomInset: CGFloat?
-    /// 防止 UIKit 尚有未提交更新时重复安排 reloadAll 重试定时器。
-    private var isReloadAllRetryScheduled = false
+    /// 防止 UIKit 尚有未提交更新时重复调度队首请求。
+    private var isPendingMutationRetryScheduled = false
     /// 按事件类型保存 adapter 级处理闭包。
     private let eventRouter = ListEventRouter<ListContext>()
 
@@ -170,12 +172,7 @@ where SectionID: Hashable & Sendable {
         dataSource.reorderingHandlers.didReorder = { [weak self] transaction in
             self?.didReorder(transaction)
         }
-        dataSource.sectionSnapshotHandlers.willExpandItem = { [weak self] identity in
-            self?.notifyExpansionChange(identity: identity, isExpanded: true)
-        }
-        dataSource.sectionSnapshotHandlers.willCollapseItem = { [weak self] identity in
-            self?.notifyExpansionChange(identity: identity, isExpanded: false)
-        }
+        dataSource.sectionSnapshotHandlers = makeOutlineInteractionHandlers()
 
         collectionView.dataSource = dataSource
         collectionView.delegate = self
@@ -724,6 +721,7 @@ where SectionID: Hashable & Sendable {
                 ListPendingMutationRequest(
                     kind: .apply,
                     updatePolicy: resolvedTransaction.updatePolicy,
+                    requiresCommittedUpdates: options.applicationMode == .reloadData,
                     subscriberID: subscriberID,
                     onCancel: {
                         completion?(
@@ -766,6 +764,12 @@ where SectionID: Hashable & Sendable {
                 reduceMotionApplied: resolvedTransaction.reduceMotionApplied
             ))
         }
+
+        // 布局解析和附属视图注册都可能调用业务闭包，重入更新从这里开始排队。
+        let mutationToken = mutationCoordinator.begin(
+            kind: .apply,
+            updatePolicy: resolvedTransaction.updatePolicy
+        )
 
         let newLayoutSignature = Self.makeLayoutSignature(
             from: newSections, usesListKitLayout: collectionView.collectionViewLayout is ListCollectionLayout)
@@ -840,6 +844,7 @@ where SectionID: Hashable & Sendable {
             lastApplySummary = summary
             ListApplyLogger.logDiagnostics(issues: diagnosticsIssues, options: options)
             ListApplyLogger.logApplySummary(summary, options: options)
+            mutationCoordinator.finish(mutationToken)
             completion?(summary)
             // 诊断拒绝也结束了当前队首请求；completion 重入后继续推进剩余队列。
             performNextPendingMutationIfNeeded()
@@ -862,8 +867,27 @@ where SectionID: Hashable & Sendable {
 
         applyGeneration += 1
         let generation = applyGeneration
+        let measuredSections = newSections.filter { section in
+            switch section.layoutSource {
+            case .builtIn(.waterfallConfiguration): true
+            case .environment: measuredSectionIDs.contains(AnyListID(section.id))
+            default: false
+            }
+        }
+        let measuredContentChanged = measuredSections.contains { next in
+            guard let previous = sections.first(where: { $0.id == next.id }),
+                previous.rows.count == next.rows.count else { return true }
+            return zip(previous.rows, next.rows).contains { old, new in
+                old.identity != new.identity || new.refreshID == nil || old.refreshID != new.refreshID
+                    || old.isSelected != new.isSelected
+            }
+        }
+        shouldInvalidateLayout = shouldInvalidateLayout || measuredContentChanged
+        cellMeasurements?.synchronize(rows: measuredSections.flatMap(\.rows),
+            reload: options.applicationMode == .reloadData)
         sections = newSections
         let activeSectionIDs = Set(newSections.map { AnyListID($0.id) })
+        measuredSectionIDs.formIntersection(activeSectionIDs)
         activeSupplementaryAliases = activeSupplementaryAliases.filter { activeSectionIDs.contains($0.key) }
         supplementaryAliasKinds = supplementaryAliasKinds.filter { activeSectionIDs.contains($0.key.sectionID) }
         supplementaryAliases = supplementaryAliases.filter { activeSectionIDs.contains($0.value.sectionID) }
@@ -932,10 +956,6 @@ where SectionID: Hashable & Sendable {
         }
 
         isApplyingSnapshot = true
-        let mutationToken = mutationCoordinator.begin(
-            kind: .apply,
-            updatePolicy: resolvedTransaction.updatePolicy
-        )
         let completionBox = completion.map(ListApplySummaryCompletionBox.init)
         let finishAsSuperseded: @MainActor () -> Void = { [weak self] in
             guard let self else { return }
@@ -1838,18 +1858,18 @@ where SectionID: Hashable & Sendable {
             mutationScheduler.hasPendingRequests,
             hasUncommittedUpdates
         {
-            scheduleReloadAllRetry()
+            schedulePendingMutationRetry()
         }
     }
 
     /// UIKit 正在提交内部更新时短暂退避，避免 reloadData 与未完成更新交错。
-    private func scheduleReloadAllRetry() {
-        guard !isReloadAllRetryScheduled else { return }
-        isReloadAllRetryScheduled = true
+    private func schedulePendingMutationRetry() {
+        guard !isPendingMutationRetryScheduled else { return }
+        isPendingMutationRetryScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.isReloadAllRetryScheduled = false
+                self.isPendingMutationRetryScheduled = false
                 self.performNextPendingMutationIfNeeded()
             }
         }
@@ -1973,7 +1993,8 @@ where SectionID: Hashable & Sendable {
     public func collectionView(
         _ collectionView: UICollectionView, numberOfItemsInSection section: Int
     ) -> Int {
-        sections[safe: section]?.rows.count ?? 0
+        guard dataSource.snapshot().sectionIdentifiers.indices.contains(section) else { return 0 }
+        return dataSource.collectionView(collectionView, numberOfItemsInSection: section)
     }
 
     /// 通过条目提供者创建并配置单元格，配置上下文包含条目的稳定身份。
@@ -2072,6 +2093,23 @@ where SectionID: Hashable & Sendable {
             row.highlightChangeHandler?(false, context(for: indexPath, identity: row.identity))
         }
         collectionDelegate?.collectionView?(collectionView, didUnhighlightItemAt: indexPath)
+    }
+
+    /// 显式按行判断 primary action，避免 UIKit 把普通多选点击视为独占选择。
+    /// 外部代理的显式判断优先；未指定时根据 Row 或代理是否提供动作推断。
+    @available(iOS 16.0, tvOS 16.0, *)
+    public func collectionView(
+        _ collectionView: UICollectionView, canPerformPrimaryActionForItemAt indexPath: IndexPath
+    ) -> Bool {
+        guard let row = row(at: indexPath) else { return false }
+        if let allowed = collectionDelegate?.collectionView?(
+            collectionView, canPerformPrimaryActionForItemAt: indexPath)
+        {
+            return allowed
+        }
+        return row.primaryActionHandler != nil
+            || collectionDelegateResponds(
+                to: #selector(UICollectionViewDelegate.collectionView(_:performPrimaryActionForItemAt:)))
     }
 
     /// 执行条目的主要操作处理器，并转发外部代理。
@@ -2771,18 +2809,14 @@ where SectionID: Hashable & Sendable {
         itemIdentity(at: indexPath)?.rowID.typed(type)
     }
 
-    /// 根据完整展示身份查询当前位置。
+    /// 根据完整展示身份查询当前快照中的可见位置；折叠隐藏的后代返回 nil。
     public func indexPath(for identity: AnyListIdentity) -> IndexPath? {
-        guard
-            let sectionIndex = sections.firstIndex(where: { AnyListID($0.id) == identity.sectionID }),
-            let itemIndex = sections[sectionIndex].rows.firstIndex(where: { $0.identity == identity })
-        else { return nil }
-        return IndexPath(item: itemIndex, section: sectionIndex)
+        dataSource.indexPath(for: identity)
     }
 
     /// 判断当前描述树是否仍包含指定展示身份。
     public func contains(_ identity: AnyListIdentity) -> Bool {
-        indexPath(for: identity) != nil
+        rowsByIdentity[identity] != nil
     }
 
     /// 根据 row id 查询当前 indexPath。
@@ -2790,27 +2824,20 @@ where SectionID: Hashable & Sendable {
     /// - Parameters:
     ///   - rowID: row 的稳定 id。
     ///   - sectionID: 可选的 section id；为 `nil` 时查询所有 section。
-    /// - Returns: 当前描述树中匹配 row id 的 index paths。
-    /// - Note: 查询基于 adapter 当前描述树，调用方不需要维护第二套 sections。
+    /// - Returns: 当前快照中匹配 row id 的位置，折叠隐藏的后代不包含在内。
     public func indexPaths<RowID>(
         forRowID rowID: RowID,
         in sectionID: SectionID? = nil
     ) -> [IndexPath] where RowID: Hashable & Sendable {
         let targetRowID = AnyListID(rowID)
         let targetSectionID = sectionID.map(AnyListID.init)
-        var indexPaths: [IndexPath] = []
-
-        for (sectionIndex, section) in sections.enumerated() {
-            let currentSectionID = AnyListID(section.id)
-            if let targetSectionID, currentSectionID != targetSectionID {
-                continue
-            }
-            for (itemIndex, row) in section.rows.enumerated() where row.identity.rowID == targetRowID {
-                indexPaths.append(IndexPath(item: itemIndex, section: sectionIndex))
-            }
+        let snapshot = dataSource.snapshot()
+        return snapshot.itemIdentifiers.compactMap { identity in
+            guard identity.rowID == targetRowID,
+                targetSectionID == nil || snapshot.sectionIdentifier(containingItem: identity) == targetSectionID
+            else { return nil }
+            return dataSource.indexPath(for: identity)
         }
-
-        return indexPaths
     }
 
     /// 滚动到指定 section 或全列表的最后一个 row。
@@ -2826,7 +2853,7 @@ where SectionID: Hashable & Sendable {
         at scrollPosition: UICollectionView.ScrollPosition = .bottom,
         animated: Bool = true
     ) -> Bool {
-        guard let indexPath = lastItemIndexPath(in: sectionID) else { return false }
+        guard let indexPath = lastItemIndexPath(inAnySectionID: sectionID.map(AnyListID.init)) else { return false }
         return performExplicitScroll(to: indexPath, at: scrollPosition, animated: animated)
     }
 
@@ -2938,7 +2965,7 @@ where SectionID: Hashable & Sendable {
     public func makeCompositionalSection(
         for sectionIndex: Int,
         environment: any NSCollectionLayoutEnvironment,
-        scrollDirection: ListLayoutScrollDirection = .vertical,
+        scrollDirection: ListAxis = .vertical,
         diagnostics: ListDiagnosticsOptions = .debugDefault
     ) -> NSCollectionLayoutSection? {
         lastLayoutDiagnostics = []
@@ -2965,6 +2992,11 @@ where SectionID: Hashable & Sendable {
             depth += 1
         }
         guard let options = source.options else { return nil }
+        if case .builtIn(.waterfallConfiguration) = source {
+            measuredSectionIDs.insert(AnyListID(section.id))
+        } else {
+            measuredSectionIDs.remove(AnyListID(section.id))
+        }
         let isCustom: Bool
         if case .custom = source { isCustom = true } else { isCustom = false }
         var issues = options.issues(in: section, custom: isCustom)
@@ -3041,7 +3073,31 @@ where SectionID: Hashable & Sendable {
                 recordLayoutDiagnostics(issues, options: diagnostics)
                 return nil
             }
-            if let list = layout.uiKitListLayout {
+            if case .waterfallConfiguration(let waterfall) = layout {
+                do {
+                    guard !section.hasOutlineHierarchy, itemSupplementaries.isEmpty,
+                        section.rows.allSatisfy({ $0.measurement != nil }) else {
+                        throw ListWaterfallError("requires flat typed Rows without item supplementaries")
+                    }
+                    guard let collectionView else { return nil }
+                    if cellMeasurements == nil { cellMeasurements = ListCellMeasurementCache() }
+                    guard let cellMeasurements else { return nil }
+                    layoutSection = try waterfall.makeSection(environment: environment,
+                        scrollDirection: scrollDirection, itemCount: section.rows.count) { item, cross, axis in
+                        let row = section.rows[item]
+                        let context = ListContext(identity: row.identity,
+                            indexPath: IndexPath(item: item, section: sectionIndex),
+                            collectionView: collectionView, isMeasuring: true,
+                            eventDispatcher: { _, _ in })
+                        return try cellMeasurements.extent(for: row, crossExtent: cross,
+                            axis: axis, context: context, environment: environment)
+                    }
+                } catch {
+                    recordLayoutDiagnostics([.init(kind: .invalidLayout,
+                        message: "ListKit: section \(section.id): \(error)")], options: diagnostics)
+                    return nil
+                }
+            } else if let list = layout.uiKitListLayout {
                 var configuration = list.makeConfiguration()
                 configuration.leadingSwipeActionsConfigurationProvider = { [weak self] indexPath in
                     guard let self, let collectionView = self.collectionView else { return nil }
@@ -3350,6 +3406,20 @@ where SectionID: Hashable & Sendable {
         }
     }
 
+    /// UIKit 按钮交互先结束原生回调，再通过共享队列提交展开状态。
+    func makeOutlineInteractionHandlers() -> UICollectionViewDiffableDataSource<AnyListID, AnyListIdentity>.SectionSnapshotHandlers<AnyListIdentity> {
+        var outlineHandlers = UICollectionViewDiffableDataSource<AnyListID, AnyListIdentity>.SectionSnapshotHandlers<AnyListIdentity>()
+        outlineHandlers.shouldExpandItem = { [weak self] identity in
+            Task { @MainActor [weak self] in self?.enqueueOutlineChange(for: identity, isExpanded: true) }
+            return false
+        }
+        outlineHandlers.shouldCollapseItem = { [weak self] identity in
+            Task { @MainActor [weak self] in self?.enqueueOutlineChange(for: identity, isExpanded: false) }
+            return false
+        }
+        return outlineHandlers
+    }
+
     private func notifyExpansionChange(identity: AnyListIdentity, isExpanded: Bool) {
         guard let section = sections.first(where: { AnyListID($0.id) == identity.sectionID }) else {
             return
@@ -3366,27 +3436,65 @@ where SectionID: Hashable & Sendable {
             section.hasOutlineHierarchy
         else { return false }
 
-        let sectionID = AnyListID(section.id)
-        var snapshot = dataSource.snapshot(for: sectionID)
+        // 叶子行仍走普通选择流程；真正执行时还要重新检查排队期间变化的快照。
+        let snapshot = dataSource.snapshot(for: AnyListID(section.id))
         guard snapshot.contains(row.identity),
             !snapshot.snapshot(of: row.identity).items.isEmpty
         else { return false }
 
-        let willExpand = !snapshot.isExpanded(row.identity)
-        if willExpand {
-            snapshot.expand([row.identity])
-        } else {
-            snapshot.collapse([row.identity])
+        enqueueOutlineChange(for: row.identity)
+        return true
+    }
+
+    /// 展开状态与 apply 共用队列，执行时重新读取快照，避免重入回调恢复已删除的分区。
+    private func enqueueOutlineChange(for identity: AnyListIdentity, isExpanded: Bool? = nil) {
+        enqueuePendingMutation(ListPendingMutationRequest(
+            kind: .outlineChange,
+            updatePolicy: .serial,
+            start: { [weak self] in self?.performOutlineChange(for: identity, isExpanded: isExpanded) },
+            supersede: {}
+        ))
+        performNextPendingMutationIfNeeded()
+    }
+
+    private func performOutlineChange(for identity: AnyListIdentity, isExpanded: Bool?) {
+        guard collectionView != nil, let row = rowsByIdentity[identity],
+            let sectionID = dataSource.snapshot().sectionIdentifier(containingItem: identity)
+        else {
+            performNextPendingMutationIfNeeded()
+            return
         }
-        let animatesOutline = ListTransaction(outlineAnimation: row.outlineAnimation)
+        var snapshot = dataSource.snapshot(for: sectionID)
+        guard snapshot.contains(identity), !snapshot.snapshot(of: identity).items.isEmpty else {
+            performNextPendingMutationIfNeeded()
+            return
+        }
+        let expanded = isExpanded ?? !snapshot.isExpanded(identity)
+        guard expanded != snapshot.isExpanded(identity) else {
+            performNextPendingMutationIfNeeded()
+            return
+        }
+        let token = mutationCoordinator.begin(kind: .outlineChange, updatePolicy: .serial)
+        isApplyingSnapshot = true
+        if expanded {
+            snapshot.expand([identity])
+        } else {
+            snapshot.collapse([identity])
+        }
+        let animated = ListTransaction(outlineAnimation: row.outlineAnimation)
             .resolved(reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled)
             .outlineAnimation
-        if animatesOutline {
-            outlineAnimationGeneration += 1
+        if animated { outlineAnimationGeneration += 1 }
+        notifyExpansionChange(identity: identity, isExpanded: expanded)
+        let finished = ListMainActorCallbackBox { [weak self] in
+            guard let self else { return }
+            self.isApplyingSnapshot = false
+            self.mutationCoordinator.finish(token)
+            self.performNextPendingMutationIfNeeded()
         }
-        notifyExpansionChange(identity: row.identity, isExpanded: willExpand)
-        dataSource.apply(snapshot, to: sectionID, animatingDifferences: animatesOutline)
-        return true
+        dataSource.apply(snapshot, to: sectionID, animatingDifferences: animated) {
+            finished.schedule()
+        }
     }
 
     private static func indexPath(
@@ -3978,7 +4086,8 @@ where SectionID: Hashable & Sendable {
     }
 
     private func row(at indexPath: IndexPath) -> AnyListRow? {
-        sections[safe: indexPath.section]?.rows[safe: indexPath.item]
+        guard let identity = dataSource.itemIdentifier(for: indexPath) else { return nil }
+        return rowsByIdentity[identity]
     }
 
     private func captureVisibleRowAnchor(for target: ListScrollTarget) -> ListVisibleRowAnchor? {
@@ -4033,7 +4142,7 @@ where SectionID: Hashable & Sendable {
         collectionView.layoutIfNeeded()
 
         guard
-            let indexPath = Self.indexPath(for: anchor.identity, in: dataSource.snapshot()),
+            let indexPath = dataSource.indexPath(for: anchor.identity),
             let attributes = collectionView.collectionViewLayout.layoutAttributesForItem(at: indexPath)
         else {
             preservedAnchorBottomInsetCompensation = 0
@@ -4159,37 +4268,17 @@ where SectionID: Hashable & Sendable {
             guard identity.rowID == target.rowID,
                 target.sectionID == nil || identity.sectionID == target.sectionID
             else { return nil }
-            return Self.indexPath(for: identity, in: snapshot)
+            return dataSource.indexPath(for: identity)
         }
-    }
-
-    private func lastItemIndexPath(in sectionID: SectionID?) -> IndexPath? {
-        if let sectionID {
-            guard
-                let sectionIndex = sections.firstIndex(where: { $0.id == sectionID }),
-                let itemIndex = sections[sectionIndex].rows.indices.last
-            else { return nil }
-            return IndexPath(item: itemIndex, section: sectionIndex)
-        }
-
-        for sectionIndex in sections.indices.reversed() {
-            guard let itemIndex = sections[sectionIndex].rows.indices.last else { continue }
-            return IndexPath(item: itemIndex, section: sectionIndex)
-        }
-        return nil
     }
 
     private func lastItemIndexPath(inAnySectionID sectionID: AnyListID?) -> IndexPath? {
         let snapshot = dataSource.snapshot()
-        if let sectionID {
-            guard let section = snapshot.indexOfSection(sectionID),
-                let identity = snapshot.itemIdentifiers(inSection: sectionID).last,
-                let item = snapshot.itemIdentifiers(inSection: sectionID).firstIndex(of: identity)
-            else { return nil }
-            return IndexPath(item: item, section: section)
+        for identity in snapshot.itemIdentifiers.reversed() {
+            if let sectionID, snapshot.sectionIdentifier(containingItem: identity) != sectionID { continue }
+            if let path = dataSource.indexPath(for: identity) { return path }
         }
-        guard let identity = snapshot.itemIdentifiers.last else { return nil }
-        return Self.indexPath(for: identity, in: snapshot)
+        return nil
     }
 
     private func visibleIndexPaths<RowID>(

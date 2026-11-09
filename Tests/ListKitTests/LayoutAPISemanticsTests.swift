@@ -11,7 +11,7 @@ final class LayoutAPISemanticsTests: XCTestCase {
                 defer { fixture.close() }
                 let horizontal = outerHorizontal != orthogonal
                 let grid = GridLayout(tracks: 2)
-                    .gridCrossAxisSize(.fixed(220)).itemMainAxisSize(.fixed(40))
+                    .crossAxisSize(.fixed(220)).itemMainAxisSize(.fixed(40))
                     .trackSpacing(10).lineSpacing(12).groupSpacing(20)
                     .lineGrouping(.count(lines: 3))
                     .orthogonalScrolling(orthogonal ? .continuous : nil)
@@ -30,7 +30,7 @@ final class LayoutAPISemanticsTests: XCTestCase {
 
     func testFillAndFittingUseLineSpacingWithoutTrackOrGroupSpacing() throws {
         let environment = TestLayoutEnvironment()
-        let base = GridLayout(tracks: 2).gridCrossAxisSize(.fixed(220))
+        let base = GridLayout(tracks: 2).crossAxisSize(.fixed(220))
             .trackSpacing(10).lineSpacing(12).groupSpacing(70)
         let filled = try base.itemMainAxisSize(.fillGroup)
             .lineGrouping(.count(lines: 3, mainAxisSize: .fixed(300)))
@@ -48,7 +48,7 @@ final class LayoutAPISemanticsTests: XCTestCase {
     }
 
     func testLineSpacingAndGroupOverrideAreOrderIndependentAndResettable() throws {
-        let base = GridLayout(tracks: [.init(.fixed(40), spacingAfter: 3), .init(.fixed(40))])
+        let base = GridLayout(tracks: [.init(.fixed(40), spacing: 3), .init(.fixed(40))])
             .trackSpacing(10)
         let before = base.groupSpacing(20).lineSpacing(12)
         let after = base.lineSpacing(12).groupSpacing(20)
@@ -74,7 +74,7 @@ final class LayoutAPISemanticsTests: XCTestCase {
                     defer { fixture.close() }
                     let horizontal = outerHorizontal != orthogonal
                     let base = GridLayout(tracks: 2).itemMainAxisSize(.fixed(40))
-                        .gridCrossAxisSize(.fixed(220)).trackSpacing(10)
+                        .crossAxisSize(.fixed(220)).trackSpacing(10)
                         .lineGrouping(.count(lines: lines))
                         .orthogonalScrolling(orthogonal ? .continuous : nil)
                     // Reapply to the same adapter: changing or clearing the override must invalidate layout.
@@ -135,14 +135,14 @@ final class LayoutAPISemanticsTests: XCTestCase {
 
     func testCrossAxisSizeFollowsDirectionAndCanResetWithScrolling() throws {
         let base = GridLayout(tracks: 2).itemMainAxisSize(.fixed(40)).trackSpacing(10).lineSpacing(10)
-        let configured = base.gridCrossAxisSize(.fixed(220)).orthogonalScrolling(.continuous)
-        for direction in [ListLayoutScrollDirection.vertical, .horizontal] {
+        let configured = base.crossAxisSize(.fixed(220)).orthogonalScrolling(.continuous)
+        for direction in [ListAxis.vertical, .horizontal] {
             let geometry = try configured.geometry(in: TestLayoutEnvironment(), scrollDirection: direction)
             XCTAssertEqual(geometry.crossExtent, 220)
             XCTAssertEqual(geometry.axis, direction == .vertical ? .horizontal : .vertical)
         }
-        XCTAssertEqual(configured.gridCrossAxisSize(nil).orthogonalScrolling(nil), base)
-        XCTAssertEqual(configured.gridCrossAxisSize(.estimated(80)).gridCrossAxisSize(.fixed(220)), configured)
+        XCTAssertEqual(configured.crossAxisSize(nil).orthogonalScrolling(nil), base)
+        XCTAssertEqual(configured.crossAxisSize(.estimated(80)).crossAxisSize(.fixed(220)), configured)
     }
 
     func testExplicitBackgroundPolicyRestoresDefaultsAfterCustomRules() {
@@ -180,7 +180,7 @@ final class LayoutAPISemanticsTests: XCTestCase {
     func testInvalidIndependentDimensionsAreDiagnosed() {
         let base = GridLayout(tracks: 2)
         for grid in [base.trackSpacing(-1), base.lineSpacing(.nan), base.groupSpacing(.infinity),
-                     base.gridCrossAxisSize(.fixed(0)), base.lineGrouping(.count(lines: 2, mainAxisSize: .fixed(-1))),
+                     base.crossAxisSize(.fixed(0)), base.lineGrouping(.count(lines: 2, mainAxisSize: .fixed(-1))),
                      base.lineGrouping(.fitting(mainAxisSize: .fixed(.nan)))] {
             XCTAssertFalse(grid.validationErrors.isEmpty)
         }

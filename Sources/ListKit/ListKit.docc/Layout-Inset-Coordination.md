@@ -31,9 +31,9 @@ Section inset 修饰方法重复调用时覆盖原值，不累加；ListKit 不�
 - 原生 UIKit List 未声明 inset 时保留系统生成的值，显式声明则覆盖。
 - CustomLayout 未声明 inset 时由 provider 管理；显式声明时，provider 必须用 `context.sectionInsets` 构建几何，并在返回的 Section 上设置同值，否则解析失败。
 
-未显式配置 gridCrossAxisSize 时，Grid 轨道及边界主轴比例计算使用 `environment.container.effectiveContentSize`，再扣除 Section 交叉轴 inset 一次；不再次扣除安全区域。
+未显式配置 crossAxisSize 时，Grid 轨道及边界主轴比例计算使用 `environment.container.effectiveContentSize`，再扣除 Section 交叉轴 inset 一次；不再次扣除安全区域。
 `ListLayoutDimension.fractionalWidth` / `.fractionalHeight` 则由 UIKit 按所在布局层级的容器解析，不是固定相对屏幕或整个 collection view。
-显式 gridCrossAxisSize 指定主体交叉轴内容尺寸，不再从中扣除 section inset；fractionalViewport 使用有效容器主轴长度减去对应 section inset。gridCrossAxisSize 随内容轴解释，使用 itemMainAxisSize 或 group 配置主轴内容。
+显式 crossAxisSize 指定主体交叉轴内容尺寸，不再从中扣除 section inset；fractionalViewport 使用有效容器主轴长度减去对应 section inset。crossAxisSize 随内容轴解释，使用 itemMainAxisSize 或 group 配置主轴内容。
 `DecorationItemLayout.backgroundInsets` 只调整背景 decoration，不改变 Section 或 cell 的 inset。
 
 ## 显式接管

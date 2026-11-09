@@ -25,13 +25,17 @@ check_source() {
     echo "$expected: $name"
 }
 check table-layout pass 'let _ = TableSection(0) {
-    TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.height(.fixed(28))
+    TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }
 }.layout {
     TableLayout().rowHeight(.estimated(64)).headerHeight(.automatic).footerHeight(.fixed(44))
 }.header {
     TableHeader(UITableViewHeaderFooterView.self) { _, _ in }.refreshID(3)
 }.footer {
     TableFooter(UITableViewHeaderFooterView.self) { _, _ in }
+}'
+check table-row-height-by-id pass 'enum ChatID: Hashable, Sendable { case divider, message(Int) }
+let _ = TableLayout().rowHeight { id in
+    id.typed(ChatID.self) == .divider ? .fixed(28) : .estimated(68)
 }'
 check table-footer-in-header fail 'let _ = TableSection(0) {}.header {
     TableFooter(UITableViewHeaderFooterView.self) { _, _ in }.refreshID(1)
@@ -52,6 +56,7 @@ import ListKit
 }
 SWIFT
 check_source public-collection-supplementaries pass
+check table-legacy-row-height fail 'let _ = TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.height(.estimated(68))'
 check table-legacy-height-type fail 'let _: TableRowHeight = .fixed(28)'
 check table-legacy-automatic-estimate fail 'let _: TableHeight = .automatic(estimated: 64)'
 check table-legacy-independent-estimate fail 'let _ = TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.estimatedHeight(64)'
@@ -64,7 +69,7 @@ let _ = ListSection(0) {}
     .decorations {}
     .addingSupplementaries {}
     .addingDecorations {}'
-check grid-naming pass 'let columns: [ListGridTrack] = [.init(.fixed(80)), .init(.flexible()), .init(.adaptive(minimumForCount: 60))]
+check grid-naming pass 'let columns: [ListGridTrack] = [.init(.fixed(80)), .init(.flexible()), .init(.adaptive(minimum: 60))]
 let size: ListBoundaryMainAxisSize = .fixed(44)
 let _ = GridLayout(tracks: columns).itemMainAxisSize(.fixed(44))
 let _ = GridLayout(tracks: columns).itemMainAxisSize(.estimated(44))
@@ -75,7 +80,7 @@ check grid-legacy-absolute fail 'let _ = ListGridSize.absolute(44)'
 check typed-layouts pass 'let _ = ListSection(0) {} layout: {
     EnvironmentLayout(layoutKey: 1) { env in
         if env.container.effectiveContentSize.width > 400 {
-            GridLayout(tracks: [ListGridTrack(.adaptive(minimumForCount: 80))]).trackSpacing(8).lineSpacing(8)
+            GridLayout(tracks: [ListGridTrack(.adaptive(minimum: 80))]).trackSpacing(8).lineSpacing(8)
         } else { UIKitListLayout() }
     }
 }
@@ -151,8 +156,8 @@ check removed-horizontal fail 'let _ = HorizontalLayout()'
 check removed-columns fail 'let _ = GridLayout(columns: 2)'
 check removed-rows fail 'let _ = GridLayout(rows: 2)'
 check orthogonal-grid pass 'let _ = GridLayout(tracks: 2).itemMainAxisSize(.fillGroup)
-    .gridCrossAxisSize(.fixed(220)).orthogonalScrolling(.groupPaging)
-    .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1))).groupSpacing(16).trackGroupAlignment(.center)'
+    .crossAxisSize(.fixed(220)).orthogonalScrolling(.groupPaging)
+    .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1))).groupSpacing(16).alignment(.center)'
 check boundary-no-fill fail 'let _ = BoundarySupplementaryLayout(kind: "header", mainAxisSize: .fillGroup, sizingAxis: .vertical, alignment: .top)'
 
 check removed-frame fail 'let _ = GridLayout(tracks: 2).frame(height: 200)'
@@ -166,7 +171,7 @@ check provider-boundary-no-pinning fail 'let _ = CustomLayoutBoundary(kind: "hea
 check provider-boundary-no-offset fail 'let _ = CustomLayoutBoundary(kind: "header").absoluteOffset(.zero)'
 check boundary-no-center fail 'let _ = BoundarySupplementaryLayout(kind: "header", mainAxisSize: .fixed(44), sizingAxis: .vertical, alignment: .center)'
 check layout-key-required fail 'let _ = ListSection(0) {} layout: { EnvironmentLayout(id: 0) { _ in GridLayout(tracks: 1) } }'
-check independent-spacing pass 'let _ = GridLayout(tracks: 2).trackSpacing(10).lineSpacing(12).groupSpacing(20).gridCrossAxisSize(.fixed(220)).orthogonalScrolling(nil)'
+check independent-spacing pass 'let _ = GridLayout(tracks: 2).trackSpacing(10).lineSpacing(12).groupSpacing(20).crossAxisSize(.fixed(220)).orthogonalScrolling(nil)'
 check provider-boundary-reference pass 'let _ = ListSection(0) {} layout: { CustomLayout(layoutKey: 0) { _ in
     let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(44))
     return NSCollectionLayoutSection(group: .horizontal(layoutSize: size, subitems: [.init(layoutSize: size)]))
@@ -176,8 +181,9 @@ check removed-custom-inset-modifier fail 'let _ = ListSection(0) {} layout: { Cu
     return NSCollectionLayoutSection(group: .horizontal(layoutSize: size, subitems: [.init(layoutSize: size)]))
 }.sectionInsets(.init(12)) }'
 
-check adaptive-requires-count-label fail 'let _ = ListGridTrack(.adaptive(minimum: 80))'
-check removed-alignment fail 'let _ = GridLayout(tracks: 2).alignment(.center)'
+check adaptive-swiftui-label pass 'let _ = ListGridTrack(.adaptive(minimum: 80))
+let _ = ListGridTrack(.adaptive(minimum: 80, maximum: 160))'
+check grid-alignment pass 'let _ = GridLayout(tracks: 2).alignment(.center)'
 check removed-fill fail 'let _ = GridLayout(tracks: 2).itemMainAxisSize(.fill)'
 check removed-fit fail 'let _ = GridLayout(tracks: 2).lineGrouping(.fit(size: .fixed(300)))'
 check removed-append-name fail 'let _ = ListSection(0) {}.sectionSupplementaries {}'
@@ -201,13 +207,13 @@ check mixed-custom-boundaries pass 'let _ = ListSection(0) {} layout: {
     }
 }'
 
-check removed-grid-cross-axis-size fail 'let _ = GridLayout(tracks: 1).crossAxisSize(.fixed(100))'
+check grid-cross-axis-size pass 'let _ = GridLayout(tracks: 1).crossAxisSize(.fixed(100))'
 check removed-generic-spacing fail 'let _ = GridLayout(tracks: 1).spacing(8)'
 check removed-generic-group fail 'let _ = GridLayout(tracks: 1).group(.count(lines: 2))'
 check removed-grouping-type fail 'let _: ListGridGrouping = .count(lines: 2)'
 check removed-track-alignment fail 'let _ = GridLayout(tracks: 1).trackAlignment(.center)'
-check removed-track-spacing-label fail 'let _ = ListGridTrack(.fixed(40), spacing: 8)'
-check removed-track-spacing-property fail 'var value = ListGridTrack(.fixed(40)); value.spacing = 8'
+check track-spacing-label pass 'let _ = ListGridTrack(.fixed(40), spacing: 8)'
+check track-spacing-property pass 'var value = ListGridTrack(.fixed(40)); value.spacing = 8'
 check removed-boundary-axis-label fail 'let _ = BoundarySupplementaryLayout(kind: "h", mainAxisSize: .fixed(44), axis: .vertical, alignment: .top)'
 check removed-boundary-pinned fail 'let _ = BoundarySupplementaryLayout(kind: "h", size: .init(width: .absolute(10), height: .absolute(10)), alignment: .top).pinned()'
 check removed-boundary-offset fail 'let _ = BoundarySupplementaryLayout(kind: "h", size: .init(width: .absolute(10), height: .absolute(10)), alignment: .top).offset(.zero)'
@@ -216,14 +222,40 @@ check removed-item-anchor-property fail 'var value = ItemSupplementaryLayout(kin
 check removed-item-fractional-offset fail 'let _ = ItemSupplementaryLayout(kind: "b", size: .init(width: .absolute(10), height: .absolute(10)), itemAnchor: .top).fractionalOffset(.zero)'
 check removed-decoration-insets-label fail 'let _ = DecorationItemLayout(kind: "card", insets: .init(8))'
 check removed-decoration-insets-property fail 'var value = DecorationItemLayout(kind: "card"); value.insets = .init(8)'
-check explicit-layout-objects pass 'var track = ListGridTrack(.fixed(40), spacingAfter: 6); track.spacingAfter = 8
+check explicit-layout-objects pass 'var track = ListGridTrack(.fixed(40), spacing: 6); track.spacing = 8
 let grouping: ListGridLineGrouping = .count(lines: 2)
-let _ = GridLayout(tracks: [track]).gridCrossAxisSize(.fixed(200)).trackSpacing(10).lineSpacing(10).lineGrouping(grouping).trackGroupAlignment(.center)
+let _ = GridLayout(tracks: [track]).crossAxisSize(.fixed(200)).trackSpacing(10).lineSpacing(10).lineGrouping(grouping).alignment(.center)
 let _ = BoundarySupplementaryLayout(kind: "header", mainAxisSize: .fixed(44), sizingAxis: .vertical, alignment: .top).pinToVisibleBounds().absoluteOffset(.zero)
 var badge = ItemSupplementaryLayout(kind: "badge", size: .init(width: .absolute(10), height: .absolute(10)), itemAnchor: .top).anchorFractionalOffset(.zero); badge.itemAnchor = .bottom
 var background = DecorationItemLayout(kind: "card", backgroundInsets: .init(8)); background.backgroundInsets = .zero'
 check removed-track-alignment-type fail 'let _: ListGridTrackAlignment = .center'
-check track-group-alignment-type pass 'let alignment: ListGridTrackGroupAlignment = .center; let _ = GridLayout(tracks: 2).trackGroupAlignment(alignment)'
+check grid-alignment-type pass 'let alignment: ListGridAlignment = .center; let _ = GridLayout(tracks: 2).alignment(alignment)'
+check shared-layout-axis pass 'let axis: ListAxis = .horizontal
+let _ = ListCompositionalLayoutConfiguration(scrollDirection: axis)
+let _ = BoundarySupplementaryLayout(kind: "header", mainAxisSize: .fixed(44), sizingAxis: axis, alignment: .leading)
+let _ = WaterfallLayout(tracks: 2).crossAxisSize(200).alignment(.center)'
+check collection-lifecycle-naming pass 'let _ = Row(0, model: (), cell: UICollectionViewCell.self) { _, _, _ in }
+    .onAppear { _, _ in }.onDisappear { _, _ in }
+let _ = Supplementary("header", view: UICollectionReusableView.self) { _, _ in }
+    .onAppear { _, _ in }.onDisappear { _, _ in }.onTapGesture { _ in }
+let header: ListSectionSupplementary<Int> = SectionSupplementary(UICollectionReusableView.self, kind: "header") { _, _ in }
+let _ = header.onAppear { _, _ in }.onDisappear { _, _ in }.onTapGesture { _ in }
+let _ = ProviderSupplementary("header", view: UICollectionReusableView.self) { _, _, _ in UICollectionReusableView() }
+    .onTapGesture { _ in }'
+check table-lifecycle-naming pass 'let row = TableRow(0, model: 1, cell: UITableViewCell.self) { _, _, _ in }
+let _ = row.onAppear { _, _ in }.onDisappear { _, _ in }
+let _ = row.onAppear { _, _, _ in }.onDisappear { _, _, _ in }
+let _ = TableSection(0) { row }.header {
+    TableHeader(UITableViewHeaderFooterView.self) { _, _ in }
+        .onAppear { _, _ in }.onDisappear { _, _ in }
+}'
+check removed-grid-prefix fail 'let _ = GridLayout(tracks: 1).gridCrossAxisSize(.fixed(100))'
+check removed-track-group-alignment fail 'let _ = GridLayout(tracks: 1).trackGroupAlignment(.center)'
+check removed-track-group-alignment-type fail 'let _: ListGridTrackGroupAlignment = .center'
+check removed-scroll-direction-type fail 'let _: ListLayoutScrollDirection = .vertical'
+check removed-display-callback fail 'let _ = Row(0, model: (), cell: UICollectionViewCell.self) { _, _, _ in }.onDisplay { _, _ in }'
+check removed-end-display-callback fail 'let _ = TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }.onEndDisplay { _, _ in }'
+check removed-tap-callback fail 'let _ = Supplementary("header", view: UICollectionReusableView.self) { _, _ in }.onTap { _ in }'
 check removed-group-line-spacing-method fail 'let _ = GridLayout(tracks: 2).groupLineSpacing(8)'
 check removed-group-line-spacing-property fail 'var value = GridLayout(tracks: 2); value.groupLineSpacing = 8'
 check unified-line-spacing pass 'var value = GridLayout(tracks: 2).lineGrouping(.count(lines: 3)).lineSpacing(8).groupSpacing(20); value.lineSpacing = 12; let _: CGFloat = value.lineSpacing'

@@ -106,7 +106,7 @@ public enum ListGridLineGrouping: Hashable, Sendable {
 }
 
 /// 轨道组在交叉轴剩余空间中的对齐方式。
-public enum ListGridTrackGroupAlignment: Hashable, Sendable {
+public enum ListGridAlignment: Hashable, Sendable {
     /// 起始侧、居中与结束侧；纵向内容使用逻辑起止方向，横向内容使用上下方向。
     case start, center, end
     var fraction: CGFloat { self == .start ? 0 : self == .center ? 0.5 : 1 }
@@ -125,17 +125,17 @@ public enum ListGridCrossAxisSize: Hashable, Sendable {
 
 extension ListSectionGridLayout {
     /// 设置整个轨道区域的交叉轴尺寸；nil 恢复环境提供的可用尺寸。
-    /// fixed 完整预留区域，剩余空间由 trackGroupAlignment 分配；轨道溢出时诊断。
+    /// fixed 完整预留区域，剩余空间由 alignment 分配；轨道溢出时诊断。
     /// estimated 同时设置 item/group 的交叉轴估算值，仅支持单轨道与独立主轴尺寸。
     ///
     /// - Parameter value: 网格主体的交叉轴尺寸；`nil` 恢复使用容器可用尺寸。
     /// - Returns: 应用交叉轴尺寸后的布局副本。
-    public func gridCrossAxisSize(_ value: ListGridCrossAxisSize?) -> Self {
+    public func crossAxisSize(_ value: ListGridCrossAxisSize?) -> Self {
         var copy = self
         copy.crossAxisSizing = value
         return copy
     }
-    /// 设置当前 Section 的正交滚动。非 nil 时内容轴与外层轴垂直，tracks、itemMainAxisSize、gridCrossAxisSize 随之解释。
+    /// 设置当前 Section 的正交滚动。非 nil 时内容轴与外层轴垂直，tracks、itemMainAxisSize、crossAxisSize 随之解释。
     /// nil 关闭正交滚动并恢复跟随外层方向；不主动改写尺寸策略或分组配置。
     /// 估算主轴 group 的原生吸附可能仍按初始估算长度定位；动态内容建议 continuous，精确分页使用确定尺寸。
     ///
@@ -156,7 +156,7 @@ extension ListSectionGridLayout {
         copy.grouping = grouping
         return copy
     }
-    /// 轨道之间的默认交叉轴间距，默认 0；单条 ListGridTrack.spacingAfter 可覆盖它。
+    /// 轨道之间的默认交叉轴间距，默认 0；单条 ListGridTrack.spacing 可覆盖它。
     ///
     /// - Parameter value: 间距，单位为点，必须为有限非负数。
     /// - Returns: 应用轨道间距后的布局副本。
@@ -189,7 +189,7 @@ extension ListSectionGridLayout {
     ///
     /// - Parameter value: 轨道整体的交叉轴对齐方式。
     /// - Returns: 应用对齐方式后的布局副本。
-    public func trackGroupAlignment(_ value: ListGridTrackGroupAlignment) -> Self {
+    public func alignment(_ value: ListGridAlignment) -> Self {
         var copy = self
         copy.crossAlignment = value
         return copy

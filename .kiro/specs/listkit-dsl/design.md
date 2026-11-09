@@ -88,8 +88,8 @@ sectionID + rowID + ObjectIdentifier(Cell.self) + variant
 
 - `.onSelect`
 - `.onDeselect`
-- `.onDisplay`
-- `.onEndDisplay`
+- `.onAppear`
+- `.onDisappear`
 - `.onPrefetch`
 - `.onCancelPrefetch`
 - `.contextMenu`
@@ -98,10 +98,10 @@ sectionID + rowID + ObjectIdentifier(Cell.self) + variant
 
 Supplementary 事件：
 
-- `.onTap`
-- `.onDisplay`
-- `.onEndDisplay`
-- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTap；具体契约见 Documentation/Layout-API.md。
+- `.onTapGesture`
+- `.onAppear`
+- `.onDisappear`
+- Collection Section 布局采用完整布局值；边界/item supplementary 通过实际 kind 关联内容，decorationItems 通过逻辑 kind 关联注册。事件使用 SectionSupplementary.onTapGesture；具体契约见 Documentation/Layout-API.md。
 
 自定义事件：
 

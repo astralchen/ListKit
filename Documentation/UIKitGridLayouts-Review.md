@@ -1,6 +1,8 @@
 # UIKitGridLayouts 源码审查与集成决策
 
-> 以下保留各阶段的审查与集成决策。当前接口采用 ListGridTrack、itemMainAxisSize、gridCrossAxisSize、lineGrouping、trackSpacing、统一 lineSpacing 与可选 groupSpacing 覆盖；以 [Layout-API.md](Layout-API.md) 为准。历史命名和验证结果不表示当前 API 仍可调用。
+> 后续公开 API 已统一命名：`gridCrossAxisSize` → `crossAxisSize`，`trackGroupAlignment` → `alignment`，`ListGridTrackGroupAlignment` → `ListGridAlignment`，`ListLayoutScrollDirection` → `ListAxis`。下文保留历史命名；当前用法见 [布局指南](Layout-API.md)。
+
+> 以下保留各阶段的审查与集成决策。当前接口采用 ListGridTrack、itemMainAxisSize、crossAxisSize、alignment、lineGrouping、trackSpacing、统一 lineSpacing 与可选 groupSpacing 覆盖；以 [Layout-API.md](Layout-API.md) 为准。历史命名和验证结果不表示当前 API 仍可调用。
 
 审查版本：[89aa339cc5651147c3c6265c0c931dd701bb45a7](https://github.com/astralchen/UIKitGridLayouts/tree/89aa339cc5651147c3c6265c0c931dd701bb45a7)。审查了全部 5 个 Sources 文件、4 个测试文件、Package.swift、LICENSE 和 README 中的示例。该版本没有独立 Example app 源码目录，示例位于 README，截图位于 Documentation/Screenshots；没有把截图当作本次验证结果。
 

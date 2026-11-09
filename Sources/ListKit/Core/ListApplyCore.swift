@@ -260,6 +260,8 @@ final class ListMutationCoordinator {
 
 /// pending 队列中可合并或可替代的 mutation 类型。
 enum ListPendingMutationKind: Equatable {
+    case outlineChange
+    case rowMove
     case apply
     case rowRefresh
     case sectionReload
@@ -279,7 +281,7 @@ final class ListPendingMutationRequest {
     let kind: ListPendingMutationKind
     /// `.serial` 保留每个请求；`.coalesceLatest` 允许合并或替代。
     let updatePolicy: ListUpdatePolicy
-    /// reloadAll 必须等待 UIKit 退出内部未提交更新；其他 mutation 可直接开始。
+    /// 请求执行前是否必须等待 UIKit 完成未提交的更新。
     let requiresCommittedUpdates: Bool
     private(set) var state: State = .queued
     /// apply 等不可结构化合并请求的实际执行入口。
@@ -637,7 +639,7 @@ final class ListMutationScheduler {
         superseded?.supersede()
     }
 
-    /// 队首 reloadAll 若遇到 UIKit 未提交更新会原地保留，调用方稍后重试。
+    /// 队首请求需要等待 UIKit 时保留其位置，调用方稍后重试。
     @discardableResult
     func startNext(hasUncommittedUpdates: Bool) -> Bool {
         guard !coordinator.isExecuting, let first = pending.first else { return false }

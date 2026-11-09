@@ -4,10 +4,10 @@ import ListKit
 @MainActor
 final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .insetGrouped)
+        let tableView: UITableView = ProcessInfo.processInfo.arguments.contains("-AdminTableSelectionProbe")
+            ? AdminTableSelectionProbeView(frame: .zero, style: .insetGrouped)
+            : UITableView(frame: .zero, style: .insetGrouped)
         tableView.separatorStyle = .none
-        tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 72
         tableView.sectionHeaderHeight = UITableView.automaticDimension
         tableView.accessibilityIdentifier = "admin-table-demo-table"
         if #available(iOS 15.0, *) {
@@ -40,10 +40,18 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
         )
         editButtonItem.accessibilityIdentifier = "admin-table-reorder"
         navigationItem.rightBarButtonItem = editButtonItem
+        if let probe = tableView as? AdminTableSelectionProbeView, probe.holdsRefreshes {
+            let resume = UIBarButtonItem(title: "Resume refresh", primaryAction: UIAction { [weak probe] _ in
+                probe?.releaseHeldRender()
+            })
+            resume.accessibilityIdentifier = "admin-table-resume-render"
+            navigationItem.leftBarButtonItem = resume
+        }
     }
 
     override func buildContent() {
         tableView.allowsSelectionDuringEditing = true
+        tableView.allowsMultipleSelectionDuringEditing = true
         tableView.dragInteractionEnabled = true
         tableView.tableHeaderView = makeTableHeader()
         configureEvents()
@@ -55,8 +63,14 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
     ) {
         configureNavigation()
         tableSummaryDetailLabel.text = tableSummaryText
-        scheduleRender { [weak self, weak tableAdapter] in
+        let probe = tableView as? AdminTableSelectionProbeView
+        let generation = probe?.beginRequest()
+        scheduleRender { [weak self, weak tableAdapter, weak probe] in
             guard let self, let tableAdapter else { return }
+            if let generation {
+                await probe?.waitForRelease(generation: generation)
+            }
+            guard !Task.isCancelled else { return }
             let options = ListApplyOptions(
                 transaction: transaction,
                 applicationMode: applicationMode
@@ -66,6 +80,9 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
             }
             guard !Task.isCancelled else { return }
             self.viewModel.recordTableApply(result)
+            if result.animation.completionState == .completed, let generation {
+                probe?.complete(generation: generation)
+            }
         }
     }
 
@@ -164,8 +181,8 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
                   context.section(as: AdminSection.self) == .moderation,
                   context.item(as: String.self) != nil else { return }
             switch event {
-            case .select(let id):
-                self.viewModel.selectModeration(id)
+            case .selectionChanged(let id, let isSelected):
+                self.viewModel.setModerationSelection(id, isSelected: isSelected)
             case .resolve(let id):
                 self.viewModel.handleModeration(id)
             }
@@ -181,7 +198,73 @@ final class AdminTableDemoViewController: LiveRoomDesignScreenViewController {
     }
 
     override func setEditing(_ editing: Bool, animated: Bool) {
+        let selectedRows = tableView.indexPathsForSelectedRows ?? []
         super.setEditing(editing, animated: animated)
         tableView.setEditing(editing, animated: animated)
+        // UIKit 退出多选编辑时会清空选择；此页面在两种模式下共享同一份选择状态。
+        for indexPath in selectedRows {
+            tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+        }
+    }
+}
+
+/// 仅用于 UI 回归：每次查询都读取表格真实状态，避免把控制器的请求状态当作切换已完成。
+@MainActor
+private final class AdminTableSelectionProbeView: UITableView {
+    let holdsRefreshes = ProcessInfo.processInfo.arguments.contains("-AdminTableHoldRefreshes")
+    private var requestedGeneration = 0
+    private var completedGeneration = 0
+    private var heldGeneration: Int?
+    private var heldRender: CheckedContinuation<Void, Never>?
+
+    func beginRequest() -> Int {
+        releaseHeldRender()
+        requestedGeneration += 1
+        return requestedGeneration
+    }
+
+    func waitForRelease(generation: Int) async {
+        guard holdsRefreshes, generation > 1, generation == requestedGeneration else { return }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                heldGeneration = generation
+                heldRender = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.releaseHeldRender(generation: generation)
+            }
+        }
+    }
+
+    func releaseHeldRender(generation: Int? = nil) {
+        if let generation, heldGeneration != generation { return }
+        let continuation = heldRender
+        heldRender = nil
+        heldGeneration = nil
+        continuation?.resume()
+    }
+
+    func complete(generation: Int) {
+        guard generation == requestedGeneration else { return }
+        completedGeneration = generation
+    }
+
+    override var accessibilityValue: String? {
+        get {
+            let state: [String: Any] = [
+                "editing": isEditing,
+                "requestedGeneration": requestedGeneration,
+                "completedGeneration": completedGeneration,
+                "heldGeneration": heldGeneration ?? 0,
+            ]
+            guard let data = try? JSONSerialization.data(withJSONObject: state) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        set { super.accessibilityValue = newValue }
     }
 }

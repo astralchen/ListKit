@@ -283,6 +283,16 @@ public enum ListSectionLayoutBuilder<SectionID> where SectionID: Hashable & Send
     { value.map { .custom($0) } }
 
     /// 将布局声明转换为分区布局来源。可选值为 `nil` 时不提供布局。
+    public static func buildExpression(_ expression: ListSectionWaterfallLayout?)
+        -> ListSectionLayoutSource<SectionID>?
+    { expression.map { .builtIn(.waterfallConfiguration($0)) } }
+
+    /// 将自动测量瀑布流转换为内建布局来源。
+    public static func buildExpression(_ expression: ListSectionWaterfallLayout)
+        -> ListSectionLayoutSource<SectionID>?
+    { .builtIn(.waterfallConfiguration(expression)) }
+
+    /// 将可选网格转换为布局来源。
     public static func buildExpression(_ expression: ListSectionGridLayout?)
         -> ListSectionLayoutSource<SectionID>?
     {

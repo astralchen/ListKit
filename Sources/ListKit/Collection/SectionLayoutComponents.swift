@@ -68,7 +68,7 @@ public struct CustomLayoutBoundary: Hashable, Sendable {
 public struct BoundarySupplementaryLayout: Hashable, Sendable {
     enum Sizing: Hashable, Sendable {
         case dimensions(ListLayoutSize)
-        case crossAxis(ListBoundaryMainAxisSize, ListLayoutScrollDirection)
+        case crossAxis(ListBoundaryMainAxisSize, ListAxis)
     }
     struct Geometry: Hashable, Sendable {
         var sizing: Sizing
@@ -103,7 +103,7 @@ public struct BoundarySupplementaryLayout: Hashable, Sendable {
     ///   - sizingAxis: 尺寸规则控制的轴，垂直轴控制高度，水平轴控制宽度。
     ///   - alignment: 边界相对于分区的位置，与尺寸轴独立。
     public init(
-        kind: String, mainAxisSize: ListBoundaryMainAxisSize, sizingAxis: ListLayoutScrollDirection,
+        kind: String, mainAxisSize: ListBoundaryMainAxisSize, sizingAxis: ListAxis,
         alignment: ListBoundaryAlignment
     ) {
         self.kind = kind

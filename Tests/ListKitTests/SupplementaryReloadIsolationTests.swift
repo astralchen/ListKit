@@ -561,7 +561,7 @@ import XCTest
                     .refresh(when: .never)
                 }
             } layout: {
-                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).gridCrossAxisSize(.fixed(80)).orthogonalScrolling(behavior).trackSpacing(0).lineSpacing(0)
+                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).crossAxisSize(.fixed(80)).orthogonalScrolling(behavior).trackSpacing(0).lineSpacing(0)
                 .boundarySupplementaries {
                     BoundarySupplementaryLayout(
                         kind: "header",
@@ -698,7 +698,7 @@ import XCTest
             ListSection(0) {
                 for row in 0..<30 { Row(row, model: row, cell: ReviewCell.self) { _, _, _ in } }
             } layout: {
-                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).gridCrossAxisSize(.fixed(80)).orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0)
+                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).crossAxisSize(.fixed(80)).orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0)
                     .boundarySupplementaries {
                         BoundarySupplementaryLayout(
                             kind: "header",
@@ -765,7 +765,7 @@ import XCTest
             ListSection(0) {
                 for row in 0..<10 { Row(row, model: row, cell: ReviewCell.self) { _, _, _ in } }
             } layout: {
-                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).gridCrossAxisSize(.fixed(80)).orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0)
+                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1))).crossAxisSize(.fixed(80)).orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0)
             }
         }
         fixture?.collection.layoutIfNeeded()
@@ -868,7 +868,7 @@ private final class OtherReviewView: ReviewView {}
         Row(row, model: row, cell: ReviewCell.self) { _, _, _ in }.refresh(when: .never)
       }
     } layout: {
-      GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).gridCrossAxisSize(.fixed(80))
+      GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).crossAxisSize(.fixed(80))
         .orthogonalScrolling(.continuous).trackSpacing(0).lineSpacing(0).boundarySupplementaries {
           BoundarySupplementaryLayout(
             kind: "header", size: .init(width: .fractionalWidth(1), height: .absolute(30)),

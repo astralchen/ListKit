@@ -28,7 +28,7 @@ final class DeclarativeLayoutTests: XCTestCase {
         let invalid = ListSection(0) {
         } layout: {
             GridLayout(tracks: [
-                ListGridTrack(.adaptive(minimumForCount: .nan)), ListGridTrack(.fixed(-1), spacingAfter: .infinity),
+                ListGridTrack(.adaptive(minimum: .nan)), ListGridTrack(.fixed(-1), spacing: .infinity),
             ])
             .itemMainAxisSize(.aspectRatio(0)).sectionInsets(.init(-1))
             .boundarySupplementaries {
@@ -151,7 +151,7 @@ final class DeclarativeLayoutTests: XCTestCase {
         let f = LayoutFixture(width: 400, count: 3)
         defer { f.close() }
         f.apply(
-            GridLayout(tracks: [ListGridTrack(.adaptive(minimumForCount: 80))]).trackSpacing(12).lineSpacing(12).sectionInsets(.init(20)))
+            GridLayout(tracks: [ListGridTrack(.adaptive(minimum: 80))]).trackSpacing(12).lineSpacing(12).sectionInsets(.init(20)))
         let env = TestLayoutEnvironment()
         env.container = InsetLayoutContainer()
         let adapter = f.adapter
@@ -193,7 +193,7 @@ final class DeclarativeLayoutTests: XCTestCase {
     func testAdaptiveResizeAndStateApplyKeepTheSameLayoutInstance() throws {
         let f = LayoutFixture(width: 360, count: 7)
         defer { f.close() }
-        f.apply(GridLayout(tracks: [ListGridTrack(.adaptive(minimumForCount: 100))]).itemMainAxisSize(.aspectRatio(1)).trackSpacing(10).lineSpacing(10))
+        f.apply(GridLayout(tracks: [ListGridTrack(.adaptive(minimum: 100))]).itemMainAxisSize(.aspectRatio(1)).trackSpacing(10).lineSpacing(10))
         f.render()
         let layout = f.collection.collectionViewLayout
         XCTAssertEqual(try f.frame(2).minY, 0, accuracy: 0.5)
@@ -213,10 +213,10 @@ final class DeclarativeLayoutTests: XCTestCase {
             defer { f.close() }
             f.apply(
                 GridLayout(tracks: [
-                        ListGridTrack(.fixed(70), spacingAfter: 4), ListGridTrack(.fixed(90), spacingAfter: 17),
+                        ListGridTrack(.fixed(70), spacing: 4), ListGridTrack(.fixed(90), spacing: 17),
                         ListGridTrack(.fixed(60)),
                 ]
-                ).trackGroupAlignment(.end)
+                ).alignment(.end)
                 .trackSpacing(12).lineSpacing(12).sectionInsets(.init(10)))
             f.render()
             // UIKit keeps logical layout attributes; compare rendered cells in window coordinates for RTL.

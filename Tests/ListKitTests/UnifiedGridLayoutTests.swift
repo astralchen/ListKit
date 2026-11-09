@@ -30,7 +30,7 @@ final class UnifiedGridLayoutTests: XCTestCase {
                         for i in 0..<6 { Row(i, model: i, cell: UICollectionViewCell.self) { _, _, _ in } }
                     } layout: {
                         if sectionID == 1 {
-                            GridLayout(tracks: 2).itemMainAxisSize(.fixed(80)).gridCrossAxisSize(.fixed(height))
+                            GridLayout(tracks: 2).itemMainAxisSize(.fixed(80)).crossAxisSize(.fixed(height))
                                 .orthogonalScrolling(.continuous).trackSpacing(10).lineSpacing(10)
                         } else {
                             GridLayout(tracks: 2).itemMainAxisSize(.fixed(50)).trackSpacing(10).lineSpacing(10)
@@ -57,7 +57,7 @@ final class UnifiedGridLayoutTests: XCTestCase {
     }
 
     func testDirectionMatrixAndItemDimensions() throws {
-        for outer in [ListLayoutScrollDirection.vertical, .horizontal] {
+        for outer in [ListAxis.vertical, .horizontal] {
             for orthogonal in [false, true] {
                 let fixture = LayoutFixture(width: 360, count: 7, horizontal: outer == .horizontal)
                 defer { fixture.close() }
@@ -65,7 +65,7 @@ final class UnifiedGridLayoutTests: XCTestCase {
                 var grid = GridLayout(tracks: 2).itemMainAxisSize(.fixed(90)).trackSpacing(10).lineSpacing(10)
                 if orthogonal {
                     grid = grid.orthogonalScrolling(.continuous)
-                        .gridCrossAxisSize(.fixed(230))
+                        .crossAxisSize(.fixed(230))
                 }
                 fixture.apply(grid); fixture.render()
                 XCTAssertTrue(fixture.adapter.lastLayoutDiagnostics.isEmpty)
@@ -79,11 +79,11 @@ final class UnifiedGridLayoutTests: XCTestCase {
     }
 
     func testTwoByThreeGroupsTailAndIndependentSpacing() throws {
-        for outer in [ListLayoutScrollDirection.vertical, .horizontal] {
+        for outer in [ListAxis.vertical, .horizontal] {
             let fixture = LayoutFixture(width: 360, count: 7, horizontal: outer == .horizontal)
             defer { fixture.close() }
             let grid = GridLayout(tracks: 2).itemMainAxisSize(.fillGroup).trackSpacing(10).lineSpacing(10)
-                .gridCrossAxisSize(.fixed(230))
+                .crossAxisSize(.fixed(230))
                 .orthogonalScrolling(.groupPaging)
                 .lineGrouping(.count(lines: 3, mainAxisSize: .fixed(320))).groupSpacing(20)
             fixture.apply(grid); fixture.render()
@@ -100,7 +100,7 @@ final class UnifiedGridLayoutTests: XCTestCase {
         let f = LayoutFixture(width: 390, count: 8)
         defer { f.close() }
         f.apply(
-            GridLayout(tracks: 1).itemMainAxisSize(.fixed(92)).gridCrossAxisSize(.fixed(112))
+            GridLayout(tracks: 1).itemMainAxisSize(.fixed(92)).crossAxisSize(.fixed(112))
                 .trackSpacing(10).lineSpacing(10).sectionInsets(.init(leading: 14, trailing: 14))
                 .lineGrouping(.fitting(mainAxisSize: .fractionalViewport(1)))
                 .orthogonalScrolling(.continuousGroupLeadingBoundary))
@@ -114,12 +114,12 @@ final class UnifiedGridLayoutTests: XCTestCase {
     func testAlignmentBothAxesAndRTL() throws {
         for horizontal in [false, true] {
             for rtl in [false, true] {
-                for alignment in [ListGridTrackGroupAlignment.start, .center, .end] {
+                for alignment in [ListGridAlignment.start, .center, .end] {
                     let f = LayoutFixture(width: 360, count: 4, rtl: rtl, horizontal: horizontal)
                     defer { f.close() }
                     f.apply(
                         GridLayout(tracks: [.init(.fixed(70)), .init(.fixed(90))])
-                            .itemMainAxisSize(.fixed(50)).trackSpacing(10).lineSpacing(10).trackGroupAlignment(alignment))
+                            .itemMainAxisSize(.fixed(50)).trackSpacing(10).lineSpacing(10).alignment(alignment))
                     f.render()
                     let frames = try (0..<2).map { index in
                         let cell = try XCTUnwrap(
@@ -140,12 +140,12 @@ final class UnifiedGridLayoutTests: XCTestCase {
         defer { f.close() }
         f.apply(
             GridLayout(tracks: 1).itemMainAxisSize(.fractionalViewport(0.5))
-                .gridCrossAxisSize(.fixed(80)).orthogonalScrolling(.continuous).trackSpacing(10).lineSpacing(10))
+                .crossAxisSize(.fixed(80)).orthogonalScrolling(.continuous).trackSpacing(10).lineSpacing(10))
         f.render()
         XCTAssertEqual(try f.frame(0).width, 180, accuracy: 0.5)
         f.apply(
             GridLayout(tracks: 1).itemMainAxisSize(.fractionalGroup(0.4))
-                .gridCrossAxisSize(.fixed(80)).orthogonalScrolling(.continuous)
+                .crossAxisSize(.fixed(80)).orthogonalScrolling(.continuous)
                 .lineGrouping(.count(lines: 2, mainAxisSize: .fixed(300))).trackSpacing(10).lineSpacing(10).groupSpacing(20))
         f.render()
         XCTAssertEqual(try f.frame(0).width, 120, accuracy: 0.5)
@@ -162,9 +162,9 @@ final class UnifiedGridLayoutTests: XCTestCase {
             GridLayout(tracks: 1).itemMainAxisSize(.fractionalGroup(1)),
             GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).lineGrouping(.count(lines: 3, mainAxisSize: .fixed(200))),
             GridLayout(tracks: 1).itemMainAxisSize(.estimated(44)).lineGrouping(.fitting(mainAxisSize: .fixed(300))),
-            GridLayout(tracks: 1).gridCrossAxisSize(.fixed(0)),
-            GridLayout(tracks: 2).gridCrossAxisSize(.estimated(100)),
-            GridLayout(tracks: 1).gridCrossAxisSize(.fixed(.nan)),
+            GridLayout(tracks: 1).crossAxisSize(.fixed(0)),
+            GridLayout(tracks: 2).crossAxisSize(.estimated(100)),
+            GridLayout(tracks: 1).crossAxisSize(.fixed(.nan)),
             GridLayout(tracks: 1).groupSpacing(-1),
             GridLayout(tracks: 1).lineGrouping(.count(lines: 0)),
             GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).lineGrouping(.fitting(mainAxisSize: .fixed(10))),
@@ -175,21 +175,21 @@ final class UnifiedGridLayoutTests: XCTestCase {
     func testValueSemanticsModifierOrderAndFrameReplacement() {
         let base = GridLayout(tracks: 2)
         XCTAssertEqual(base.crossAlignment, .start)
-        let a = base.gridCrossAxisSize(.fixed(200)).orthogonalScrolling(.groupPaging)
-            .lineGrouping(.count(lines: 3, mainAxisSize: .fixed(300))).itemMainAxisSize(.fillGroup).trackGroupAlignment(.end)
-        let b = base.trackGroupAlignment(.end).itemMainAxisSize(.fillGroup).lineGrouping(.count(lines: 3, mainAxisSize: .fixed(300)))
-            .orthogonalScrolling(.groupPaging).gridCrossAxisSize(.fixed(200))
+        let a = base.crossAxisSize(.fixed(200)).orthogonalScrolling(.groupPaging)
+            .lineGrouping(.count(lines: 3, mainAxisSize: .fixed(300))).itemMainAxisSize(.fillGroup).alignment(.end)
+        let b = base.alignment(.end).itemMainAxisSize(.fillGroup).lineGrouping(.count(lines: 3, mainAxisSize: .fixed(300)))
+            .orthogonalScrolling(.groupPaging).crossAxisSize(.fixed(200))
         XCTAssertEqual(a, b)
         XCTAssertEqual(Set([a, b]).count, 1)
         XCTAssertNotEqual(base, a)
-        XCTAssertEqual(base.gridCrossAxisSize(.fixed(100)).gridCrossAxisSize(.fixed(200)), base.gridCrossAxisSize(.fixed(200)))
+        XCTAssertEqual(base.crossAxisSize(.fixed(100)).crossAxisSize(.fixed(200)), base.crossAxisSize(.fixed(200)))
         XCTAssertEqual(base.trackSpacing(2).lineSpacing(2).trackSpacing(9).lineSpacing(9), base.trackSpacing(9).lineSpacing(9))
-        XCTAssertEqual(base.gridCrossAxisSize(.estimated(100)).gridCrossAxisSize(.fixed(200)), base.gridCrossAxisSize(.fixed(200)))
+        XCTAssertEqual(base.crossAxisSize(.estimated(100)).crossAxisSize(.fixed(200)), base.crossAxisSize(.fixed(200)))
         XCTAssertNotEqual(a, a.groupSpacing(99))
     }
 
     func testAdaptiveGroupCountsResolvedTracks() throws {
-        let grid = GridLayout(tracks: [.init(.adaptive(minimumForCount: 100))]).trackSpacing(10).lineSpacing(10)
+        let grid = GridLayout(tracks: [.init(.adaptive(minimum: 100))]).trackSpacing(10).lineSpacing(10)
             .itemMainAxisSize(.fixed(50)).lineGrouping(.count(lines: 3))
         let geometry = try grid.geometry(in: TestLayoutEnvironment(), scrollDirection: .vertical)
         XCTAssertEqual(geometry.tracks.count, 3)
@@ -200,11 +200,11 @@ final class UnifiedGridLayoutTests: XCTestCase {
     func testFrameGroupAndAxisChangesInvalidateExistingLayout() throws {
         let f = LayoutFixture(width: 360, count: 8)
         defer { f.close() }
-        let grid = GridLayout(tracks: 1).itemMainAxisSize(.fixed(80)).gridCrossAxisSize(.fixed(100))
+        let grid = GridLayout(tracks: 1).itemMainAxisSize(.fixed(80)).crossAxisSize(.fixed(100))
             .orthogonalScrolling(.continuous)
         f.apply(grid); f.render()
         let layout = f.collection.collectionViewLayout
-        f.apply(grid.gridCrossAxisSize(.fixed(150)).lineGrouping(.count(lines: 2)).groupSpacing(30)); f.render()
+        f.apply(grid.crossAxisSize(.fixed(150)).lineGrouping(.count(lines: 2)).groupSpacing(30)); f.render()
         XCTAssertTrue(layout === f.collection.collectionViewLayout)
         XCTAssertEqual(try f.frame(0).height, 150, accuracy: 0.5)
         XCTAssertEqual(try f.frame(2).minX - f.frame(0).minX, 190, accuracy: 0.5)
@@ -221,7 +221,7 @@ final class UnifiedGridLayoutTests: XCTestCase {
                         }
                     } layout: {
                         GridLayout(tracks: 1).itemMainAxisSize(.fixed(90))
-                            .gridCrossAxisSize(.estimated(40))
+                            .crossAxisSize(.estimated(40))
                             .orthogonalScrolling(.continuous)
                     }
                 ], transaction: .disabled)
@@ -240,7 +240,7 @@ final class UnifiedGridLayoutTests: XCTestCase {
                 ListSection(0) {
                     for i in 0..<7 { Row(i, model: i, cell: UICollectionViewCell.self) { _, _, _ in } }
                 } layout: {
-                    GridLayout(tracks: 2).itemMainAxisSize(.fillGroup).gridCrossAxisSize(.fixed(220)).trackSpacing(10).lineSpacing(10)
+                    GridLayout(tracks: 2).itemMainAxisSize(.fillGroup).crossAxisSize(.fixed(220)).trackSpacing(10).lineSpacing(10)
                         .lineGrouping(.count(lines: 3, mainAxisSize: .fixed(320))).orthogonalScrolling(.groupPaging)
                         .itemSupplementaries {
                             ItemSupplementaryLayout(
@@ -268,7 +268,7 @@ final class UnifiedGridLayoutTests: XCTestCase {
         defer { f.close() }
         f.apply(
             GridLayout(tracks: 1).itemMainAxisSize(.fixed(30)).trackSpacing(10).lineSpacing(10).groupSpacing(20)
-                .lineGrouping(.count(lines: 1, mainAxisSize: .fixed(300))).gridCrossAxisSize(.fixed(100)).orthogonalScrolling(.continuous))
+                .lineGrouping(.count(lines: 1, mainAxisSize: .fixed(300))).crossAxisSize(.fixed(100)).orthogonalScrolling(.continuous))
         f.render()
         XCTAssertEqual(try f.frame(1).minX - f.frame(0).minX, 320, accuracy: 1)
     }

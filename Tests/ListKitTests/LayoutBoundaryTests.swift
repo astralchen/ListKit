@@ -33,13 +33,13 @@ import XCTest
         } supplementaries: {
             SectionSupplementary(
                 UICollectionReusableView.self, kind: "title", elementID: 1
-            ) { _, _ in }.onTap { _ in }
+            ) { _, _ in }.onTapGesture { _ in }
                 .refreshID(1)
 
             SectionSupplementary(
                 UICollectionReusableView.self, kind: "summary", elementID: 2
-            ) { _, _ in }.onTap { _ in }
-                .onDisplay { _, _ in }
+            ) { _, _ in }.onTapGesture { _ in }
+                .onAppear { _, _ in }
         }
         XCTAssertEqual(
             section.supplementaries.map(\.kind),
@@ -350,7 +350,7 @@ import XCTest
                 ListSection(0) {
                 } layout: {
                     // Positive size passes static validation; tracks overflow during environment resolution.
-                    GridLayout(tracks: 2).gridCrossAxisSize(.fixed(1))
+                    GridLayout(tracks: 2).crossAxisSize(.fixed(1))
                 }
             ], transaction: .disabled)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))

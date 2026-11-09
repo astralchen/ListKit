@@ -297,7 +297,7 @@ final class StablePagingProbeViewController: UIViewController, UICollectionViewD
         collection.setCollectionViewLayout(makeLayout(), animated: false)
         collection.layoutIfNeeded()
         if restorePage, let pageStart {
-            let restore = { [weak self, generation] in
+            let restore: @MainActor @Sendable () -> Void = { [weak self, generation] in
                 guard let self, self.generation == generation else { return }
                 collection.layoutIfNeeded()
                 // .left 对照用于启用 layout flipping 的 RTL；实际停靠用屏幕右边缘独立验收。

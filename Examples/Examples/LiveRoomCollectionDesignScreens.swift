@@ -52,9 +52,14 @@ class LiveRoomCollectionDesignScreenViewController: LiveRoomDesignScreenViewCont
             self?.performNavigationAction(action)
         }
         navigationItem.rightBarButtonItem = navigationMenuItem
-        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Grid", primaryAction: UIAction { [weak self] _ in
+        let grid = UIBarButtonItem(title: "Grid", primaryAction: UIAction { [weak self] _ in
             self?.navigationController?.pushViewController(LayoutLabViewController(), animated: true)
         })
+        let waterfall = UIBarButtonItem(title: "Waterfall", primaryAction: UIAction { [weak self] _ in
+            self?.navigationController?.pushViewController(WaterfallDemoViewController(), animated: true)
+        })
+        waterfall.accessibilityIdentifier = "open-waterfall-demo"
+        navigationItem.leftBarButtonItems = [grid, waterfall]
     }
 
     override func buildContent() {

@@ -71,6 +71,8 @@ where SectionID: Hashable & Sendable {
     private var dataSource: TableDiffableDataSource<SectionID>!
     /// 当前描述树按 presentation identity 建立的 Row 查询表。
     private var rowsByIdentity: [AnyListIdentity: AnyTableRow] = [:]
+    /// 当前快照中已声明的行高，同时供实际高度和估算高度查询。
+    private var rowHeightsByIdentity: [AnyListIdentity: TableHeight] = [:]
     /// Cell 开始展示时捕获的 Row，确保结束展示回调不受后续 snapshot 复用影响。
     private var displayedRowsByCell: [ObjectIdentifier: AnyTableRow] = [:]
     /// header/footer 开始展示时捕获的 supplementary 描述。
@@ -93,8 +95,8 @@ where SectionID: Hashable & Sendable {
     /// Collection 与 Table 共用同一套 mutation 排队、合并和 UIKit commit gate。
     private let mutationScheduler = ListMutationScheduler()
     private var mutationCoordinator: ListMutationCoordinator { mutationScheduler.coordinator }
-    /// 防止 UIKit 尚有未提交更新时重复安排 reloadAll 重试定时器。
-    private var isReloadAllRetryScheduled = false
+    /// 防止 UIKit 尚有未提交更新时重复调度队首请求。
+    private var isPendingMutationRetryScheduled = false
     /// 按事件类型保存 adapter 级处理闭包。
     private let eventRouter = ListEventRouter<TableListContext>()
 
@@ -221,7 +223,7 @@ where SectionID: Hashable & Sendable {
     /// 因此同步返回不代表重载已经执行。可用于未纳入刷新标识的语言、布局方向或主题变化。
     ///
     /// - Important: 此方法不会重建描述树。配置闭包应在执行时读取最新环境；
-    ///   如果本地化文案已作为值保存在旧 model 中，请先更新数据并使用 `apply`。
+    ///   每行的高度规则在重载时重新求值。如果本地化文案已作为值保存在旧 model 中，请先更新数据并使用 `apply`。
     /// - Returns: 本次强制刷新的初始结果；最终摘要可从 `lastApplySummary` 获取。
     @discardableResult
     public func reloadAll(
@@ -646,6 +648,7 @@ where SectionID: Hashable & Sendable {
             enqueuePendingMutation(ListPendingMutationRequest(
                 kind: .apply,
                 updatePolicy: resolvedTransaction.updatePolicy,
+                requiresCommittedUpdates: options.applicationMode == .reloadData,
                 subscriberID: subscriberID,
                 onCancel: {
                     completion?(deferredSummary.replacingAnimation(
@@ -724,15 +727,17 @@ where SectionID: Hashable & Sendable {
             return summary
         }
 
+        // 行高闭包可以同步发起下一次 apply；先占用提交阶段，让重入请求进入现有队列。
+        let mutationToken = mutationCoordinator.begin(
+            kind: .apply,
+            updatePolicy: resolvedTransaction.updatePolicy
+        )
+
         // 高度规则独立于内容刷新；复用本次 apply 的布局更新来重测已有内容。
-        let heightRulesChanged = newSections.contains { section in
+        let supplementaryHeightsChanged = newSections.contains { section in
             guard let previous = previousSections[section.id] else { return false }
-            if previous.effectiveHeaderHeight != section.effectiveHeaderHeight
-                || previous.effectiveFooterHeight != section.effectiveFooterHeight { return true }
-            return section.rows.contains { row in
-                guard let old = rowsByIdentity[row.identity] else { return false }
-                return (old.height ?? previous.layout.rowHeight) != (row.height ?? section.layout.rowHeight)
-            }
+            return previous.effectiveHeaderHeight != section.effectiveHeaderHeight
+                || previous.effectiveFooterHeight != section.effectiveFooterHeight
         }
 
         let visibleAnchor: TableVisibleRowAnchor?
@@ -755,7 +760,7 @@ where SectionID: Hashable & Sendable {
             let retainedIDs = Set(newSections.map(\.id))
             delegateViews = delegateViews.filter { retainedIDs.contains($0.key) }
         }
-        rebuildLookupTables(in: tableView)
+        let rowHeightsChanged = rebuildLookupTables(in: tableView)
         configureSelectionBehavior()
 
         var snapshot = NSDiffableDataSourceSnapshot<AnyListID, AnyListIdentity>()
@@ -797,10 +802,6 @@ where SectionID: Hashable & Sendable {
             )
             completion?(supersededSummary)
         }
-        let mutationToken = mutationCoordinator.begin(
-            kind: .apply,
-            updatePolicy: resolvedTransaction.updatePolicy
-        )
         let finishAsSuperseded = { [weak self] in
             guard let self else { return }
             self.mutationCoordinator.finish(mutationToken)
@@ -865,7 +866,7 @@ where SectionID: Hashable & Sendable {
                 self.performNextPendingMutationIfNeeded()
             }
 
-            var needsLayoutInvalidation = heightRulesChanged || options.applicationMode == .reloadData
+            var needsLayoutInvalidation = rowHeightsChanged || supplementaryHeightsChanged || options.applicationMode == .reloadData
                 || !applyPlan.snapshotLayoutInvalidationItems.isEmpty
             if applyPlan.shouldRunVisibleRefresh {
                 let refresh = self.refreshVisibleRowsIfNeeded(
@@ -1413,6 +1414,11 @@ where SectionID: Hashable & Sendable {
         lastApplySummary = summary
         ListApplyLogger.logDiagnostics(issues: summary.diagnosticsIssues, options: options)
 
+        let mutationToken = mutationCoordinator.begin(
+            kind: .reloadAll,
+            updatePolicy: request.transaction.updatePolicy
+        )
+
         let visibleAnchor: TableVisibleRowAnchor?
         switch resolvedTransaction.scrollBehavior.storage {
         case .preserveVisiblePosition(let target):
@@ -1428,10 +1434,7 @@ where SectionID: Hashable & Sendable {
 
         applyGeneration += 1
         let generation = applyGeneration
-        let mutationToken = mutationCoordinator.begin(
-            kind: .reloadAll,
-            updatePolicy: request.transaction.updatePolicy
-        )
+        rowHeightsByIdentity = resolveRowHeights()
         let metrics = TableApplyAnimationMetrics()
 
         let completeAsSuperseded = {
@@ -1630,18 +1633,18 @@ where SectionID: Hashable & Sendable {
         if !mutationScheduler.isExecuting,
            mutationScheduler.hasPendingRequests,
            hasUncommittedUpdates {
-            scheduleReloadAllRetry()
+            schedulePendingMutationRetry()
         }
     }
 
     /// UIKit 正在提交内部更新时短暂退避，避免 reloadData 与未完成更新交错。
-    private func scheduleReloadAllRetry() {
-        guard !isReloadAllRetryScheduled else { return }
-        isReloadAllRetryScheduled = true
+    private func schedulePendingMutationRetry() {
+        guard !isPendingMutationRetryScheduled else { return }
+        isPendingMutationRetryScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.isReloadAllRetryScheduled = false
+                self.isPendingMutationRetryScheduled = false
                 self.performNextPendingMutationIfNeeded()
             }
         }
@@ -1823,6 +1826,18 @@ where SectionID: Hashable & Sendable {
             row.highlightChangeHandler?(false, context(for: indexPath, identity: row.identity))
         }
         tableDelegate?.tableView?(tableView, didUnhighlightRowAt: indexPath)
+    }
+
+    /// 按行判断主要操作，避免 UIKit 将普通多选点击当作独占选择。
+    /// 外部代理的显式判断优先；未指定时根据 Row 或代理是否提供动作推断。
+    @available(iOS 16.0, tvOS 16.0, *)
+    public func tableView(_ tableView: UITableView, canPerformPrimaryActionForRowAt indexPath: IndexPath) -> Bool {
+        guard let row = row(at: indexPath) else { return false }
+        if let allowed = tableDelegate?.tableView?(tableView, canPerformPrimaryActionForRowAt: indexPath) {
+            return allowed
+        }
+        return row.primaryActionHandler != nil
+            || tableDelegateResponds(to: #selector(UITableViewDelegate.tableView(_:performPrimaryActionForRowAt:)))
     }
 
     /// 执行条目的主要操作处理器，并转发外部代理。
@@ -2072,12 +2087,11 @@ where SectionID: Hashable & Sendable {
     }
 
     private func rowHeight(at indexPath: IndexPath) -> TableHeight? {
-        guard let section = sections[safe: indexPath.section],
-              let row = section.rows[safe: indexPath.row] else { return nil }
-        return row.height ?? section.layout.rowHeight
+        guard let row = row(at: indexPath) else { return nil }
+        return rowHeightsByIdentity[row.identity]
     }
 
-    /// 按单行规则、分区规则、外部代理和表格默认行高的顺序返回行高。
+    /// 按分区规则、外部代理和表格默认行高的顺序返回行高。
     public func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         rowHeight(at: indexPath)?.resolvedHeight
             ?? tableDelegate?.tableView?(tableView, heightForRowAt: indexPath)
@@ -2228,6 +2242,17 @@ where SectionID: Hashable & Sendable {
     /// 更新内部条目顺序，并将移动前后的位置通知条目处理器和外部数据源。
     public func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
         guard let movedRow = row(at: sourceIndexPath) else { return }
+        // 跨分区时，行高闭包、onMove 和外部数据源必须观察同一次移动。
+        let needsMoveToken = sourceIndexPath.section != destinationIndexPath.section && !mutationCoordinator.isExecuting
+        let moveToken = needsMoveToken ? mutationCoordinator.begin(kind: .rowMove, updatePolicy: .serial) : nil
+        defer {
+            if let moveToken {
+                mutationCoordinator.finish(moveToken)
+                if mutationScheduler.hasPendingRequests {
+                    Task { @MainActor [weak self] in self?.performNextPendingMutationIfNeeded() }
+                }
+            }
+        }
         moveRowDescription(from: sourceIndexPath, to: destinationIndexPath)
         movedRow.moveHandler?(sourceIndexPath, destinationIndexPath)
         tableDataSource?.tableView?(tableView, moveRowAt: sourceIndexPath, to: destinationIndexPath)
@@ -2421,17 +2446,36 @@ where SectionID: Hashable & Sendable {
         return true
     }
 
-    private func rebuildLookupTables(in tableView: UITableView) {
-        rowsByIdentity = [:]
+    /// apply 和 reloadAll 共用同一轮求值，随后 UIKit 的所有高度查询都读取该轮结果。
+    private func resolveRowHeights() -> [AnyListIdentity: TableHeight] {
+        var heights: [AnyListIdentity: TableHeight] = [:]
+        for section in sections {
+            for row in section.rows {
+                heights[row.identity] = section.layout.height(for: row.identity.rowID)
+            }
+        }
+        return heights
+    }
 
+    /// 重建已接受快照的查询表，并返回已有行是否需要按新的高度规则重新测量。
+    private func rebuildLookupTables(in tableView: UITableView) -> Bool {
+        var rows: [AnyListIdentity: AnyTableRow] = [:]
+        let heights = resolveRowHeights()
+        var heightsChanged = false
         for section in sections {
             section.header?.register(tableView)
             section.footer?.register(tableView)
             for row in section.rows {
                 row.register(tableView)
-                rowsByIdentity[row.identity] = row
+                rows[row.identity] = row
+                if rowHeightsByIdentity[row.identity] != heights[row.identity], rowsByIdentity[row.identity] != nil {
+                    heightsChanged = true
+                }
             }
         }
+        rowsByIdentity = rows
+        rowHeightsByIdentity = heights
+        return heightsChanged
     }
 
     private static func makeCoreSnapshots(from sections: [TableSection<SectionID>]) -> [ListSectionSnapshot] {
@@ -2782,6 +2826,8 @@ where SectionID: Hashable & Sendable {
         let movedRow = sections[source.section].rows.remove(at: source.row)
         let insertionIndex = min(destination.row, sections[destination.section].rows.count)
         sections[destination.section].rows.insert(movedRow, at: insertionIndex)
+        guard source.section != destination.section else { return }
+        rowHeightsByIdentity[movedRow.identity] = sections[destination.section].layout.height(for: movedRow.identity.rowID)
     }
 
     private func row(at indexPath: IndexPath) -> AnyTableRow? {

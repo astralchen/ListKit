@@ -105,8 +105,6 @@ public struct AnyTableRow {
     public let selectionFollowsFocus: Bool?
     /// 是否允许弹簧加载交互；`nil` 时查询外部代理，代理未提供结果时允许。
     public let isSpringLoadingEnabled: Bool?
-    /// 条目的高度规则；省略时继承分区的默认行高。
-    public let height: TableHeight?
     /// Row 的缩进层级；`nil` 使用 Cell/UITableView 默认值。
     public let indentationLevel: Int?
     /// 编辑状态下是否保持系统缩进；`nil` 使用 UIKit 默认值。
@@ -221,7 +219,6 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     private var rowIsFocusable: Bool?
     private var rowSelectionFollowsFocus: Bool?
     private var rowIsSpringLoadingEnabled: Bool?
-    private var rowHeight: TableHeight?
     private var rowIndentationLevel: Int?
     private var rowShouldIndentWhileEditing: Bool?
     private var rowSelectHandler: (@MainActor (TableListContext) -> Void)?
@@ -342,15 +339,6 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     public func contentTransition(_ transition: ListContentTransition) -> Self {
         var copy = self
         copy.rowContentTransition = transition
-        return copy
-    }
-
-    /// 设置 row 高度。
-    ///
-    /// - Parameter height: 固定高度、自动高度或估算高度描述。
-    public func height(_ height: TableHeight) -> Self {
-        var copy = self
-        copy.rowHeight = height
         return copy
     }
 
@@ -513,7 +501,8 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 监听 cell 即将展示。
     ///
     /// - Parameter handler: 展示回调。
-    public func onDisplay(_ handler: @escaping @MainActor (Cell, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (Cell, TableListContext) -> Void) -> Self {
         var copy = self
         copy.rowDisplayHandler = handler
         return copy
@@ -522,9 +511,10 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 监听 cell 即将展示，并传入当前 model。
     ///
     /// - Parameter handler: 展示回调。
-    public func onDisplay(_ handler: @escaping @MainActor (Model, Cell, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (Model, Cell, TableListContext) -> Void) -> Self {
         let boxedModel = TableMainActorValueBox(value: model)
-        return onDisplay { cell, context in
+        return onAppear { cell, context in
             handler(boxedModel.value, cell, context)
         }
     }
@@ -532,7 +522,8 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 监听 cell 结束展示。
     ///
     /// - Parameter handler: 结束展示回调。
-    public func onEndDisplay(_ handler: @escaping @MainActor (Cell, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (Cell, TableListContext) -> Void) -> Self {
         var copy = self
         copy.rowEndDisplayHandler = handler
         return copy
@@ -541,9 +532,10 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
     /// 监听 cell 结束展示，并传入当前 model。
     ///
     /// - Parameter handler: 结束展示回调。
-    public func onEndDisplay(_ handler: @escaping @MainActor (Model, Cell, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (Model, Cell, TableListContext) -> Void) -> Self {
         let boxedModel = TableMainActorValueBox(value: model)
-        return onEndDisplay { cell, context in
+        return onDisappear { cell, context in
             handler(boxedModel.value, cell, context)
         }
     }
@@ -762,7 +754,6 @@ public struct TableRow<ID, Model, Cell>: TableRowRepresentable where ID: Hashabl
             isFocusable: rowIsFocusable,
             selectionFollowsFocus: rowSelectionFollowsFocus,
             isSpringLoadingEnabled: rowIsSpringLoadingEnabled,
-            height: rowHeight,
             indentationLevel: rowIndentationLevel,
             shouldIndentWhileEditing: rowShouldIndentWhileEditing,
             contentTransition: rowContentTransition,
@@ -1097,7 +1088,8 @@ public struct TableSectionSupplementary<SectionID, Role> where SectionID: Hashab
     /// 监听 header/footer 即将展示。
     ///
     /// - Parameter handler: 展示回调。
-    public func onDisplay(_ handler: @escaping @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void) -> Self {
         mapSupplementary { supplementary in
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,
@@ -1115,7 +1107,8 @@ public struct TableSectionSupplementary<SectionID, Role> where SectionID: Hashab
     /// 监听 header/footer 结束展示。
     ///
     /// - Parameter handler: 结束展示回调。
-    public func onEndDisplay(_ handler: @escaping @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (UITableViewHeaderFooterView, TableListContext) -> Void) -> Self {
         mapSupplementary { supplementary in
             AnyTableSectionSupplementary(
                 identity: supplementary.identity,

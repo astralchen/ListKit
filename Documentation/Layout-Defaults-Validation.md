@@ -1,5 +1,7 @@
 # 布局默认值调整与验证
 
+> 后续单轨道间距命名已参照 SwiftUI 改为 `ListGridTrack.spacing`（初始化标签为 `spacing:`）；下文 `spacingAfter` 为历史命名，间距行为不变。
+
 > 后续间距 API 已统一：删除 gridSpacing，groupLineSpacing 改为 lineSpacing，groupSpacing 改为可选覆盖（nil 跟随 lineSpacing）。下文为当时的实现与验证记录；当前契约见 [布局指南](Layout-API.md#滚动与间距)。
 
 日期：2026-10-29。按明确选择，将 Grid 的 item 主轴尺寸默认改为 estimated(44)，三层间距默认均改为 0。未提交或推送。当前用法见 [布局指南](Layout-API.md#入口与默认值)。

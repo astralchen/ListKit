@@ -78,11 +78,11 @@ final class ListLayoutDirectionSource {
     /// 弱引用实际布局，供解析时读取最新滚动方向，避免与布局提供者形成循环引用。
     weak var layout: UICollectionViewCompositionalLayout?
     /// 尚未关联布局或布局已释放时使用的初始滚动方向。
-    let initial: ListLayoutScrollDirection
+    let initial: ListAxis
     /// 保存回退方向，实际布局可在创建后再关联。
-    init(initial: ListLayoutScrollDirection) { self.initial = initial }
+    init(initial: ListAxis) { self.initial = initial }
     /// 优先读取当前 UIKit 布局配置中的滚动方向，布局不可用时返回初始值。
-    var current: ListLayoutScrollDirection {
+    var current: ListAxis {
         guard let layout else { return initial }
         return layout.configuration.scrollDirection == .horizontal ? .horizontal : .vertical
     }

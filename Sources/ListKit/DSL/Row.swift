@@ -109,6 +109,7 @@ public struct AnyListRow {
     let leadingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let trailingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let moveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
+    var measurement: ListCellMeasurement? = nil
 
     var hasAutomaticSelectionIntent: Bool {
         isSelected != nil
@@ -527,7 +528,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     ///
     /// - Parameter handler: cell 即将展示时收到 cell 和 context 的闭包。
     /// - Returns: 绑定事件后的 Row。
-    public func onDisplay(_ handler: @escaping @MainActor (Cell, ListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (Cell, ListContext) -> Void) -> Self {
         var copy = self
         copy.rowDisplayHandler = handler
         return copy
@@ -537,7 +539,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     ///
     /// - Parameter handler: cell 结束展示时收到 cell 和 context 的闭包。
     /// - Returns: 绑定事件后的 Row。
-    public func onEndDisplay(_ handler: @escaping @MainActor (Cell, ListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (Cell, ListContext) -> Void) -> Self {
         var copy = self
         copy.rowEndDisplayHandler = handler
         return copy
@@ -861,7 +864,25 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
             contextMenuWillEndHandler: rowContextMenuWillEndHandler,
             leadingSwipeActionsProvider: rowLeadingSwipeActionsProvider,
             trailingSwipeActionsProvider: rowTrailingSwipeActionsProvider,
-            moveHandler: rowMoveHandler
+            moveHandler: rowMoveHandler,
+            measurement: ListCellMeasurement(
+                makeCell: {
+                    let metadata = listReusableMetadata(for: cellType)
+                    if let nib = metadata.makeNib() {
+                        guard let cell = nib.instantiate(withOwner: nil).first(where: { $0 is Cell }) as? Cell else {
+                            throw ListWaterfallError("nib \(metadata.nibName) does not contain \(cellType)")
+                        }
+                        return cell
+                    }
+                    return cellType.init(frame: .zero)
+                },
+                configure: { cell, context in
+                    guard let cell = cell as? Cell else { return }
+                    configure(cell, model, context)
+                    if rowShowsOutlineDisclosure, let listCell = cell as? UICollectionViewListCell {
+                        listCell.accessories = [.outlineDisclosure()]
+                    }
+                })
         )
     }
 
@@ -1290,7 +1311,8 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     ///
     /// - Parameter handler: cell 即将展示时收到 cell 和 context 的闭包。
     /// - Returns: 绑定事件后的 ProviderRow。
-    public func onDisplay(_ handler: @escaping @MainActor (UICollectionViewCell, ListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit willDisplay 触发，可能随复用多次调用；测量视图不触发。
+    public func onAppear(_ handler: @escaping @MainActor (UICollectionViewCell, ListContext) -> Void) -> Self {
         var copy = self
         copy.rowDisplayHandler = handler
         return copy
@@ -1300,7 +1322,8 @@ public struct ProviderRow<ID>: ListRowRepresentable where ID: Hashable & Sendabl
     ///
     /// - Parameter handler: cell 结束展示时收到 cell 和 context 的闭包。
     /// - Returns: 绑定事件后的 ProviderRow。
-    public func onEndDisplay(_ handler: @escaping @MainActor (UICollectionViewCell, ListContext) -> Void) -> Self {
+    /// - Note: 由 UIKit didEndDisplaying 触发，可能随复用多次调用。
+    public func onDisappear(_ handler: @escaping @MainActor (UICollectionViewCell, ListContext) -> Void) -> Self {
         var copy = self
         copy.rowEndDisplayHandler = handler
         return copy

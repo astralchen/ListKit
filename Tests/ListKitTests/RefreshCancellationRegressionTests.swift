@@ -93,8 +93,9 @@ import XCTest
       applicationMode: .reloadData)
     func section(_ id: Int) -> TableSection<Int> {
       TableSection(id) {
-        TableRow(0, model: id, cell: UITableViewCell.self) { _, _, _ in }.height(.fixed(40))
+        TableRow(0, model: id, cell: UITableViewCell.self) { _, _, _ in }
       }
+      .layout { TableLayout().rowHeight(.fixed(40)) }
     }
     if mode == 2 {
       let active = Task { @MainActor in await adapter.apply(options: options) { section(0) } }

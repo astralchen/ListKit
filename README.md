@@ -268,11 +268,6 @@ private lazy var adapter = TableListAdapter<Section>(tableView: tableView)
 func render(messages: [Message]) {
     adapter.apply {
         TableSection(.messages) {
-            TableRow("today-divider", model: "今天", cell: TimeDividerCell.self) { cell, title, _ in
-                cell.configure(title: title)
-            }
-            .height(.fixed(28))
-
             TableForEach(messages, id: \.id) { message in
                 TableRow(model: message, cell: MessageCell.self) { cell, message, _ in
                     cell.configure(with: message)
@@ -289,7 +284,7 @@ func render(messages: [Message]) {
 }
 ```
 
-`TableRow` 还提供原生 table 能力，例如高度、editing、move、swipe actions、context menu 和 accessory button 回调。
+`TableRow` 还提供原生 table 能力，例如 editing、move、swipe actions、context menu 和 accessory button 回调。
 
 ### 自定义 Table Header / Footer
 
@@ -326,7 +321,7 @@ TableSection(.messages) {
 
 编译器会检查角色：`.header` 只接受 `TableHeader`，`.footer` 只接受 `TableFooter`。单独封装时，返回类型分别写作 `TableSectionHeader<SectionID>` 和 `TableSectionFooter<SectionID>`。系统标题的增删和文字变更会随 `apply` 更新；已声明自定义视图，或 UIKit 实际从外部代理取得了该角色的视图时，修改备用标题不会触发分区重载。代理返回 `nil` 时，该角色按系统标题更新。
 
-`TableLayout` 作用于当前 Section。普通消息继承分区规则，时间分隔行的 `.height(.fixed(28))` 同时将实际高度和估算高度设为 28。自定义视图和系统标题都使用分区的页眉、页脚规则；上例在 `hasMore == false` 时不会因为 `.footerHeight(.fixed(44))` 而预留 44 点。
+`TableLayout` 作用于当前 Section。`.rowHeight(.estimated(64))` 让每行先按 64 点估算，再根据各自的内容测量实际高度。自定义视图和系统标题都使用分区的页眉、页脚规则；上例在 `hasMore == false` 时不会因为 `.footerHeight(.fixed(44))` 而预留 44 点。
 
 | 高度规则 | 实际高度 | 估算高度 |
 | --- | --- | --- |
@@ -334,7 +329,36 @@ TableSection(.messages) {
 | `.automatic` | UIKit 按内容测量 | UIKit 自动估算 |
 | `.estimated(64)` | UIKit 按内容测量 | 64 点 |
 
-实际行高与估算行高分别按「单行 → 分区 → 外部 delegate 对应方法 → UITableView 对应属性」解析。显式 `.automatic` 会完整覆盖分区规则，省略才会继承。页眉、页脚仅在声明了相应视图或标题时使用分区高度，其他情况沿用 delegate 和表格默认值。再次 `apply` 改变已有内容的高度规则时，adapter 会重新测量布局，即使内容的 `refreshID` 相同。
+同一分区可以在 `rowHeight` 闭包里按稳定行 ID 选择规则。例如，时间分隔行固定为 28 点，其余消息先按 68 点估算：
+
+```swift
+enum ChatRowID: Hashable, Sendable {
+    case divider
+    case message(Int)
+}
+
+TableSection(0) {
+    TableRow(ChatRowID.divider, model: "今天", cell: TimeDividerCell.self) { cell, title, _ in
+        cell.configure(title: title)
+    }
+    for message in messages {
+        TableRow(ChatRowID.message(message.id), model: message, cell: MessageCell.self) { cell, message, _ in
+            cell.configure(with: message)
+        }
+    }
+}
+.layout {
+    TableLayout().rowHeight { id in
+        id.typed(ChatRowID.self) == .divider ? .fixed(28) : .estimated(68)
+    }
+}
+```
+
+闭包收到的是该行实际使用的 ID。上例显式传入 `ChatRowID.message(message.id)`，所以即使 `Message` 遵守 `Identifiable`，也可以用 `typed(ChatRowID.self)` 匹配消息。直接写 `TableRow(model:cell:)` 时，`Identifiable` 模型优先使用 `model.id`；使用继承 ID 的初始化器时才取外层 `TableForEach` 的 ID。
+
+每次执行 `apply` 或 `reloadAll`，adapter 都为每行求值一次，实际高度与估算高度共用该结果。行高闭包中同步发起的 `apply` 按当前更新策略入队。统一规则和闭包可以互相替换，最后一次 `rowHeight` 调用生效。
+
+实际行高与估算行高分别按「分区的 `rowHeight` → 外部 delegate 对应方法 → UITableView 对应属性」解析。页眉、页脚仅在声明了相应视图或标题时使用分区高度，其他情况沿用 delegate 和表格默认值。再次 `apply` 改变已有内容的高度规则时，adapter 会重新测量布局，即使内容的 `refreshID` 相同。
 
 **从旧版高度 API 迁移**
 
@@ -342,11 +366,12 @@ TableSection(.messages) {
 | --- | --- |
 | `TableRowHeight` | 共用的 `TableHeight` |
 | `.automatic()` / `.automatic(estimated: 64)` | `.automatic` / `.estimated(64)` |
-| 每行重复同一 `.height(...)` | 分区 `.layout { TableLayout().rowHeight(...) }`，例外行保留 `.height(...)` |
+| 整个分区原本都使用 `.height(.estimated(68))` | 在所属分区声明一次 `.layout { TableLayout().rowHeight(.estimated(68)) }` |
+| 原来只有个别行用 `.height(...)` 覆盖分区规则 | 使用上例的 `.rowHeight { id in … }`，匹配例外行，其余行返回原分区规则 |
 | `TableHeader.height(...)` / `TableFooter.height(...)` | 分区布局的 `.headerHeight(...)` / `.footerHeight(...)` |
-| 单行 `.estimatedHeight(64)` | 内容自适应时使用 `.height(.estimated(64))`；若实际和估算高度需要独立计算，省略 DSL 规则，分别实现 delegate 的两个行高方法 |
+| 单行 `.estimatedHeight(64)` | 在 `rowHeight` 闭包里为对应 ID 返回 `.estimated(64)`，并保留其余行的原规则 |
 
-新版对已存在但未声明高度规则的行也会查询外部 delegate 的估算方法，然后回退到 `tableView.estimatedRowHeight`。
+`rowHeight` 闭包必须为每个 ID 返回一个 `TableHeight`。如果原来只有个别行声明高度，其余行依赖 delegate 或表格默认值，应省略该分区的 `rowHeight`，在 delegate 的 `heightForRowAt` 和 `estimatedHeightForRowAt` 中处理例外行，并让其余行沿用原有计算或返回对应的 `UITableView` 默认值。
 
 ### Collection 上下文菜单
 
@@ -434,7 +459,6 @@ iOS 13.0 引入、iOS 16.0 弃用；显示与结束通知从 iOS 13.2 引入。a
 TableRow(model: message, id: \.id, cell: MessageCell.self) { cell, message, _ in
     cell.configure(with: message)
 }
-.height(.estimated(72))
 .editing(.delete) { message, _, _ in
     store.delete(message.id)
 }
@@ -678,10 +702,11 @@ let result = await adapter.reloadAll()
 `reloadAll` 有意复用当前 diffable snapshot / outline 状态，不提交一份新的结构；内部调用
 `reloadData()` 只会让 diffable data source 重新提供当前内容，不会修改 snapshot。ListKit
 会避开正在提交的 snapshot 和 `hasUncommittedUpdates`，避免丢弃拖放或重排中的占位状态。
+Table 和 Collection 中已排队的 `.reloadData` 模式 `apply` 同样会在队首等待 `hasUncommittedUpdates` 变为 `false`。它完成后，队列才会执行随后入队的 `reloadAll`。
 
 `reloadAll` 不会重新执行 section builder。如果旧描述树已经把本地化字符串保存成值，
 请先更新 model，再使用 `apply` 重建 sections；配置闭包在执行时动态读取语言或主题时，
-直接 `reloadAll` 即可。若不需要过渡，可显式关闭：
+直接 `reloadAll` 即可。Table 的 `reloadAll` 会在 UIKit 重载前重新执行当前分区的行高闭包，因此环境变化也能更新已有行的高度。若不需要过渡，可显式关闭：
 
 ```swift
 adapter.reloadAll(transaction: .disabled, transition: .identity)
@@ -771,36 +796,41 @@ Section 默认使用 `.automatic`：声明了 `.onSelect(...)`、`.onDeselect(..
 
 `Row.onPrimaryAction(...)` 和 `TableRow.onPrimaryAction(...)` 要求 iOS 16.0 / tvOS 16.0；`CollectionListAdapter.contextMenuForItems(...)` 要求 iOS 16.0 / tvOS 17.0。部署目标为 iOS 15 时，调用这些 API 需要放在 `if #available(iOS 16.0, *)` 分支中。
 
+Collection 按当前行判断 primary action 能力，未配置动作的行不会因 adapter 提供动作转发而改变普通触摸多选。默认仅 Row 配置了 `.onPrimaryAction(...)` 或 `collectionDelegate` 实现了 `performPrimaryActionForItemAt` 时启用；外部代理若实现 `canPerformPrimaryActionForItemAt`，其显式判断优先。执行动作时仍先调用 Row 闭包，再转发给外部代理。已启用的 primary action 保留 UIKit 的独占选择语义。
+
 ## Layout 与 Supplementary
 
 布局返回一个完整值，由主体与 `.sectionInsets`、`.boundarySupplementaries`、`.itemSupplementaries`、`.decorationItems` 组合。补充视图内容统一使用 `SectionSupplementary`，装饰注册使用 `SectionDecoration`；supplementary 通过实际 kind 关联布局，decoration 通过逻辑 kind 关联布局，内容均不携带几何。通用 Header/Footer 与 background 专用入口已移除，TableHeader/TableFooter 保留。
 
 | 布局入口 | 适用场景与默认行为 |
 | --- | --- |
-| `GridLayout(tracks: 1)` | 单行或单列；默认主轴 `.estimated(44)`、间距 0、`.trackGroupAlignment(.start)` |
+| `GridLayout(tracks: 1)` | 单行或单列；默认主轴 `.estimated(44)`、间距 0、`.alignment(.start)` |
 | `GridLayout(tracks: n)` | n 条等分轨道，自动适配方向 |
 | `GridLayout(tracks: [ListGridTrack])` | fixed / flexible / adaptive 混合轨道 |
+| `WaterfallLayout(tracks:)` | 标准 Row 默认自动测量，支持纵向、横向及正交滚动的最短轨道排布 |
 | `UIKitListLayout(...)` | UIKit 原生列表、分隔线和 swipe actions |
 | `CustomLayout(layoutKey:)` | 根据真实 context 构建自定义 UIKit section |
 | `EnvironmentLayout(layoutKey:)` | 按环境返回完整布局 |
 
 Grid 未开启正交滚动时跟随外层方向，开启后沿垂直于外层的方向展开。纵向内容中 tracks 表示列宽，横向内容中表示行高；单轨道替代普通 ListLayout，正交修饰替代 HorizontalLayout。columns:/rows: 入口已移除。
 
-固定 gridCrossAxisSize 完整预留交叉轴区域；估算 gridCrossAxisSize 不支持宽高比。带 badge 的 estimated/uniform 支持多基本行／列 group；业务 kind 只声明一次，框架负责实际 kind/indexPath 映射。自定义 provider 与 UIKit 查询迁移见[自适应徽标实现与验证](Documentation/Measured-Grid-Badges.md)。估算主轴 group 的精确吸附仍有 UIKit 实测偏差，动态内容示例使用连续滚动；精确分页使用确定尺寸。旧 Horizontal 整宽 group 与 fractionalViewport 的 inset 参考不同，精确迁移见[布局文档](Documentation/Layout-API.md#从旧布局迁移)。
+固定 crossAxisSize 完整预留交叉轴区域；估算 crossAxisSize 不支持宽高比。带 badge 的 estimated/uniform 支持多基本行／列 group；业务 kind 只声明一次，框架负责实际 kind/indexPath 映射。自定义 provider 与 UIKit 查询迁移见[自适应徽标实现与验证](Documentation/Measured-Grid-Badges.md)。估算主轴 group 的精确吸附仍有 UIKit 实测偏差，动态内容示例使用连续滚动；精确分页使用确定尺寸。旧 Horizontal 整宽 group 与 fractionalViewport 的 inset 参考不同，精确迁移见[布局文档](Documentation/Layout-API.md#从旧布局迁移)。
 
 ```swift
 // 纵向页面中的两行横向分页，每组 3 列，共 6 个 item。
 GridLayout(tracks: 2)
     .itemMainAxisSize(.fillGroup).trackSpacing(10).lineSpacing(10)
-    .gridCrossAxisSize(.fixed(220))
+    .crossAxisSize(.fixed(220))
     .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1)))
     .groupSpacing(16)
     .orthogonalScrolling(.groupPaging)
 ```
 
-itemMainAxisSize 控制内容主轴尺寸；轨道控制交叉尺寸；gridCrossAxisSize 设置所有轨道共同占用的交叉轴区域；lineGrouping 配置基本行／列数量与主轴长度。gridCrossAxisSize 不含 section inset，随内容方向解释。`.gridCrossAxisSize(.estimated(...))` 支持单轨道估算交叉尺寸；estimated/uniform 主轴使用内容推导的 group，不能与 fitting 或显式 group 长度混用。
+itemMainAxisSize 控制内容主轴尺寸；轨道控制交叉尺寸；crossAxisSize 设置所有轨道共同占用的交叉轴区域；lineGrouping 配置基本行／列数量与主轴长度。crossAxisSize 不含 section inset，随内容方向解释。`.crossAxisSize(.estimated(...))` 支持单轨道估算交叉尺寸；estimated/uniform 主轴使用内容推导的 group，不能与 fitting 或显式 group 长度混用。
 
-`.trackGroupAlignment(.start/.center/.end)` 对齐整组轨道，默认 start；不控制 cell 内部内容或分页。trackSpacing 控制轨道间距，lineSpacing 控制内容方向的组内与默认组间距，两者默认 0。groupSpacing 为可选覆盖，默认 nil 跟随当前 lineSpacing；显式值（包括 0）只覆盖组间距，调用 `.groupSpacing(nil)` 恢复跟随。
+`.alignment(.start/.center/.end)` 对齐整组轨道，默认 start；不控制 cell 内部内容或分页。trackSpacing 控制轨道间距，lineSpacing 控制内容方向的组内与默认组间距，两者默认 0。groupSpacing 为可选覆盖，默认 nil 跟随当前 lineSpacing；显式值（包括 0）只覆盖组间距，调用 `.groupSpacing(nil)` 恢复跟随。
+
+自动测量瀑布流的 Cell 约束、缓存失效、方向配置和边界说明见 [WaterfallLayout](Documentation/Waterfall-Layouts.md)。示例列表页导航栏的 **Waterfall** 可切换纵向、横向、正交滚动和轨道数，并验证追加及展开内容后的自动重排。
 
 布局使用以下替换与默认规则：
 
@@ -826,7 +856,7 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
     analytics.trackSelection(id: context.itemID)
     openProfile(user)
 }
-.onDisplay { cell, context in
+.onAppear { cell, context in
     analytics.trackImpression(id: context.itemID)
 }
 ```
@@ -878,11 +908,11 @@ Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
 Row(model: user, id: \.id, cell: UserCell.self) { cell, user, _ in
     cell.configure(with: user)
 }
-.onDisplay { cell, context in
+.onAppear { cell, context in
     analytics.trackImpression(id: context.itemID)
     cell.startAnimation()
 }
-.onEndDisplay { cell, _ in
+.onDisappear { cell, _ in
     cell.stopAnimation()
 }
 .onPrefetch { user, _ in
@@ -975,6 +1005,10 @@ ListSection(.files) {
 ```
 
 展开状态由调用方保存。下一次 render 时继续把状态传给 `isExpanded`，即可保持声明式单向数据流。
+
+展开和收起操作使用与 `apply` 共用的队列。`onExpansionChange` 中同步提交的更新会等待本次展开状态提交完成，再按更新策略执行。点击行与系统展开按钮都走这条路径。
+
+折叠后，选择、预取以及位置查询按 diffable data source 的当前快照定位。`indexPath(for:)` 对隐藏的后代返回 `nil`，`indexPaths(forRowID:in:)` 跳过这些后代；`contains(_:)` 仍可确认它们存在于描述树中。
 
 ## Apply、动画与滚动
 
@@ -1281,27 +1315,44 @@ adapter.apply(transaction: .disabled) {
 
 ## 布局 API 语义与迁移
 
-布局尺寸按内容轴解释：`ListGridTrack` 定义交叉轴轨道，`itemMainAxisSize` 定义 cell 的主轴尺寸，`gridCrossAxisSize` 定义所有轨道共同占用的交叉轴区域。`lineGrouping(.count(lines:mainAxisSize:))` 的数量单位是基本行／列，不是 item。
+布局尺寸按内容轴解释：`ListGridTrack` 定义交叉轴轨道，`itemMainAxisSize` 定义 cell 的主轴尺寸，`crossAxisSize` 定义所有轨道共同占用的交叉轴区域。`lineGrouping(.count(lines:mainAxisSize:))` 的数量单位是基本行／列，不是 item。
 
 ```swift
 // 外层纵向时：两行、每组三列，最多六个 item。
 GridLayout(tracks: 2)
-    .gridCrossAxisSize(.fixed(220))
+    .crossAxisSize(.fixed(220))
     .trackSpacing(10)
     .lineSpacing(12)
     .groupSpacing(20)
     .itemMainAxisSize(.fillGroup)
     .lineGrouping(.count(lines: 3, mainAxisSize: .fractionalViewport(1)))
-    .trackGroupAlignment(.start)
+    .alignment(.start)
     .orthogonalScrolling(.groupPaging)
 ```
 
-`gridSpacing` 已删除；统一间距使用 `.trackSpacing(value).lineSpacing(value)`。`lineSpacing` 不覆盖显式 groupSpacing，二者调用顺序无关；`.groupSpacing(nil)` 清除覆盖。`.orthogonalScrolling(nil)` 关闭正交滚动；`.gridCrossAxisSize(nil)` 恢复环境尺寸。背景可以显式使用 `.decorationItems(.none)` 关闭，或 `.decorationItems(.registeredBackgrounds)` 恢复默认生成。 本轮验证见[统一行间距验证](Documentation/Layout-Spacing-Validation.md)。
+`gridSpacing` 已删除；统一间距使用 `.trackSpacing(value).lineSpacing(value)`。`lineSpacing` 不覆盖显式 groupSpacing，二者调用顺序无关；`.groupSpacing(nil)` 清除覆盖。`.orthogonalScrolling(nil)` 关闭正交滚动；`.crossAxisSize(nil)` 恢复环境尺寸。背景可以显式使用 `.decorationItems(.none)` 关闭，或 `.decorationItems(.registeredBackgrounds)` 恢复默认生成。 本轮验证见[统一行间距验证](Documentation/Layout-Spacing-Validation.md)。
 
 本次不兼容旧 frame、itemSize、ListGridItem、无单位 group count 等入口；完整改名表、layoutKey 捕获状态规则、CustomLayout 输入与边界所有权规则见 [布局 API 与迁移](Documentation/Layout-API.md)。历史验证报告保留旧名称与当时的结果。
 
 布局 DSL 的 `.sectionInsets(...)` 明确作用于当前 Section，CustomLayout 使用同名构造参数与 `context.sectionInsets`。它映射到 UIKit Section.contentInsets，不替代 collection view 的 contentInset、cell padding 或 DecorationItemLayout.backgroundInsets。详见[Section 内边距语义](Documentation/Layout-API.md#section-内边距)。
 
-其余布局修饰方法同样明确作用对象：`gridCrossAxisSize`、`trackSpacing`、`lineSpacing`、`groupSpacing`、`lineGrouping`、`trackGroupAlignment`；轨道使用 `spacingAfter`，背景使用 `backgroundInsets`，补充视图区分 `absoluteOffset` 与 `anchorFractionalOffset`。完整说明见[名称与作用对象](Documentation/Layout-API.md#名称与作用对象)。
+其余布局修饰方法同样明确作用对象：`crossAxisSize`、`trackSpacing`、`lineSpacing`、`groupSpacing`、`lineGrouping`、`alignment`；轨道使用 `spacing`，背景使用 `backgroundInsets`，补充视图区分 `absoluteOffset` 与 `anchorFractionalOffset`。完整说明见[名称与作用对象](Documentation/Layout-API.md#名称与作用对象)。
+
+公开 API 参照 SwiftUI 统一命名，迁移时对应替换：
+
+| 原名称 | 当前名称 |
+| --- | --- |
+| `adaptive(minimumForCount:maximum:)` | `adaptive(minimum:maximum:)` |
+| `ListGridTrack.spacingAfter` / `spacingAfter:` | `ListGridTrack.spacing` / `spacing:` |
+| `onDisplay` / `onEndDisplay` | `onAppear` / `onDisappear` |
+| `onTap` | `onTapGesture` |
+| `gridCrossAxisSize` | `crossAxisSize` |
+| `trackGroupAlignment` / `ListGridTrackGroupAlignment` | `alignment` / `ListGridAlignment` |
+| `ListLayoutScrollDirection` | `ListAxis` |
+
+`onAppear` / `onDisappear` 仍对应 UIKit 的 willDisplay / didEndDisplaying 回调，闭包继续接收视图、上下文及适用的 model；它们可能随复用多次触发，测量 cell 不触发展示回调。`onTapGesture` 仅用于支持点击手势的 supplementary，仍识别单击。Row 的选择、主操作与刷新继续使用 `onSelect`、`onPrimaryAction`、`refresh`。
+
+命名参考：[SwiftUI 生命周期与手势](https://developer.apple.com/documentation/swiftui/view-input-and-events)、[LazyVGrid](https://developer.apple.com/documentation/swiftui/lazyvgrid)、[Axis](https://developer.apple.com/documentation/swiftui/axis)。这些调整只改变公开名称，布局、复用和回调时机保持原有契约；旧名称不保留兼容别名。
+
 
 Grid 默认 item 主轴尺寸为 `.estimated(44)`：纵向估算高度、横向估算宽度，44 不是固定尺寸，最终由 cell 的 self-sizing 决定。需要正方形时显式设置 `.itemMainAxisSize(.aspectRatio(1))`。

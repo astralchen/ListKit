@@ -6,14 +6,14 @@ import XCTest
 final class GridDefaultsTests: XCTestCase {
     func testBothTrackFactoriesUseEstimatedItemsAndZeroSpacing() {
         for grid in [GridLayout(tracks: 1), GridLayout(tracks: 3),
-                     GridLayout(tracks: [.init(.flexible()), .init(.adaptive(minimumForCount: 80))])] {
+                     GridLayout(tracks: [.init(.flexible()), .init(.adaptive(minimum: 80))])] {
             XCTAssertEqual(grid.itemMainAxisSize, .estimated(44))
             XCTAssertEqual(grid.trackSpacing, 0)
             XCTAssertEqual(grid.lineSpacing, 0)
             XCTAssertNil(grid.groupSpacing)
         }
         XCTAssertEqual(ListSectionLayout.defaultLayout, .gridConfiguration(GridLayout(tracks: 1)))
-        let single = GridLayout(tracks: 1).gridCrossAxisSize(.estimated(100))
+        let single = GridLayout(tracks: 1).crossAxisSize(.estimated(100))
         XCTAssertTrue(single.environmentValidationErrors(in: TestLayoutEnvironment()).isEmpty)
         XCTAssertFalse(single.itemMainAxisSize(.aspectRatio(1))
             .environmentValidationErrors(in: TestLayoutEnvironment()).isEmpty)
@@ -26,7 +26,7 @@ final class GridDefaultsTests: XCTestCase {
                 let f = LayoutFixture(width: 360, count: 6, horizontal: outerHorizontal)
                 defer { f.close() }
                 f.apply(GridLayout(tracks: 2).itemMainAxisSize(.fixed(30))
-                    .gridCrossAxisSize(.fixed(200)).lineGrouping(.count(lines: 2))
+                    .crossAxisSize(.fixed(200)).lineGrouping(.count(lines: 2))
                     .orthogonalScrolling(orthogonal ? .continuous : nil))
                 f.render()
                 let first = try f.frame(0), track = try f.frame(1)

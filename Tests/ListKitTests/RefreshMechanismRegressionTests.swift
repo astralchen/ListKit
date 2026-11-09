@@ -36,7 +36,7 @@ import XCTest
             TableSection(0) {
                 TableRow(0, model: 0, cell: RefreshRegressionTableCell.self) { _, _, _ in
                     rowConfigurations += 1
-                }.height(.fixed(40)).refresh(when: .never)
+                }.refresh(when: .never)
             } header: {
                 TableHeader(RefreshRegressionHeader.self) { view, _ in view.value = version }
                     .refreshID(version)
@@ -44,7 +44,12 @@ import XCTest
                 TableFooter(RefreshRegressionHeader.self) { view, _ in view.value = version }
                     .refreshID(version)
             }
-            .layout { TableLayout().headerHeight(.fixed(30)).footerHeight(.fixed(30)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(40))
+                    .headerHeight(.fixed(30))
+                    .footerHeight(.fixed(30))
+            }
         }
         await f.adapter.apply(transaction: .disabled) { section(0) }
         let header = try XCTUnwrap(f.table.headerView(forSection: 0))
@@ -67,7 +72,7 @@ import XCTest
             func section(_ hasSupplementaries: Bool) -> TableSection<Int> {
                 TableSection(0) {
                     TableRow(0, model: 0, cell: RefreshRegressionTableCell.self) { _, _, _ in }
-                        .height(.fixed(40)).refresh(when: .never)
+                        .refresh(when: .never)
                 } header: {
                     if hasSupplementaries {
                         TableHeader(RefreshRegressionHeader.self) { view, _ in view.value = 1 }
@@ -79,7 +84,12 @@ import XCTest
                             .refresh(when: .never)
                     }
                 }
-                .layout { TableLayout().headerHeight(.fixed(30)).footerHeight(.fixed(30)) }
+                .layout {
+                    TableLayout()
+                        .rowHeight(.fixed(40))
+                        .headerHeight(.fixed(30))
+                        .footerHeight(.fixed(30))
+                }
                 .selectionMode(.single)
             }
             await f.adapter.apply(transaction: .disabled) { section(false) }
@@ -158,8 +168,9 @@ import XCTest
                 TableSection(0) {
                     TableRow(0, model: value, cell: RefreshRegressionTableCell.self) { cell, value, _ in
                         cell.value = value
-                    }.height(.fixed(40))
+                    }
                 }
+                .layout { TableLayout().rowHeight(.fixed(40)) }
             }
             await f.adapter.apply(transaction: .disabled) { section(0) }
             let transaction = ListTransaction(animation: .disabled, updatePolicy: .serial)
@@ -268,8 +279,9 @@ import XCTest
             TableSection(0) {
                 TableRow(0, model: value, cell: RefreshRegressionTableCell.self) { cell, model, _ in
                     cell.value = model
-                }.height(.fixed(40))
+                }
             }
+            .layout { TableLayout().rowHeight(.fixed(40)) }
         }
         await f.adapter.apply(transaction: .disabled) { section(0) }
         let done = expectation(description: "three serial completions")
@@ -308,7 +320,7 @@ import XCTest
                 TableRow(0, model: version, cell: RefreshRegressionTableCell.self) { cell, model, _ in
                     cell.value = model
                 }
-                .height(.fixed(40)).refreshID(version).refresh(when: .refreshIDChanges, scope: .visible)
+                .refreshID(version).refresh(when: .refreshIDChanges, scope: .visible)
             } header: {
                 TableHeader(RefreshRegressionHeader.self) { view, _ in view.value = version }
                     .refreshID(version)
@@ -316,7 +328,12 @@ import XCTest
                 TableFooter(RefreshRegressionHeader.self) { view, _ in view.value = version }
                     .refreshID(version)
             }
-            .layout { TableLayout().headerHeight(.fixed(30)).footerHeight(.fixed(30)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(40))
+                    .headerHeight(.fixed(30))
+                    .footerHeight(.fixed(30))
+            }
         }
         await f.adapter.apply(transaction: .disabled) { section(0) }
         f.table.layoutIfNeeded()
@@ -337,13 +354,17 @@ import XCTest
         defer { f.close() }
         func section(_ version: Int) -> TableSection<Int> {
             TableSection(0) {
-                TableRow(0, model: 0, cell: UITableViewCell.self) { _, _, _ in }.height(.fixed(40)).refresh(
+                TableRow(0, model: 0, cell: UITableViewCell.self) { _, _, _ in }.refresh(
                     when: .never)
             } header: {
                 TableHeader(RefreshRegressionHeader.self, elementID: version) { view, _ in view.value = version }
                     .refresh(when: .never)
             }
-            .layout { TableLayout().headerHeight(.fixed(30)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(40))
+                    .headerHeight(.fixed(30))
+            }
         }
         await f.adapter.apply(transaction: .disabled) { section(0) }
         f.table.layoutIfNeeded()
@@ -358,7 +379,7 @@ import XCTest
         defer { f.close() }
         func section(_ other: Bool) -> TableSection<Int> {
             TableSection(0) {
-                TableRow(0, model: 0, cell: UITableViewCell.self) { _, _, _ in }.height(.fixed(40)).refresh(
+                TableRow(0, model: 0, cell: UITableViewCell.self) { _, _, _ in }.refresh(
                     when: .never)
             } header: {
                 if other {
@@ -368,7 +389,11 @@ import XCTest
                     TableHeader(RefreshRegressionHeader.self) { view, _ in view.value = 0 }
                 }
             }
-            .layout { TableLayout().headerHeight(.fixed(30)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(40))
+                    .headerHeight(.fixed(30))
+            }
         }
         await f.adapter.apply(transaction: .disabled) { section(false) }
         f.table.layoutIfNeeded()
@@ -382,13 +407,17 @@ import XCTest
         defer { f.close() }
         func section(_ version: Int) -> TableSection<Int> {
             TableSection(0) {
-                TableRow(0, model: 0, cell: UITableViewCell.self) { _, _, _ in }.height(.fixed(40)).refresh(
+                TableRow(0, model: 0, cell: UITableViewCell.self) { _, _, _ in }.refresh(
                     when: .never)
             } footer: {
                 TableFooter(RefreshRegressionHeader.self, elementID: version) { view, _ in view.value = version }
                     .refresh(when: .never)
             }
-            .layout { TableLayout().footerHeight(.fixed(30)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(40))
+                    .footerHeight(.fixed(30))
+            }
         }
         await f.adapter.apply(transaction: .disabled) { section(0) }
         f.table.layoutIfNeeded()
@@ -403,7 +432,7 @@ import XCTest
         defer { f.close() }
         func section(_ other: Bool) -> TableSection<Int> {
             TableSection(0) {
-                TableRow(0, model: 0, cell: UITableViewCell.self) { _, _, _ in }.height(.fixed(40)).refresh(
+                TableRow(0, model: 0, cell: UITableViewCell.self) { _, _, _ in }.refresh(
                     when: .never)
             } footer: {
                 if other {
@@ -413,7 +442,11 @@ import XCTest
                     TableFooter(RefreshRegressionHeader.self) { view, _ in view.value = 0 }
                 }
             }
-            .layout { TableLayout().footerHeight(.fixed(30)) }
+            .layout {
+                TableLayout()
+                    .rowHeight(.fixed(40))
+                    .footerHeight(.fixed(30))
+            }
         }
         await f.adapter.apply(transaction: .disabled) { section(false) }
         f.table.layoutIfNeeded()
@@ -498,7 +531,7 @@ import XCTest
                     }.refresh(when: .never)
                 }
             } layout: {
-                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).gridCrossAxisSize(.fixed(80))
+                GridLayout(tracks: 1).itemMainAxisSize(.fixed(100)).crossAxisSize(.fixed(80))
                     .orthogonalScrolling(behavior).trackSpacing(0).lineSpacing(0)
                     .boundarySupplementaries {
                         BoundarySupplementaryLayout(
@@ -666,7 +699,7 @@ extension RefreshMechanismRegressionTests {
         TableRow(0, model: version, cell: RefreshRegressionTableCell.self) { cell, model, _ in
           rows += 1
           cell.value = model
-        }.height(.fixed(version == 0 ? 40 : 80)).refreshID(version)
+        }.refreshID(version)
           .refresh(
             when: .refreshIDChanges, scope: .visible, action: .reconfigure(layout: .invalidate))
       } header: {
@@ -675,7 +708,11 @@ extension RefreshMechanismRegressionTests {
           view.value = version
         }.refreshID(version)
       }
-      .layout { TableLayout().headerHeight(.fixed(30)) }
+      .layout {
+        TableLayout()
+          .rowHeight(.fixed(version == 0 ? 40 : 80))
+          .headerHeight(.fixed(30))
+      }
     }
     await f.adapter.apply(transaction: .disabled) { section(0) }
     f.table.layoutIfNeeded()
@@ -769,7 +806,7 @@ extension RefreshMechanismRegressionTests {
         TableRow(0, model: version, cell: RefreshRegressionTableCell.self) { cell, model, _ in
           rows += 1
           cell.value = model
-        }.height(.fixed(version == 0 ? 40 : 80)).refreshID(version)
+        }.refreshID(version)
           .refresh(
             when: .refreshIDChanges, scope: .visible, action: .reconfigure(layout: .invalidate))
       } footer: {
@@ -778,7 +815,11 @@ extension RefreshMechanismRegressionTests {
           view.value = version
         }.refreshID(version)
       }
-      .layout { TableLayout().footerHeight(.fixed(30)) }
+      .layout {
+        TableLayout()
+          .rowHeight(.fixed(version == 0 ? 40 : 80))
+          .footerHeight(.fixed(30))
+      }
     }
     await f.adapter.apply(transaction: .disabled) { section(0) }
     f.table.layoutIfNeeded()
@@ -859,11 +900,12 @@ extension RefreshMechanismRegressionTests {
         for id in 0..<30 {
           TableRow(id, model: version, cell: RefreshRegressionTableCell.self) { cell, model, _ in
             cell.value = model
-          }.height(.fixed(40))
+          }
             .refreshID(version).refresh(
               when: .refreshIDChanges, scope: .visible, action: .reconfigure(layout: .invalidate))
         }
       }
+      .layout { TableLayout().rowHeight(.fixed(40)) }
     }
     await f.adapter.apply(transaction: .disabled) { section(0) }
     f.table.layoutIfNeeded()
