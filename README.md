@@ -615,7 +615,9 @@ Row(model: message, cell: MessageCell.self) { cell, message, _ in
     action: .reconfigure(layout: .invalidate)
 )
 
-ProviderRow(id: legacyID, presentationID: legacyPresentationID) { collectionView, indexPath, _ in
+ProviderRow(legacyID, presentationID: legacyPresentationID, register: { collectionView in
+    collectionView.lk.register(LegacyCell.self)
+}) { collectionView, indexPath, _ in
     legacyProvider.cell(in: collectionView, at: indexPath)
 }
 .refresh(when: .everyApply, scope: .allMatching, action: .reload)

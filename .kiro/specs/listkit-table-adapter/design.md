@@ -4,12 +4,12 @@
 
 `TableListAdapter` 独立于 `CollectionListAdapter` 实现，但共享 ListKit Core 的稳定语义。当前 collection DSL 的 `AnyListRow`、`AnySupplementary` 和 `ListContext` 闭包签名已经绑定 `UICollectionView`，因此 table 侧新增 table-specific 描述类型，避免牵动已迁移 collection 页面。
 
-首版 public API 方向：
+当前 public API 示例：
 
 ```swift
 private lazy var adapter = TableListAdapter<Section>(tableView: tableView)
 
-adapter.apply(animatingDifferences: false) {
+adapter.apply(transaction: .disabled) {
     TableSection(.messages) {
         TableForEach(messages, id: \.messageID) { message in
             TableRow(model: message, cell: MessageCell.self) { cell, message, context in
@@ -20,11 +20,12 @@ adapter.apply(animatingDifferences: false) {
                 router.open(message, from: context.indexPath)
             }
         }
+    } layout: {
+        TableLayout().headerHeight(.estimated(44))
     } header: {
-        TableHeader(TitleHeaderView.self, id: "title") { view, _ in
+        TableHeader(TitleHeaderView.self) { view, _ in
             view.titleLabel.text = "消息"
         }
-        .height(.estimated(44))
     }
 }
 ```
@@ -109,23 +110,25 @@ adapter 消费 row DSL 已声明的 selection、display、height、context menu�
 
 ## Table DSL
 
-`TableSection` 负责 rows、header、footer、selection mode 和 section-level metadata。首版不承载 collection layout、supplementary layout 或 background decoration。
+`TableSection` 负责 rows、header、footer、selection mode 和 section-level metadata，并通过 `TableLayout` 声明分区默认行高及页眉、页脚高度。它不承载 collection layout、supplementary layout 或 background decoration。
 
 ```swift
 TableSection(.main) {
     TableRow(model: user, id: \.userID, cell: UserCell.self) { cell, user, _ in
         cell.configure(user)
     }
+} layout: {
+    TableLayout()
+        .headerHeight(.fixed(48))
+        .footerHeight(.estimated(52))
 } header: {
-    TableHeader(UserHeaderView.self, id: "header") { view, _ in
+    TableHeader(UserHeaderView.self) { view, _ in
         view.configure(title)
     }
-    .height(.fixed(48))
 } footer: {
-    TableFooter(LoadingFooterView.self, id: "footer") { view, _ in
+    TableFooter(LoadingFooterView.self) { view, _ in
         view.isLoading = isLoading
     }
-    .height(.automatic(estimated: 52))
 }
 ```
 
@@ -135,7 +138,7 @@ TableSection(.main) {
 - `variant(_:)`
 - `refreshID(_:)`
 - `refresh(_:)` / `refresh(when:scope:action:)`
-- `height(_:)` / `estimatedHeight(_:)`
+- `height(_:)`：支持 `.fixed(...)`、`.automatic` 和 `.estimated(...)`，覆盖分区的默认行高；未覆盖时继承 `TableLayout.rowHeight(...)`
 - `selected(_:)`
 - `onSelect` / `onDeselect` / `onSelectionChange`
 - `onDisplay` / `onEndDisplay`
@@ -146,7 +149,9 @@ TableSection(.main) {
 - `canMove(_:)` / `onMove(...)`
 - `leadingSwipeActions(_:)` / `trailingSwipeActions(_:)`
 
-`TableHeader` 和 `TableFooter` 使用 `UITableViewHeaderFooterView`，支持 `refreshID`、`refresh(_:)`、`height`、`onDisplay` 和 `onEndDisplay`。
+`TableHeader` 和 `TableFooter` 使用 `UITableViewHeaderFooterView`，支持 `refreshID`、`refresh(_:)`、`onDisplay` 和 `onEndDisplay`。高度统一通过分区 `TableLayout` 的 `.headerHeight(...)` 和 `.footerHeight(...)` 配置，不再在内容声明上调用 `.height(...)`。`.estimated(52)` 表示由 UIKit 测量实际高度，并使用 52 点作为估算高度。
+
+页眉和页脚默认按分区、角色和视图类型确定身份，示例中的固定占位 ID 可以省略。需要通过业务 ID 控制替换时，使用 `elementID:`，例如 `TableHeader(UserHeaderView.self, elementID: user.userID)`；同一元素的内容变化使用 `.refreshID(...)`。旧版的 `id:` 参数不再适用于页眉和页脚，`TableRow` 和 `TableForEach` 的 `id:` 用法仍然有效。
 
 ## Reusable Namespace
 
