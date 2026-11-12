@@ -18,6 +18,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let window = UIWindow(windowScene: windowScene)
         if ProcessInfo.processInfo.arguments.contains("-WaterfallDemo") {
             window.rootViewController = UINavigationController(rootViewController: WaterfallDemoViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-DragDropDemo") {
+            window.rootViewController = UINavigationController(rootViewController: DragDropDemoViewController())
         } else if ProcessInfo.processInfo.arguments.contains("-LeafSelectionProbe") {
             window.rootViewController = UINavigationController(rootViewController: LeafSelectionProbeViewController())
         } else if ProcessInfo.processInfo.arguments.contains("-StablePagingProbe") {

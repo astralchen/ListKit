@@ -1193,7 +1193,37 @@ tableAdapter.tableDelegate = self
 tableAdapter.tableDataSource = self
 ```
 
-Collection 的原生 drag/drop 仍可直接使用 `dragDelegate` 与 `dropDelegate`。
+### Collection 行拖放
+
+`Row.onDrag` 在开始拖动时创建内容。`Row.onDrop` 接收放在该行上、符合声明类型的 provider。两者均支持 iOS 15。拖出行与目标行可以分别声明。
+
+```swift
+import UniformTypeIdentifiers
+
+Row("message", model: text, cell: MessageCell.self) { cell, text, _ in
+    cell.configure(text)
+}
+.onDrag { NSItemProvider(object: text as NSString) }
+
+Row("inbox", model: inbox, cell: InboxCell.self) { cell, inbox, _ in
+    cell.configure(inbox)
+}
+.onDrop(of: [.plainText], isTargeted: { inside in
+    updateInboxHighlight(inside)
+}, canDrop: { _ in inbox.hasCapacity }) { providers in
+    guard let provider = providers.first else { return }
+    provider.loadObject(ofClass: NSString.self) { value, _ in
+        guard let text = value as? String else { return }
+        Task { @MainActor in addMessage(text) }
+    }
+}
+```
+
+可选的 `canDrop` 在会话进入、悬停和提交时检查业务条件。它只应检查状态和 provider 的元数据。在 `perform` 闭包里开始读取内容。行接收内容时向 UIKit 提议复制操作，调用方负责更新数据。当前行不能接收的会话可由父视图的 drop interaction 接收。`isTargeted` 为可选闭包，进入匹配的行时收到 `true`，离开或结束时收到 `false`。
+
+同一行可以同时声明 `onDrag` 和 `onMove`。在 Examples 的编辑模式中，拖动行内容会复制文本，拖动系统排序手柄会调整顺序并触发 `onMove`。
+
+需要自定义整个 collection 的拖放策略时，可以设置 `adapter.dragDelegate` 或 `adapter.dropDelegate`。显式代理优先处理对应方向。将其设为 `nil` 或释放代理对象后，该方向恢复使用 Row 声明。
 
 ## 进阶能力
 

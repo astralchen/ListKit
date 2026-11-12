@@ -40,12 +40,25 @@ where SectionID: Hashable & Sendable {
 
     /// 原生 drag/drop 逃生口；设置后直接安装到 collection view。
     public weak var dragDelegate: UICollectionViewDragDelegate? {
-        didSet { collectionView?.dragDelegate = dragDelegate }
+        didSet {
+            dragDropObservation.observe(dragDelegate)
+            collectionView?.dragDelegate = dragDelegate
+            configureRowDragDrop()
+        }
     }
     /// 原生 drop delegate 逃生口；设置后直接安装到 collection view。
     public weak var dropDelegate: UICollectionViewDropDelegate? {
-        didSet { collectionView?.dropDelegate = dropDelegate }
+        didSet {
+            dragDropObservation.observe(dropDelegate)
+            collectionView?.dropDelegate = dropDelegate
+            configureRowDragDrop()
+        }
     }
+
+    private lazy var dragDropObservation = ListDragDropDelegateObservation { [weak self] in
+        self?.configureRowDragDrop()
+    }
+    private var rowInteractions: [ObjectIdentifier: CollectionRowDragDrop] = [:]
 
     /// flow layout 回调转发对象。
     ///
@@ -899,6 +912,7 @@ where SectionID: Hashable & Sendable {
         explicitScrollRevisions = explicitScrollRevisions.filter { activeSectionIDs.contains($0.key) }
         layoutSignature = newLayoutSignature
         rebuildLookupTables(in: collectionView)
+        configureRowDragDrop()
         registerDecorationsIfNeeded()
         configureSelectionBehavior()
 
@@ -2194,6 +2208,7 @@ where SectionID: Hashable & Sendable {
         scheduleOrthogonalOffsetRestoration()
         if let row = row(at: indexPath) {
             displayedRowsByCell[ObjectIdentifier(cell)] = row
+            configureRowDragDrop(on: cell, row: row)
             row.displayHandler?(cell, context(for: indexPath, identity: row.identity))
         }
         displayDelegate?.collectionView?(collectionView, willDisplay: cell, forItemAt: indexPath)
@@ -2208,6 +2223,7 @@ where SectionID: Hashable & Sendable {
         didEndDisplaying cell: UICollectionViewCell,
         forItemAt indexPath: IndexPath
     ) {
+        configureRowDragDrop(on: cell, row: nil)
         let row = displayedRowsByCell.removeValue(forKey: ObjectIdentifier(cell)) ?? row(at: indexPath)
         if let row {
             row.endDisplayHandler?(cell, context(for: indexPath, identity: row.identity))
@@ -3941,6 +3957,30 @@ where SectionID: Hashable & Sendable {
             }
         }
         collectionView.layoutIfNeeded()
+    }
+
+    private func configureRowDragDrop() {
+        // 读取 visibleCells 可能触发布局。没有拖放声明或待清理交互时跳过。
+        guard let collectionView, !rowInteractions.isEmpty || rowsByIdentity.values.contains(where: {
+            $0.dragProvider != nil || $0.dropTarget != nil
+        }) else { return }
+        for cell in collectionView.visibleCells {
+            let identity = displayedRowsByCell[ObjectIdentifier(cell)]?.identity
+            configureRowDragDrop(on: cell, row: identity.flatMap { rowsByIdentity[$0] })
+        }
+    }
+
+    private func configureRowDragDrop(on cell: UICollectionViewCell, row: AnyListRow?) {
+        let key = ObjectIdentifier(cell)
+        let provider = collectionView?.dragDelegate == nil ? row?.dragProvider : nil
+        let target = collectionView?.dropDelegate == nil ? row?.dropTarget : nil
+        if rowInteractions[key]?.identity != row?.identity || (provider == nil && target == nil) {
+            rowInteractions.removeValue(forKey: key)?.configure(provider: nil, target: nil)
+        }
+        guard let row, provider != nil || target != nil else { return }
+        let interactions = rowInteractions[key] ?? CollectionRowDragDrop(cell: cell, identity: row.identity)
+        rowInteractions[key] = interactions
+        interactions.configure(provider: provider, target: target, reorderable: row.moveHandler != nil)
     }
 
     private func configureSelectionBehavior() {

@@ -1,4 +1,5 @@
 import UIKit
+import UniformTypeIdentifiers
 
 // MARK: - Row Model
 
@@ -109,6 +110,8 @@ public struct AnyListRow {
     let leadingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let trailingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     let moveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
+    var dragProvider: (@MainActor () -> NSItemProvider)?
+    var dropTarget: ListRowDropTarget?
     var measurement: ListCellMeasurement? = nil
 
     var hasAutomaticSelectionIntent: Bool {
@@ -268,6 +271,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
     private var rowLeadingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     private var rowTrailingSwipeActionsProvider: (@MainActor (ListContext) -> UISwipeActionsConfiguration?)?
     private var rowMoveHandler: (@MainActor (IndexPath, IndexPath) -> Void)?
+    private var dragProvider: (@MainActor () -> NSItemProvider)?
+    private var dropTarget: ListRowDropTarget?
     private var rowCellEventBinders: [CellEventBinder] = []
 
     /// 创建带显式 id 的 Row。
@@ -744,6 +749,27 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
         return copy
     }
 
+    /// 开始拖动此行时，按需创建可在应用内外传输的数据。
+    public func onDrag(_ provider: @escaping @MainActor () -> NSItemProvider) -> Self {
+        var copy = self
+        copy.dragProvider = provider
+        return copy
+    }
+
+    /// 接收放在此行上的匹配内容。进入和离开目标时通知 isTargeted。
+    /// canDrop 在会话进入、悬停和提交时判断业务条件，只使用匹配类型的 provider 元数据。
+    /// 在 perform 中开始读取内容。
+    public func onDrop(
+        of supportedContentTypes: [UTType],
+        isTargeted: (@MainActor (Bool) -> Void)? = nil,
+        canDrop: @escaping @MainActor ([NSItemProvider]) -> Bool = { _ in true },
+        perform: @escaping @MainActor ([NSItemProvider]) -> Void
+    ) -> Self {
+        var copy = self
+        copy.dropTarget = ListRowDropTarget(types: supportedContentTypes, isTargeted: isTargeted, canDrop: canDrop, perform: perform)
+        return copy
+    }
+
     /// 允许当前 Row 参与交互式重排，并在位置改变后回调。
     public func onMove(_ handler: @escaping @MainActor (IndexPath, IndexPath) -> Void) -> Self {
         var copy = self
@@ -865,6 +891,8 @@ public struct Row<ID, Model, Cell>: ListRowRepresentable where ID: Hashable & Se
             leadingSwipeActionsProvider: rowLeadingSwipeActionsProvider,
             trailingSwipeActionsProvider: rowTrailingSwipeActionsProvider,
             moveHandler: rowMoveHandler,
+            dragProvider: dragProvider,
+            dropTarget: dropTarget,
             measurement: ListCellMeasurement(
                 makeCell: {
                     let metadata = listReusableMetadata(for: cellType)

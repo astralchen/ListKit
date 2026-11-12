@@ -270,7 +270,10 @@ final class RoomToolkitDesignViewController: LiveRoomCollectionDesignScreenViewC
         let demo = UIAction(title: "Context Menu APIs", image: UIImage(systemName: "contextualmenu.and.cursorarrow")) { [weak self] _ in
             self?.navigationController?.pushViewController(ContextMenuDemoViewController(), animated: true)
         }
-        item.menu = UIMenu(children: [demo] + menu.children)
+        let dragDrop = UIAction(title: "Drag and Drop", image: UIImage(systemName: "hand.draw")) { [weak self] _ in
+            self?.navigationController?.pushViewController(DragDropDemoViewController(), animated: true)
+        }
+        item.menu = UIMenu(children: [demo, dragDrop] + menu.children)
     }
 
     required init?(coder: NSCoder) {
