@@ -742,6 +742,245 @@ data source、方向 trait/semantic 和相同自动边距刷新，截图仍复�
 这表明在此运行时不只是 ListKit 布局 DSL 的问题；目前没有验证通过的公开 API 修复。
 回归测试单独检查指示器确实可见，避免把闪现结束误归类为已知方向缺陷。
 
+另已独立验证 `showsVerticalScrollIndicator` 隐藏再显示：先设为 `false`，更新方向和布局，
+再立即或延迟 0.1 秒恢复原值。嵌入式与手动边距两种场景的四项截图测试均显示 RTL 指示器
+仍在右侧，且滚动条确实可见。此实验不叠加自动边距开关刷新；可追加
+`-NativeIndicatorVisibilityRefresh immediate` 或 `-NativeIndicatorVisibilityRefresh delayed`
+复现。未将无效的可见性切换加入 ListKit。
+
+方向设置层级也已对照：追加 `-NativeDirectionScope controller`、`window` 或 `scene`，
+分别只设置页面、窗口或 `UIWindowScene` 的 `traitOverrides.layoutDirection`，移除 Collection
+本地 trait 覆盖并保持其 `semanticContentAttribute = .unspecified`，让方向向下继承。
+这组实验不切换自动边距开关，也不隐藏指示器。在同一 iPhone 17 Pro / iOS 26.5 上，
+三个层级 × 嵌入式/手动边距共六项均显示内容为 RTL、指示器仍在右侧；切回 LTR 和移除
+覆盖后方向恢复。场景层级实验记录中，scene、window、controller、Collection 的方向均为 RTL，
+因此不能把问题仅归因于“Collection 是 RTL、父环境还是 LTR”。这组实验针对已有视图动态切换。
+Apple 的 [trait 层级说明](https://developer.apple.com/documentation/uikit/traits-and-the-trait-environment)
+解释了场景覆盖如何影响后代，但未承诺它能刷新此处的指示器位置。
+
+也已验证创建窗口前设置 Scene 方向：追加 `-NativeSceneRTLBeforeWindow -NativeDirectionScope scene`，
+在 `SceneDelegate` 中先设置 `windowScene.traitOverrides.layoutDirection = .rightToLeft`，
+再创建 `UIWindow`、根控制器和 Collection。首次显示不点击方向按钮、不重建布局、不切换
+指示器可见性或自动边距开关。首次截图确认各层 trait 均为 RTL，内容排列正确，但：
+
+| 创建窗口前 Scene 为 RTL | 首次 RTL 指示器 | 再切换至 LTR |
+| --- | --- | --- |
+| 嵌入式 Collection | 右侧，异常 | 右侧，正常 |
+| 全屏、手动指示器边距 | 右侧，异常 | 右侧，正常 |
+| 全屏、默认配置 | 右侧，异常 | 左侧，异常 |
+
+因此提前设置 Scene 方向也不是已验证可用的修复；全屏默认配置还呈现出与动态切换实验不同的
+行为，不能把此前全屏通过的结论推广到所有初始化方式。测试分别保留首次 RTL、随后 LTR 的
+截图与首次环境数据，并把侧边错误记录为 iOS 26.5 的预期失败；内容方向和指示器可见性仍须通过。
+前述 Scene 实验本身没有改变应用语言；RTL 语言启动的对照如下。
+
+**阿拉伯语启动与 Scene 覆盖对照（同一 iPhone 17 Pro / iOS 26.5）：** Examples 的
+`CFBundleLocalizations` 声明 `en`、`ar`，使 UIKit 可以选中阿拉伯语；演示文案没有完整翻译。
+语言启动用例保持“系统默认”，不点击方向按钮、不设置 Scene/Collection trait 或 semantic，
+也不执行方向刷新。分别验证两条路径：
+
+- 应用启动参数：`-NativeLanguageStartup -AppleLanguages '(ar)' -AppleLocale ar_SA`，
+  这是 [Apple 的语言测试方式](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPInternational/TestingYourInternationalApp/TestingYourInternationalApp.html)。
+  全屏默认、嵌入式、手动指示器边距三项均为正确 RTL 内容、右侧指示器（异常）。
+- 模拟器全局语言：临时将当前设备的 `NSGlobalDomain.AppleLanguages` 设为
+  `ar, zh-Hans-CN, en-CN`，应用启动不传 `AppleLanguages`。地区保持 `zh_CN`，未重启设备。
+  首选语言和 Bundle 实际语言均为 `ar`；两种目标场景仍异常。结束后恢复并核对原语言顺序
+  `zh-Hans-CN, en-CN`。此项验证的是新启动应用读取全局语言偏好，不包含重启 SpringBoard 后的整机 UI 验证。
+
+| 启动方式 | UIApplication 方向 | Scene/Collection 方向 | 嵌入式 / 手动边距指示器 |
+| --- | --- | --- | --- |
+| 英语 + 创建窗口前 Scene RTL 覆盖 | LTR | RTL / RTL | 均在右侧，异常 |
+| 阿拉伯语应用启动参数 | RTL | RTL / RTL，无覆盖 | 均在右侧，异常 |
+| 全局首选阿拉伯语，无语言启动参数 | RTL | RTL / RTL，无覆盖 | 均在右侧，异常 |
+| 全局首选阿拉伯语并重启 SpringBoard，无语言启动参数 | RTL | RTL / RTL，无覆盖 | 均在右侧，异常 |
+
+测试记录应用语言、UIApplication 方向、两层方向覆盖是否存在及语言参数是否存在，
+避免把英语回退或 trait 覆盖误判为 RTL 语言启动。`testNativeSystemLanguage*` 默认跳过，
+仅在已准备好全局阿拉伯语环境且测试运行器环境变量 `LISTKIT_VERIFY_SYSTEM_RTL=1` 时执行；
+测试本身不会修改全局语言。三项 `testNativeArabicLanguage*` 可独立重复运行。
+结果进一步说明，仅切换应用/全局语言也未解决这里的原生 Compositional Layout 指示器问题。
+
+**SpringBoard 重启验证：** 在同一已启动设备上写入阿拉伯语首选语言后，通过
+`simctl spawn <UDID> launchctl stop com.apple.SpringBoard` 让系统重新启动 SpringBoard；
+确认进程 PID 已变化、主屏幕系统应用名称显示阿拉伯语、状态栏与图标排列镜像后，才运行
+两项 `testNativeSystemLanguage*`。应用不传语言参数、不覆盖方向，采集到 `bundleLanguage=ar`、
+`applicationDirection=1`、各层 RTL，以及 `sceneOverride=false`、`collectionOverride=false`、
+`semantic=0`、`argumentLanguageOverride=false`。截图中嵌入式与手动边距指示器仍在右侧，
+两项均复现已记录的侧边错误（预期失败），内容方向和指示器可见性检查通过。
+因此这两个场景的异常不能仅归因于 SpringBoard 尚未更新语言。测试后恢复原来的
+`zh-Hans-CN, en-CN` 顺序，再次重启 SpringBoard，核对中文主屏幕与 LTR 状态栏已经恢复；
+地区始终为 `zh_CN`。本轮只补充实验记录，未修改 ListKit 正式实现。
+
+**Flow Layout 与 Compositional Layout 对照：** 在原生页追加
+`-NativeCollectionLayout flow` 使用未经子类覆盖的 `UICollectionViewFlowLayout`；默认仍为
+`UICollectionViewCompositionalLayout`。两者共享 Collection、数据源和 cell，三列、行高 72、
+行/列间距 8、section 水平总边距 60，上下各 12。Flow 使用 delegate 按容器宽度计算 item 宽度。
+在同一已启动 iPhone 17 Pro / iOS 26.5 上，90 项内容高度均为 2416；嵌入式 frame 为
+`(16, 174, 370, 320)`，手动边距全屏 frame 为 `(0, 0, 402, 874)`，对应的安全区、内容边距、
+自动指示器边距开关和 `verticalScrollIndicatorInsets` 均相同。
+
+| RTL 来源与配置 | UICollectionViewFlowLayout | UICollectionViewCompositionalLayout |
+| --- | --- | --- |
+| 阿拉伯语启动，嵌入式 | 内容 RTL，指示器左侧，正常 | 内容 RTL，指示器右侧，异常 |
+| 阿拉伯语启动，手动指示器边距 | 内容 RTL，指示器左侧，正常 | 内容 RTL，指示器右侧，异常 |
+| 英语启动后切换 Collection RTL，嵌入式 | 内容 RTL，指示器左侧，正常 | 内容 RTL，指示器右侧，异常 |
+| 英语启动后切换 Collection RTL，手动指示器边距 | 内容 RTL，指示器左侧，正常 | 内容 RTL，指示器右侧，异常 |
+
+Flow 的四项测试不使用预期失败，内容方向和指示器位置均实际通过；Compositional 的四项
+仍记录为已知侧边错误。运行时采集到两种布局的 `developmentLayoutDirection` 都是 LTR，
+`flipsHorizontallyInOppositeLayoutDirection` 都是 false；不能仅通过这两个返回值解释差异。
+这把当前问题缩小到这组原生 Compositional Layout 配置及当前系统运行时的行为，尚未证明其内部原因。
+此轮没有更改设备语言或重启模拟器，也没有替换 ListKit 的布局实现。
+
+**保留纵横混合布局的公开配置对照：** 原生页的 `-NativeMixedLayout` 使用一个主轴为纵向的
+Compositional Layout：第一个 section 为 20 项横向 `.continuous` 正交滚动，第二个 section 为
+90 项三列网格。通过真实向右拖动验证 RTL 后续横向项目进入视口，且主轴网格的 Y 位置不变；
+随后向上滚动并截图检查主轴原生指示器。全屏默认配置的这组检查实际通过，RTL 指示器在左侧。
+
+`-NativeCompositionalCase` 支持以下配置。同一 iPhone 17 Pro / iOS 26.5 上，英语启动后切换
+Collection RTL，分别在嵌入式和手动指示器边距配置运行，共 14 组，结果如下：
+
+| 单变量配置 | 嵌入式 RTL 指示器 | 全屏手动边距 RTL 指示器 |
+| --- | --- | --- |
+| `default`：默认 `.safeArea` | 右侧，异常 | 右侧，异常 |
+| `automatic`：布局边距参考 `.automatic` | 右侧，异常 | 右侧，异常 |
+| `none`：布局边距参考 `.none` | 右侧，异常 | 右侧，异常 |
+| `margins`：布局边距参考 `.layoutMargins` | 右侧，异常 | 右侧，异常 |
+| `readable`：布局边距参考 `.readableContent` | 右侧，异常 | 右侧，异常 |
+| `adjust-always`：内容边距调整 `.always` | 右侧，异常 | 右侧，异常 |
+| `adjust-never`：内容边距调整 `.never` | 右侧，异常 | 右侧，异常 |
+
+手动指示器边距始终为 `(top: 8, left: 4, bottom: 8, right: 12)`，自动调整仍为 false。
+所有网格的 RTL 排列检查通过；13 组横向滚动检查通过。全屏 `.never` 的横向首行被导航栏
+遮挡，单独排除其横向手势检查并复测，保留网格排列、指示器可见性和侧边检查。
+这组结果说明：正交 section 本身不必然导致异常，调整这些公开边距配置也未解决异常。
+
+**系统 list 工厂对照：** Today 使用 `UICollectionViewCompositionalLayout.list(using:)`。
+原生页的 `list-factory` 分别以 `.plain` 和 `-NativeGroupedList` 的 `.grouped` 外观验证；
+`list-section` 则保留横向正交 section、三列网格，再加入 90 行系统 list section，使用
+[NSCollectionLayoutSection.list(using:layoutEnvironment:)](https://developer.apple.com/documentation/uikit/nscollectionlayoutsection/list(using:layoutenvironment:))。
+这三种配置分别在嵌入式和手动指示器边距场景验证，六组仍全部在右侧。混合配置的网格和横向
+项目 RTL 排列、真实横向滚动检查通过。因此 Today 使用 list 工厂这一差异，单独不足以解释
+之前全屏正常，也不能作为这两个异常场景的修复。list 行采用浅色背景，避免半透明指示器与
+彩色背景混合后被灰色像素检查漏检；截图中的可见性检查仍为严格断言。
+
+**直接初始化 Compositional 的对照：** `-NativeInitialCompositionalLayout` 将布局直接传入
+`UICollectionView(frame:collectionViewLayout:)`，不先创建 Flow 再赋值。保留纵横混合布局，
+分别测试阿拉伯语启动（无方向覆盖）和英语启动后动态切换 RTL，在嵌入式、手动指示器边距下
+共四组。采集到 `initialCompositional=true`、`mixed=true`、Collection trait/effective 均为 RTL；
+阿拉伯语组为 `bundleLanguage=ar`、`semantic=0`。网格排列和横向滚动检查通过，竖向指示器
+四组仍在右侧。因此异常也不能仅归因于先创建 Flow 再切换到 Compositional 的初始化顺序。
+
+以上异常侧边断言在 iOS 26.5 上使用严格的 `XCTExpectFailure` 记录；测试运行成功表示已复现
+已记录的问题，不表示方向已修复。可见性、内容排列、横向手势检查不被预期失败包裹。
+最终代码另行复跑 `testNativeFlowDirectionEmbedded`、`testNativeFlowDirectionCustomInsets` 和
+`testNativeMixedDefault`，三项均实际通过，未使用预期失败，确认 Flow 的两类场景与全屏默认
+Compositional 混合布局仍为正常对照。本轮复用同一已启动模拟器，未更改设备全局语言，
+未引入私有 API 或指示器位移补偿。
+
+**自动调整触发条件探针（iOS 26.5，英语启动后仅将 Collection 切换为 RTL）：**
+`-NativeIndicatorTriggerProbe -NativeMixedLayout` 在同一个 Collection、同一个 Compositional
+布局实例上连续修改配置，点击“探针”进入下一步。开始先验证网格和正交 section 的 RTL 排列、
+实际横向拖动；之后保持方向不变，不重建布局，不重复切换方向，也不套用原有的开关刷新实验。
+诊断子类只观测 `safeAreaInsetsDidChange` 与 `adjustedContentInsetDidChange`，均调用 super；
+每步跨一轮主队列采集公开几何、配置、回调和截图。19 步序列重复运行结果一致：
+
+| 同实例上的操作 | 竖向指示器侧边 | 安全区 / adjustedContentInset 回调 |
+| --- | --- | --- |
+| 全屏、自动调整开启、竖向指示器边距为零 | 左侧 | 无新增回调 |
+| 关闭自动调整；再开启 | 右侧 → 左侧 | 均无新增回调 |
+| 仅设竖向指示器 top=8；恢复零 | 右侧 → 左侧 | 均无新增回调 |
+| 仅设竖向指示器 bottom=8；恢复零 | 右侧 → 左侧 | 均无新增回调 |
+| 仅设竖向指示器 left=4/right=12；恢复零 | 右侧 → 左侧 | 均无新增回调 |
+| 仅设 horizontalScrollIndicatorInsets 非零；恢复零 | 均左侧 | 均无新增回调 |
+| 全屏 contentInsetAdjustmentBehavior 改为 .never；恢复 .automatic | 均左侧 | 各一次 adjustedContentInset 回调 |
+| 改为嵌入式 `(16,174,370,320)` | 右侧 | 各一次 |
+| 嵌入式增加控制器 additionalSafeAreaInsets，使 Collection 的 safe/adjusted.top=36 | 仍右侧，指示器变短 | 各一次 |
+| 恢复原全屏几何 | 左侧 | 各一次 |
+
+这些回调既不是侧边变化的必要条件，也不足以保证侧边正确。`.never` 时全屏
+`adjustedContentInset` 已变成零，指示器仍在左侧，说明不能用该属性是否非零判断侧边路径。
+也不能把“手动边距”简单解释为自动避让完全失效：仅设 left/right 时，原生指示器的 Y 范围
+仍为 `262.33...475.00`，与默认全屏完全一致，只是 X 从 `3...6` 变为 `392...395`；
+关闭自动调整后，Y 范围则变为 `189.00...430.33`。这是截图像素的屏幕点坐标，不是 UIKit
+私有视图的 frame。之前同配置 Flow 手动边距的 X 为 `7...10`，Compositional 为 `392...395`，
+相对于宽度 402 呈水平镜像关系；这支持“坐标转换路径有差异”的推断，尚不能证明内部实现。
+
+**系统栏覆盖范围对照：** 同一探针追加 `-NativeIndicatorBoundaryProbe` 测边界，或
+`-NativeIndicatorTopProbe` 测宽度。仍保持自动调整开启、竖向指示器边距为零，视图不重建。
+设备窗口为 `402×874`，Window 安全区上 62 / 下 34，控制器导航栏下沿为 150。
+
+| Collection 的屏幕几何（x, y, width, height） | Collection safe/adjusted.top / bottom | RTL 侧边 |
+| --- | --- | --- |
+| `(0,0,402,320)` | 150 / 0 | 左 |
+| `(16,0,370,320)` | 150 / 0 | 右 |
+| `(0,1,402,320)` | 149 / 0 | 左 |
+| `(16,1,370,320)` | 149 / 0 | 右 |
+| `(0,61,402,320)` | 89 / 0 | 左 |
+| `(16,61,370,320)` | 89 / 0 | 右 |
+| `(0,149,402,320)` | 1 / 0 | 左 |
+| `(16,149,370,320)` | 1 / 0 | 右 |
+| `(0,150,402,320)` | 0 / 0 | 右 |
+| `(16,521,370,320)`，底部进入 Window 底部安全区 1 点 | 0 / 1 | 左 |
+| `(16,520,370,320)`，底部刚好贴安全区边界 | 0 / 0 | 右 |
+| `(16,519,370,320)`，底部离开边界 1 点 | 0 / 0 | 右 |
+
+仅跨过 Window 顶部安全区的 61 / 62 / 63 边界，在窄列表中均为右侧；不能把上下端简单
+归为同一 Window 安全区判定。顶部全宽和窄列表拥有完全相同的 safe/adjusted 值，却有不同
+侧边；这将影响因素进一步缩小到系统栏的实际覆盖几何，超过了公开 inset 数值本身。
+重写 `contentScrollView(for:)` 返回 nil 并恢复系统栏观察时，确认 UIKit 实际调用了该
+公开 override，但全屏默认侧边仍始终在左侧；这项观察开关也没有提供独立的侧边控制。
+其公开语义参见 [contentScrollView(for:)](https://developer.apple.com/documentation/uikit/uiviewcontroller/contentscrollview(for:))。
+
+因此，当前证据不支持把问题当作“缺少一次安全区通知 / layout 刷新”。自动避让与侧边
+坐标处理需要分开判断；临时清零或改全屏再恢复原几何，会重新进入异常状态，不能作为
+保留业务配置的修复。以上是对公开输入、公开回调和最终像素的实测归纳，内部 UIKit 路径
+尚未得到证实，仍没有加入正式 ListKit 补偿代码。
+
+`testNativeIndicatorAutomaticAdjustmentTriggers`、`testNativeIndicatorSystemBarBoundaries` 与
+`testNativeIndicatorTopGeometry` 是诊断测试：严格检查内容排列、
+真实横向滚动、指示器可见且只在一侧，并把左右像素数作为附件记录；其通过不表示异常已修复。
+这些公开 API 的作用分别见 Apple 的
+[自动指示器边距](https://developer.apple.com/documentation/uikit/uiscrollview/automaticallyadjustsscrollindicatorinsets) 和
+[adjustedContentInset](https://developer.apple.com/documentation/uikit/uiscrollview/adjustedcontentinset) 文档。
+以上触发条件是这组运行时对照的观察，不是 Apple 对 RTL 侧边行为的保证，也不能外推到
+前述阿拉伯语首次启动场景。
+
+Apple 文档说明 [contentInsetsReference](https://developer.apple.com/documentation/uikit/uicollectionviewcompositionallayoutconfiguration/contentinsetsreference)
+控制内容边距的参考边界，默认值为 `.safeArea`；它没有承诺控制指示器侧边。
+[developmentLayoutDirection](https://developer.apple.com/documentation/uikit/uicollectionviewlayout/developmentlayoutdirection)
+描述布局设计时的语言方向，也不是独立的指示器方向开关。当前实验未找到可同时保留内容方向、
+正交滚动和业务指示器边距的公开 API 修复，正式 ListKit 实现仍保留 Compositional Layout。
+
+进一步对照表明，不能简单把差异归结为“全屏 / 非全屏”。同一原生页面、同一设备上，
+保持 RTL 内容排列时的实测结果如下（自动调整默认开启，未列出的指示器边距为零）：
+
+| 单变量配置 | RTL 竖向指示器 |
+| --- | --- |
+| 仅把全屏列表左右各缩进 16，仍延伸到屏幕上下边缘 | 左侧，正常 |
+| 顶部仍延伸至屏幕顶部，仅将高度改为 320 | 左侧，正常 |
+| 顶部移到导航栏下方，底部仍延伸至屏幕底部 | 左侧，正常 |
+| 四边都约束到安全区，列表自身的安全区为零 | 右侧，异常 |
+| 嵌入式子控制器增加 `additionalSafeAreaInsets.top = 12` | 右侧，异常 |
+| 嵌入式列表设置 `contentInset.top = 12` | 右侧，异常 |
+| 全屏列表关闭自动调整，指示器边距仍为零 | 右侧，异常 |
+| 全屏列表保持自动调整，仅设置上下指示器边距为 8 | 右侧，异常 |
+| 全屏列表显式设置指示器边距为零 | 左侧，正常 |
+
+通过的非全屏场景仍覆盖了系统栏或底部手势区域；仅人为增加局部安全区或内容边距并不能
+复制这一行为。这是当前运行时的观测差异，不是可以用任意非零 inset 修复的保证。
+关闭边缘效果、设置 `.hard` 或添加 `UIScrollEdgeElementContainerInteraction` 也未解决异常。
+可在 `-NativeCollectionIndicator` 后追加 `-NativeIndicatorCase` 及 `narrow`、`short`、
+`below-bar`、`safe-area`、`child-safe-area`、`content-inset`、`manual-zero`、`auto-custom`、
+`top-insets`、`zero-set` 复现；UI 测试会附带方向更新时的公开几何与配置数据。
+
+也验证了布局属性覆盖方案：`.unspecified` 时均返回 `super`；显式 RTL 时，将
+`developmentLayoutDirection` 固定为 `.rightToLeft`，无论 `flipsHorizontallyInOppositeLayoutDirection`
+为 true 或 false，指示器都到了左侧，但网格排列变为 LTR。使用 LTR 坐标基准并开启翻转则
+排列正确、指示器仍在右侧。`developmentLayoutDirection` 是布局实现的坐标基准，不能直接
+当作显示方向映射。实验只保留在原生对照页的 `-NativeLayoutPolicy target-true`、`target-false`、
+`base-true` 参数中（可与 `-EmbeddedNativeIndicator` 组合），未改变 ListKit 的原生布局行为。
+
 Table 在方向布局后临时切换并恢复 `automaticallyAdjustsScrollIndicatorInsets`，触发原生
 指示器位置重算；仅重设相同的边距会导致 RTL 切回 LTR 后指示器仍留在左侧。此刷新保留
 业务的自动调整开关、两轴边距和滚动位置。表格页也提供滚动条显示按钮，使用
