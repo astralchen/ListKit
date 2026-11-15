@@ -25,6 +25,37 @@ import UIKit
 public final class CollectionListAdapter<SectionID>: NSObject, UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout, UICollectionViewDataSourcePrefetching
 where SectionID: Hashable & Sendable {
+    /// 外部指定的布局方向。默认 `.unspecified` 不改变 UIKit 环境；取消覆盖时恢复原设置。
+    /// 修改后在下一次布局周期生效，无需重新创建列表或重新 apply。
+    /// ListKit 创建的布局会重建以刷新镜像缓存；后续请通过 collection view 读取当前布局。
+    /// 自定义布局仍须遵守 UIKit 的 RTL 布局约定；物理 left/right 边距不会被交换。
+    /// 保留自动边距设置、两轴 indicator insets 和显示开关；原生指示器由 UIKit 按容器和安全区处理。
+    public var layoutDirection: UITraitEnvironmentLayoutDirection = .unspecified {
+        didSet {
+            guard oldValue != layoutDirection, let collectionView else { return }
+            let contentOffset = collectionView.contentOffset
+            let orthogonalOffsets = captureOrthogonalOffsets(in: orthogonalSectionIDs)
+            directionOverride.apply(layoutDirection, to: collectionView)
+            if let layout = collectionView.collectionViewLayout as? ListCollectionLayout {
+                collectionView.setCollectionViewLayout(layout.rebuildingForLayoutDirection(), animated: false)
+                collectionView.layoutIfNeeded()
+                restoreOrthogonalOffsets(orthogonalOffsets)
+                // 布局重建可能将偏移吸附到可见行边缘；保持原位置，并限制在新内容范围内。
+                let inset = collectionView.adjustedContentInset
+                let offset = CGPoint(
+                    x: min(max(contentOffset.x, -inset.left), max(-inset.left,
+                        collectionView.contentSize.width - collectionView.bounds.width + inset.right)),
+                    y: min(max(contentOffset.y, -inset.top), max(-inset.top,
+                        collectionView.contentSize.height - collectionView.bounds.height + inset.bottom)))
+                collectionView.setContentOffset(offset, animated: false)
+            } else {
+                collectionView.collectionViewLayout.invalidateLayout()
+            }
+            directionOverride.refreshScrollIndicators(in: collectionView)
+        }
+    }
+    private let directionOverride = ListLayoutDirectionOverride()
+
     /// 滚动回调转发对象。
     ///
     /// `CollectionListAdapter` 会接管 `collectionView.delegate`，调用方需要
@@ -2935,7 +2966,7 @@ where SectionID: Hashable & Sendable {
         lastLayoutDiagnostics = []
         let direction = ListLayoutDirectionSource(initial: configuration.scrollDirection ?? .vertical)
         let layout = ListCollectionLayout(
-            sectionProvider: { [weak self] index, environment in
+            listSectionProvider: { [weak self] index, environment in
                 MainActor.assumeIsolated {
                     self?.makeCompositionalSection(
                         for: index, environment: environment,
@@ -2946,6 +2977,7 @@ where SectionID: Hashable & Sendable {
                 }
             }, configuration: configuration.makeConfiguration())
         direction.layout = layout
+        layout.directionSource = direction
         registerDecorations(on: layout, sections: sections)
         return layout
     }
@@ -2970,6 +3002,8 @@ where SectionID: Hashable & Sendable {
     ) -> NSCollectionLayoutSection? {
         lastLayoutDiagnostics = []
         guard let section = sections[safe: sectionIndex] else { return nil }
+        let environment: any NSCollectionLayoutEnvironment = layoutDirection == .unspecified
+            ? environment : ListDirectionLayoutEnvironment(environment, direction: layoutDirection)
         let currentLayout = collectionView?.collectionViewLayout as? UICollectionViewCompositionalLayout
         if resolvedCollectionLayout !== currentLayout {
             clearResolvedLayoutState()

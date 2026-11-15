@@ -687,11 +687,71 @@ adapter.reloadSections([.profile, .settings])
 `.completed`、`.superseded`、`.cancelledBeforeCommit` 状态时，使用 completion 或 async 重载。
 空输入和最终零匹配的 completion 也会在下一次 MainActor turn 恰好调用一次。
 
-语言、LTR/RTL、Dynamic Type 或全局主题切换适合 `reloadAll`。先更新真正承载列表的
+### 布局方向
+
+Collection 和 Table adapter 均提供 `layoutDirection: UITraitEnvironmentLayoutDirection`：
+
+```swift
+collectionAdapter.layoutDirection = .rightToLeft
+tableAdapter.layoutDirection = .rightToLeft
+
+collectionAdapter.layoutDirection = .leftToRight
+tableAdapter.layoutDirection = .unspecified // 取消覆盖，恢复设置前的 UIKit 环境
+```
+
+默认 `.unspecified` 不修改现有语义方向或 trait。显式切换会更新列表方向并请求布局，
+不需要重新 `apply` 或重建列表视图。iOS 17+ 同步列表的方向 trait，取消覆盖后恢复原有
+局部覆盖或继承关系。iOS 15/16 使用语义方向，并将显式方向传入 Collection 布局 DSL 的环境。
+旧系统中业务视图若直接依赖 `traitCollection.layoutDirection`，仍需由页面控制器提供 trait 环境。
+
+ListKit 创建的 Compositional Layout 在切换时会重建布局对象以清除 UIKit 的镜像缓存，
+保留 section provider、当前 configuration 和 decoration 注册。请从 collection view 读取当前布局，
+避免继续修改旧布局引用。外部自定义布局仅触发失效，需要自行遵守 UIKit RTL 规则。
+使用 leading/trailing 约束和方向性边距；物理 `left/right` 边距及业务内容中的显式方向不会自动交换。
+Table 会更新可见 cell 的布局并重新安装原生 accessory，刷新其缓存的方向；保留业务
+`accessoryView`、cell 实例及编辑状态。方向切换不翻译文字、不重新执行内容配置闭包；
+语言或内容改变仍使用 `apply` / `reloadAll`。
+
+Examples 中通过 **Grid → 布局方向** 打开系统测试页，或使用启动参数 `-LayoutDirectionDemo`。
+页面使用 `UICollectionViewController`，由 UIKit 管理完整滚动区域和安全区；同一个 Collection
+包含纵向网格与 `.orthogonalScrolling(.continuous)` 横向 section。先分别滚动两个轴，再切换
+系统默认 / LTR / RTL。右上角波形按钮显示原生滚动条，表格按钮打开独立的 UITableView 测试页。
+正交 section 的指示器由 UIKit 管理，主 Collection 的 `showsHorizontalScrollIndicator`
+不等于正交 section 的指示器开关。
+
+ListKit 沿用 Compositional Layout 的原生镜像行为，不额外覆盖
+`flipsHorizontallyInOppositeLayoutDirection` 或把 `developmentLayoutDirection` 改成显示方向。
+方向切换保留业务的内容边距、自动指示器边距开关、两轴指示器边距和显示开关；
+不访问 UIKit 内部指示器视图。
+
+**iOS 26.5 验证范围：**上述全屏系统页面在默认自动指示器配置下，RTL 指示器在左侧，
+切回 LTR/系统默认恢复右侧。原先在同一页嵌入多个固定高度列表的场景，以及关闭自动指示器
+边距并设置手动边距的场景，仍可复现 UIKit 把 RTL 指示器放在右侧的问题；不能把全屏页面
+通过当作这些场景也已修复。使用 `-LayoutDirectionOverview` 打开嵌入式对照页，或给系统页
+追加 `-CustomIndicatorInsets` 验证手动配置（也可与嵌入式对照参数一起使用）。UI 测试通过实际截图检查指示器位置，并将这些
+已知 Collection 限制单独记录为 iOS 26.5 的预期失败。
+
+**Table 的刷新方式不能直接推广到 Collection。** 在同一 iPhone 17 Pro / iOS 26.5 上，
+临时切换并恢复自动边距开关后，嵌入式和手动边距 Collection 的 RTL 指示器仍在右侧。
+重新设置指示器边距、强制布局、调整布局重建顺序也未解决。未将这些无效刷新加入 Collection。
+
+新增不依赖 ListKit 的 `NativeCollectionIndicatorViewController` 对照页：启动参数
+`-NativeCollectionIndicator` 使用全屏默认配置；追加 `-EmbeddedNativeIndicator` 或
+`-CustomIndicatorInsets` 分别复现两种问题。它仅使用 UIKit 原生 Compositional Layout、
+data source、方向 trait/semantic 和相同自动边距刷新，截图仍复现上述差异。
+这表明在此运行时不只是 ListKit 布局 DSL 的问题；目前没有验证通过的公开 API 修复。
+回归测试单独检查指示器确实可见，避免把闪现结束误归类为已知方向缺陷。
+
+Table 在方向布局后临时切换并恢复 `automaticallyAdjustsScrollIndicatorInsets`，触发原生
+指示器位置重算；仅重设相同的边距会导致 RTL 切回 LTR 后指示器仍留在左侧。此刷新保留
+业务的自动调整开关、两轴边距和滚动位置。表格页也提供滚动条显示按钮，使用
+`-CustomTableIndicatorInsets` 可验证关闭自动调整并设置手动边距的场景。
+
+语言、Dynamic Type 或全局主题切换适合 `reloadAll`。先更新真正承载列表的
 UIKit 环境，再触发刷新；默认使用 0.2 秒 cross-dissolve，并自动遵循 Reduce Motion：
 
 ```swift
-collectionView.semanticContentAttribute = isRTL ? .forceRightToLeft : .forceLeftToRight
+adapter.layoutDirection = isRTL ? .rightToLeft : .leftToRight
 
 adapter.reloadAll()
 

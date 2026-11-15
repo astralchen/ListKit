@@ -16,7 +16,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         let window = UIWindow(windowScene: windowScene)
-        if ProcessInfo.processInfo.arguments.contains("-WaterfallDemo") {
+        if ProcessInfo.processInfo.arguments.contains("-NativeCollectionIndicator") {
+            window.rootViewController = UINavigationController(rootViewController: NativeCollectionIndicatorViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-LayoutDirectionOverview") {
+            window.rootViewController = UINavigationController(rootViewController: LayoutDirectionOverviewViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-LayoutDirectionDemo") {
+            window.rootViewController = UINavigationController(rootViewController: LayoutDirectionDemoViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-WaterfallDemo") {
             window.rootViewController = UINavigationController(rootViewController: WaterfallDemoViewController())
         } else if ProcessInfo.processInfo.arguments.contains("-LeafSelectionProbe") {
             window.rootViewController = UINavigationController(rootViewController: LeafSelectionProbeViewController())

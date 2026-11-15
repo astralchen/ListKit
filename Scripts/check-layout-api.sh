@@ -24,6 +24,15 @@ check_source() {
     fi
     echo "$expected: $name"
 }
+check layout-direction pass 'let collection = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+let collectionAdapter = CollectionListAdapter<Int>(collectionView: collection)
+let table = UITableView()
+let tableAdapter = TableListAdapter<Int>(tableView: table)
+let direction: UITraitEnvironmentLayoutDirection = .rightToLeft
+collectionAdapter.layoutDirection = direction
+tableAdapter.layoutDirection = direction
+collectionAdapter.layoutDirection = .unspecified
+tableAdapter.layoutDirection = .leftToRight'
 check table-layout pass 'let _ = TableSection(0) {
     TableRow(0, model: (), cell: UITableViewCell.self) { _, _, _ in }
 }.layout {
