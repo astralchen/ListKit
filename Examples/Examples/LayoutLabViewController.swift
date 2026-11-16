@@ -22,6 +22,10 @@ final class LayoutLabViewController: UIViewController {
         title = "Layout Lab"
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
+        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "布局方向", primaryAction: UIAction { [weak self] _ in
+            self?.navigationController?.pushViewController(LayoutDirectionDemoViewController(), animated: true)
+        })
+        navigationItem.leftItemsSupplementBackButton = true
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "参数 / 代码", primaryAction: UIAction { [weak self] _ in
             self?.showParameters()
         })

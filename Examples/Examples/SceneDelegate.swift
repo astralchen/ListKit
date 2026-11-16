@@ -15,8 +15,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
 
+        // 原生对照：在窗口和 Collection 创建前提供场景方向。
+        if #available(iOS 17.0, *),
+           ProcessInfo.processInfo.arguments.contains("-NativeCollectionIndicator"),
+           ProcessInfo.processInfo.arguments.contains("-NativeSceneRTLBeforeWindow") {
+            windowScene.traitOverrides.layoutDirection = .rightToLeft
+        }
         let window = UIWindow(windowScene: windowScene)
-        if ProcessInfo.processInfo.arguments.contains("-WaterfallDemo") {
+        if ProcessInfo.processInfo.arguments.contains("-NativeCollectionIndicator") {
+            window.rootViewController = UINavigationController(rootViewController: NativeCollectionIndicatorViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-LayoutDirectionOverview") {
+            window.rootViewController = UINavigationController(rootViewController: LayoutDirectionOverviewViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-LayoutDirectionDemo") {
+            window.rootViewController = UINavigationController(rootViewController: LayoutDirectionDemoViewController())
+        } else if ProcessInfo.processInfo.arguments.contains("-WaterfallDemo") {
             window.rootViewController = UINavigationController(rootViewController: WaterfallDemoViewController())
         } else if ProcessInfo.processInfo.arguments.contains("-DragDropDemo") {
             window.rootViewController = UINavigationController(rootViewController: DragDropDemoViewController())

@@ -25,6 +25,36 @@ import UIKit
 @MainActor
 public final class TableListAdapter<SectionID>: NSObject, UITableViewDelegate, UITableViewDataSource, UITableViewDataSourcePrefetching
 where SectionID: Hashable & Sendable {
+    /// 外部指定的布局方向。默认 `.unspecified` 不改变 UIKit 环境；取消覆盖时恢复原设置。
+    /// 修改后在下一次布局周期生效，无需重新创建列表或重新 apply。
+    /// 使用 leading/trailing 约束与方向性边距；物理 left/right 边距不会被交换。
+    public var layoutDirection: UITraitEnvironmentLayoutDirection = .unspecified {
+        didSet {
+            guard oldValue != layoutDirection, let tableView else { return }
+            hasConfiguredLayoutDirection = true
+            directionOverride.apply(layoutDirection, to: tableView)
+            tableView.visibleCells.forEach(refreshCellLayoutDirection)
+            directionOverride.refreshScrollIndicators(in: tableView)
+        }
+    }
+    private let directionOverride = ListLayoutDirectionOverride()
+    private var hasConfiguredLayoutDirection = false
+
+    private func refreshCellLayoutDirection(_ cell: UITableViewCell) {
+        if #available(iOS 17.0, *) { cell.updateTraitsIfNeeded() }
+        // UIKit 的原生附件缓存创建时的方向；移除后重新安装才能更新其位置。
+        // 保留业务 accessoryView、cell 实例和编辑状态，不触发内容重载。
+        let accessory = cell.accessoryType
+        let editingAccessory = cell.editingAccessoryType
+        if cell.accessoryView == nil { cell.accessoryType = .none }
+        if cell.editingAccessoryView == nil { cell.editingAccessoryType = .none }
+        cell.setNeedsLayout()
+        cell.layoutIfNeeded()
+        cell.accessoryType = accessory
+        cell.editingAccessoryType = editingAccessory
+        cell.setNeedsLayout()
+    }
+
     /// 滚动回调转发对象。
     public weak var scrollDelegate: UIScrollViewDelegate?
 
@@ -1906,6 +1936,7 @@ where SectionID: Hashable & Sendable {
 
     /// 保存正在显示的条目描述，并分发显示事件。
     public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        if hasConfiguredLayoutDirection { refreshCellLayoutDirection(cell) }
         if let row = row(at: indexPath) {
             displayedRowsByCell[ObjectIdentifier(cell)] = row
             row.displayHandler?(cell, context(for: indexPath, identity: row.identity))

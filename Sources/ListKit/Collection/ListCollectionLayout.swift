@@ -2,10 +2,43 @@ import UIKit
 
 /// 容器变化时，重新计算绝对尺寸轨道，以及根据环境选择的完整布局。
 final class ListCollectionLayout: UICollectionViewCompositionalLayout {
-    /// 当界面方向与布局基准方向相反时，允许 UIKit 水平翻转布局。
-    override var flipsHorizontallyInOppositeLayoutDirection: Bool { true }
-    /// 以从左到右作为布局基准方向，配合水平翻转适配从右到左的界面。
-    override var developmentLayoutDirection: UIUserInterfaceLayoutDirection { .leftToRight }
+    private let listSectionProvider: UICollectionViewCompositionalLayoutSectionProvider
+    var directionSource: ListLayoutDirectionSource?
+    private var decorationClasses: [String: AnyClass] = [:]
+    private var decorationNibs: [String: UINib] = [:]
+
+    init(listSectionProvider: @escaping UICollectionViewCompositionalLayoutSectionProvider,
+         configuration: UICollectionViewCompositionalLayoutConfiguration) {
+        self.listSectionProvider = listSectionProvider
+        super.init(sectionProvider: listSectionProvider, configuration: configuration)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    override func register(_ viewClass: AnyClass?, forDecorationViewOfKind elementKind: String) {
+        decorationClasses[elementKind] = viewClass
+        decorationNibs.removeValue(forKey: elementKind)
+        super.register(viewClass, forDecorationViewOfKind: elementKind)
+    }
+
+    override func register(_ nib: UINib?, forDecorationViewOfKind elementKind: String) {
+        decorationNibs[elementKind] = nib
+        decorationClasses.removeValue(forKey: elementKind)
+        super.register(nib, forDecorationViewOfKind: elementKind)
+    }
+
+    /// UIKit 会缓存镜像坐标面，单纯 invalidate 不能保证 RTL → LTR 恢复。
+    /// 保留 provider、当前 configuration 和 decoration 注册，仅重建布局对象。
+    func rebuildingForLayoutDirection() -> ListCollectionLayout {
+        let result = ListCollectionLayout(listSectionProvider: listSectionProvider, configuration: configuration)
+        result.directionSource = directionSource
+        directionSource?.layout = result
+        for entry in decorationClasses { result.register(entry.value, forDecorationViewOfKind: entry.key) }
+        for (kind, nib) in decorationNibs { result.register(nib, forDecorationViewOfKind: kind) }
+        return result
+    }
+
+    // 沿用 UICollectionViewCompositionalLayout 的系统方向行为，不额外覆盖坐标翻转。
 
     /// 当前监听的集合视图；弱引用避免延长视图生命周期，也用于防止重复注册监听。
     private weak var observedCollection: UICollectionView?
