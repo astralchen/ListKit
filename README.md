@@ -721,25 +721,51 @@ Examples 中通过 **Grid → 布局方向** 打开系统测试页，或使用�
 
 ListKit 沿用 Compositional Layout 的原生镜像行为，不额外覆盖
 `flipsHorizontallyInOppositeLayoutDirection` 或把 `developmentLayoutDirection` 改成显示方向。
-方向切换保留业务的内容边距、自动指示器边距开关、两轴指示器边距和显示开关；
-不访问 UIKit 内部指示器视图。
+当 `layoutDirection = .unspecified` 时，UIKit 管理列表的方向和指示器。取消显式覆盖时，
+ListKit 恢复之前保存的业务边距；之后的指示器位置由 UIKit 决定。
+从 iOS 26 起，显式设置 `layoutDirection = .rightToLeft` 时，ListKit 生成的纵向布局会用公开
+坐标转换检测 RTL 镜像，再补偿原生竖向指示器的水平边距，使其回到业务指定的物理左侧位置。
+切回 LTR 时还原。内容边距、自动调整、
+显示开关、上下指示器边距和正交滚动均沿用原有设置。
 
-**iOS 26.5 验证范围：**上述全屏系统页面在默认自动指示器配置下，RTL 指示器在左侧，
-切回 LTR/系统默认恢复右侧。原先在同一页嵌入多个固定高度列表的场景，以及关闭自动指示器
-边距并设置手动边距的场景，仍可复现 UIKit 把 RTL 指示器放在右侧的问题；不能把全屏页面
-通过当作这些场景也已修复。使用 `-LayoutDirectionOverview` 打开嵌入式对照页，或给系统页
-追加 `-CustomIndicatorInsets` 验证手动配置（也可与嵌入式对照参数一起使用）。UI 测试通过实际截图检查指示器位置，并将这些
-已知 Collection 限制单独记录为 iOS 26.5 的预期失败。
+在 iOS 18，纵向组合布局显式切换方向后，ListKit 会让 UIKit 重算已开启的自动指示器边距。
+iPhone XR / iOS 18.7.12 的全屏混合页面中，布局重建后指示器曾停在右边。原生对照中，
+关闭再开启自动边距后，指示器出现在左边。ListKit 复用这个刷新过程，并在同一次调用中恢复开关。
+切回 `.unspecified` 时，如果实际方向变了，也会在交回 UIKit 前重算一次自动轨道。
+XR 真机的全屏和嵌入式往返共四项，以及用应用语言参数启动阿拉伯语的两项均通过。
 
-**Table 的刷新方式不能直接推广到 Collection。** 在同一 iPhone 17 Pro / iOS 26.5 上，
-临时切换并恢复自动边距开关后，嵌入式和手动边距 Collection 的 RTL 指示器仍在右侧。
-重新设置指示器边距、强制布局、调整布局重建顺序也未解决。未将这些无效刷新加入 Collection。
+需要在运行中读写业务边距时，使用 `adapter.verticalScrollIndicatorInsets`；UIKit 的同名
+属性在 RTL 下可能包含补偿值。原有的一次性设置也可在首次布局前完成。尺寸变化时会重算
+补偿。如果要直接换成外部布局并立即闪现指示器，先设
+`adapter.correctsRTLVerticalScrollIndicatorPosition = false`，可立即恢复原始边距；
+普通拖动会在开始前自动完成清理。
+
+使用 `-LayoutDirectionOverview` 打开嵌入式对照页，追加 `-CustomIndicatorInsets`
+检查关闭自动调整和手动边距。ListKit 的 UI 回归要求显式 RTL 的截图中指示器在左、显式 LTR 时在右；
+下文的原生对照页仍用于复现 UIKit 行为，两类测试分开记录。
+
+在 iOS 26.5 和 27.2 模拟器上，全屏和嵌入式两种容器的自动、手动边距往返均通过。
+截图逐像素检查 RTL 的物理左边距：零业务边距为 3 点，`left=4, right=12` 为 7 点，
+与相同配置的 Flow Layout 一致。系统阿拉伯语冷启动用例不传应用语言参数，也不切换
+方向。它们验证 `.unspecified` 继承 RTL、保留原始边距，并用真实手势分别检查正交 section
+与主列表滚动。iOS 27.2 上，UIKit 把全屏自动配置的指示器放在左边，全屏手动和嵌入式自动
+配置放在右边。运行 `testListKitSystemArabicLaunch*`
+前需准备上述模拟器环境，并为测试运行器设置 `LISTKIT_VERIFY_SYSTEM_RTL=1`。
+Examples 在 Bundle 中也声明了希伯来语与简体中文，供 UIKit 解析相应的布局方向。
+真实系统语言回归使用 `testListKitSystemHebrewLaunch*` 和测试运行器环境变量
+`LISTKIT_VERIFY_SYSTEM_HEBREW=1`，不向 App 传入语言启动参数。
+在系统简体中文的 iPhone XR 上，`testSystemChineseColdLaunchAndReturnFromRTL` 从常规入口
+启动且不传任何参数，确认冷启动和从显式 RTL 切回 `.unspecified` 后，竖向指示器都在右侧。
+
+在 iPhone 17 Pro / iOS 26.5 的原生对照中，临时切换并恢复自动边距开关后，嵌入式和手动
+边距 Collection 的 RTL 指示器仍在右侧。重新设置指示器边距、强制布局和调整布局重建顺序
+也无法单独修复这两种配置。
 
 新增不依赖 ListKit 的 `NativeCollectionIndicatorViewController` 对照页：启动参数
 `-NativeCollectionIndicator` 使用全屏默认配置；追加 `-EmbeddedNativeIndicator` 或
 `-CustomIndicatorInsets` 分别复现两种问题。它仅使用 UIKit 原生 Compositional Layout、
 data source、方向 trait/semantic 和相同自动边距刷新，截图仍复现上述差异。
-这表明在此运行时不只是 ListKit 布局 DSL 的问题；目前没有验证通过的公开 API 修复。
+这表明在此运行时问题来自原生布局路径；该对照页未接入 ListKit 的指示器补偿。
 回归测试单独检查指示器确实可见，避免把闪现结束误归类为已知方向缺陷。
 
 另已独立验证 `showsVerticalScrollIndicator` 隐藏再显示：先设为 `false`，更新方向和布局，
@@ -906,6 +932,12 @@ Compositional 混合布局仍为正常对照。本轮复用同一已启动模拟
 私有视图的 frame。之前同配置 Flow 手动边距的 X 为 `7...10`，Compositional 为 `392...395`，
 相对于宽度 402 呈水平镜像关系；这支持“坐标转换路径有差异”的推断，尚不能证明内部实现。
 
+**Flow / Compositional 坐标差分验证：** 新增 `-NativeIndicatorCoordinateProbe -NativeMixedLayout`，
+在 LTR/RTL、全屏/嵌入式、自动调整开/关及五种相同指示器边距下采集截图像素与公开坐标。
+Flow 对照也保留横向内容，并匹配主轴网格和内容长度。iOS 26.5 与 27.2 均确认 19 组 RTL
+配置呈水平镜像；全屏自动调整且零边距时仍与 Flow 重合。方法、结果与原始数据见
+[原生滚动指示器坐标对照](Documentation/Indicator-Coordinate-Validation.md)。
+
 **系统栏覆盖范围对照：** 同一探针追加 `-NativeIndicatorBoundaryProbe` 测边界，或
 `-NativeIndicatorTopProbe` 测宽度。仍保持自动调整开启、竖向指示器边距为零，视图不重建。
 设备窗口为 `402×874`，Window 安全区上 62 / 下 34，控制器导航栏下沿为 150。
@@ -949,8 +981,8 @@ Compositional 混合布局仍为正常对照。本轮复用同一已启动模拟
 Apple 文档说明 [contentInsetsReference](https://developer.apple.com/documentation/uikit/uicollectionviewcompositionallayoutconfiguration/contentinsetsreference)
 控制内容边距的参考边界，默认值为 `.safeArea`；它没有承诺控制指示器侧边。
 [developmentLayoutDirection](https://developer.apple.com/documentation/uikit/uicollectionviewlayout/developmentlayoutdirection)
-描述布局设计时的语言方向，也不是独立的指示器方向开关。当前实验未找到可同时保留内容方向、
-正交滚动和业务指示器边距的公开 API 修复，正式 ListKit 实现仍保留 Compositional Layout。
+描述布局设计时的语言方向，也不是独立的指示器方向开关。这里保留诊断对照，未启用 ListKit
+的公开边距补偿。
 
 进一步对照表明，不能简单把差异归结为“全屏 / 非全屏”。同一原生页面、同一设备上，
 保持 RTL 内容排列时的实测结果如下（自动调整默认开启，未列出的指示器边距为零）：

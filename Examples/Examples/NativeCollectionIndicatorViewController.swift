@@ -9,12 +9,25 @@ final class NativeCollectionIndicatorViewController: UIViewController, UICollect
         return isTriggerProbe ? NativeIndicatorProbeCollection(frame: .zero, collectionViewLayout: layout)
             : UICollectionView(frame: .zero, collectionViewLayout: layout)
     }()
-    private var isTriggerProbe: Bool { ProcessInfo.processInfo.arguments.contains("-NativeIndicatorTriggerProbe") }
+    private var isCoordinateProbe: Bool { ProcessInfo.processInfo.arguments.contains("-NativeIndicatorCoordinateProbe") }
+    private var usesFlowLayout: Bool { ProcessInfo.processInfo.arguments.contains("flow") }
+    private var isTriggerProbe: Bool { isCoordinateProbe || ProcessInfo.processInfo.arguments.contains("-NativeIndicatorTriggerProbe") }
     private var probeConstraints: [NSLayoutConstraint] = []
     private var probeIndex = -1
     private var probeDisablesBarObservation = false
     private var probeBarQueries = 0
     private var probeSteps: [String] {
+        if isCoordinateProbe {
+            return ["ltr", "rtl"].flatMap { direction in
+                ["full", "embedded"].flatMap { geometry in
+                    ["auto", "manual"].flatMap { adjustment in
+                        ["zero", "left4", "left24", "right12", "custom"].map {
+                            "\(direction)-\(geometry)-\(adjustment)-\($0)"
+                        }
+                    }
+                }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("-NativeIndicatorTopProbe") {
             return ["baseline", "top-0-wide", "top-0-narrow", "top-1-wide", "top-1-narrow",
                     "top-61-wide", "top-149-wide", "top-150-wide", "full-again"]
@@ -57,6 +70,9 @@ final class NativeCollectionIndicatorViewController: UIViewController, UICollect
         collection.accessibilityIdentifier = "direction-grid"
         collection.backgroundColor = .systemBackground
         collection.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "cell")
+        if isCoordinateProbe && usesFlowLayout {
+            collection.register(NativeIndicatorHorizontalCell.self, forCellWithReuseIdentifier: "horizontal")
+        }
         collection.dataSource = self
         collection.delegate = self
         if !ProcessInfo.processInfo.arguments.contains("-NativeInitialCompositionalLayout") && !isTriggerProbe {
@@ -157,7 +173,8 @@ final class NativeCollectionIndicatorViewController: UIViewController, UICollect
         group.interItemSpacing = .fixed(8)
         let section = NSCollectionLayoutSection(group: group)
         section.interGroupSpacing = 8
-        section.contentInsets = .init(top: 12, leading: 20, bottom: 12, trailing: 40)
+        section.contentInsets = .init(top: 12, leading: isCoordinateProbe ? 40 : 20,
+                                      bottom: 12, trailing: isCoordinateProbe ? 60 : 40)
         if let index = args.firstIndex(of: "-NativeLayoutPolicy"), index + 1 < args.count {
             let direction: UITraitEnvironmentLayoutDirection = [.unspecified, .leftToRight, .rightToLeft][directions.selectedSegmentIndex]
             return NativeDirectionPolicyLayout(section: section, direction: direction, policy: args[index + 1])
@@ -228,6 +245,11 @@ final class NativeCollectionIndicatorViewController: UIViewController, UICollect
         collection.setCollectionViewLayout(makeLayout(), animated: false)
         collection.layoutIfNeeded()
         collection.contentOffset = offset
+        if isCoordinateProbe && usesFlowLayout {
+            for cell in collection.visibleCells.compactMap({ $0 as? NativeIndicatorHorizontalCell }) {
+                cell.applyDirection(collection.effectiveUserInterfaceLayoutDirection)
+            }
+        }
         if let visibilityRefresh {
             // 对照实验：隐藏跨越方向更新及布局，恢复业务原有的可见性。
             let restore: @MainActor @Sendable () -> Void = { [weak self] in
@@ -272,6 +294,7 @@ final class NativeCollectionIndicatorViewController: UIViewController, UICollect
         if let probe = collection as? NativeIndicatorProbeCollection {
             collection.accessibilityLabel! += "; probe=\(probeIndex < 0 ? "direction" : probeSteps[probeIndex]); horizontal=\(collection.horizontalScrollIndicatorInsets); windowRect=\(collection.convert(collection.bounds, to: view.window)); windowSafe=\(view.window?.safeAreaInsets ?? .zero); barObservationDisabled=\(probeDisablesBarObservation); barQueries=\(probeBarQueries); callbacks=\(probe.events.joined(separator: " | "))"
         }
+        recordCoordinateMetrics()
     }
 
     override func contentScrollView(for edge: NSDirectionalRectEdge) -> UIScrollView? {
@@ -298,6 +321,10 @@ final class NativeCollectionIndicatorViewController: UIViewController, UICollect
     @objc private func advanceIndicatorProbe() {
         guard isTriggerProbe, probeIndex + 1 < probeSteps.count else { return }
         probeIndex += 1
+        if isCoordinateProbe {
+            advanceCoordinateProbe()
+            return
+        }
         let probe = collection as? NativeIndicatorProbeCollection
         probe?.events.removeAll()
         probe?.record("before-" + probeSteps[probeIndex])
@@ -356,27 +383,123 @@ final class NativeCollectionIndicatorViewController: UIViewController, UICollect
 
     @objc private func flashIndicators() {
         collection.flashScrollIndicators()
-        if ProcessInfo.processInfo.arguments.contains("-CollectionIndicatorScreenshot") {
+        if isCoordinateProbe {
+            // UI 自动化点击后等待 idle 的耗时会浮动；连续 flash 保持采样期间可见。
+            // 不改变指示器位置、样式或边距。
+            for tick in 1...10 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(tick) * 0.2) { [weak self] in
+                    self?.collection.flashScrollIndicators()
+                }
+            }
+        } else if ProcessInfo.processInfo.arguments.contains("-CollectionIndicatorScreenshot") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.collection.flashScrollIndicators()
             }
         }
     }
 
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
+                        insetForSectionAt section: Int) -> UIEdgeInsets {
+        isCoordinateProbe && usesFlowLayout && section == 0 ? .zero
+            : .init(top: 12, left: isCoordinateProbe ? 40 : 20,
+                    bottom: 12, right: isCoordinateProbe ? 60 : 40)
+    }
+
+    private func advanceCoordinateProbe() {
+        let parts = probeSteps[probeIndex].split(separator: "-").map(String.init)
+        let direction = parts[0] == "rtl" ? 2 : 1
+        // 只在跨方向边界时重建布局；同方向下所有自动/手动边距与几何步骤复用布局实例。
+        if directions.selectedSegmentIndex != direction {
+            directions.selectedSegmentIndex = direction
+            changeDirection()
+        }
+        setProbeGeometry(embedded: parts[1] == "embedded")
+        collection.automaticallyAdjustsScrollIndicatorInsets = parts[2] == "auto"
+        switch parts[3] {
+        case "left4": collection.verticalScrollIndicatorInsets = .init(top: 0, left: 4, bottom: 0, right: 0)
+        case "left24": collection.verticalScrollIndicatorInsets = .init(top: 0, left: 24, bottom: 0, right: 0)
+        case "right12": collection.verticalScrollIndicatorInsets = .init(top: 0, left: 0, bottom: 0, right: 12)
+        case "custom": collection.verticalScrollIndicatorInsets = .init(top: 8, left: 4, bottom: 8, right: 12)
+        default: collection.verticalScrollIndicatorInsets = .zero
+        }
+        collection.horizontalScrollIndicatorInsets = .zero
+        view.layoutIfNeeded()
+        // Flow 的 delegate item 宽度依赖新的 bounds；几何变化时重新查询 metrics。
+        collection.collectionViewLayout.invalidateLayout()
+        collection.layoutIfNeeded()
+        collection.setContentOffset(CGPoint(x: 0, y: 300), animated: false)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.collection.layoutIfNeeded()
+            self.recordIndicatorMetrics()
+            if ProcessInfo.processInfo.arguments.contains("-CollectionIndicatorScreenshot") {
+                self.flashIndicators()
+            }
+        }
+    }
+
+    private func recordCoordinateMetrics() {
+        guard isCoordinateProbe, let window = view.window else { return }
+        func rect(_ value: CGRect) -> [CGFloat] { [value.minX, value.minY, value.width, value.height] }
+        func inset(_ value: UIEdgeInsets) -> [CGFloat] { [value.top, value.left, value.bottom, value.right] }
+        let layout = collection.collectionViewLayout
+        var data: [String: Any] = [
+            "step": probeIndex < 0 ? "initial" : probeSteps[probeIndex],
+            "layout": usesFlowLayout ? "flow" : "compositional",
+            "windowRect": rect(collection.convert(collection.bounds, to: window)),
+            "bounds": rect(collection.bounds), "safe": inset(collection.safeAreaInsets),
+            "adjusted": inset(collection.adjustedContentInset), "content": inset(collection.contentInset),
+            "vertical": inset(collection.verticalScrollIndicatorInsets),
+            "auto": collection.automaticallyAdjustsScrollIndicatorInsets,
+            "offset": [collection.contentOffset.x, collection.contentOffset.y],
+            "contentSize": [collection.contentSize.width, collection.contentSize.height],
+            "developmentDirection": layout.developmentLayoutDirection.rawValue,
+            "flips": layout.flipsHorizontallyInOppositeLayoutDirection,
+            "transform": [collection.transform.a, collection.transform.b, collection.transform.c,
+                          collection.transform.d, collection.transform.tx, collection.transform.ty],
+            "layoutIdentity": String(describing: ObjectIdentifier(layout)),
+            "collectionIdentity": String(describing: ObjectIdentifier(collection)),
+            // 公开 UIView 坐标基向量，不读取原生指示器子视图。
+            "basis": [collection.bounds.minX, collection.bounds.minX + 1].map {
+                collection.convert(CGPoint(x: $0, y: collection.bounds.minY), to: window).x
+            },
+        ]
+        if let path = collection.indexPathsForVisibleItems.filter({ $0.section == 1 }).sorted().first,
+           let cell = collection.cellForItem(at: path), let attributes = layout.layoutAttributesForItem(at: path) {
+            data["item"] = [path.section, path.item]
+            data["attributeRect"] = rect(attributes.frame)
+            data["cellFrame"] = rect(cell.frame)
+            data["cellWindowRect"] = rect(cell.convert(cell.bounds, to: window))
+            data["attributeWindowRect"] = rect(collection.convert(attributes.frame, to: window))
+        }
+        if let json = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]),
+           let value = String(data: json, encoding: .utf8) { collection.accessibilityValue = value }
+    }
+
     func numberOfSections(in collectionView: UICollectionView) -> Int {
         usesMixedLayout ? (configurationCase == "list-section" ? 3 : 2) : 1
     }
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        if usesMixedLayout && section == 0 { return 20 }
+        if usesMixedLayout && section == 0 { return isCoordinateProbe && usesFlowLayout ? 1 : 20 }
         if configurationCase == "list-section" && section == 1 { return 6 }
         return 90
     }
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         // 与 Compositional 对照保持三列、行高 72、列间距 8、section 总水平边距 60。
         let available = collectionView.bounds.width - collectionView.adjustedContentInset.left - collectionView.adjustedContentInset.right
-        return CGSize(width: max(1, (available - 60 - 16) / 3), height: 72)
+        if isCoordinateProbe && usesFlowLayout && indexPath.section == 0 {
+            return CGSize(width: available, height: 96)
+        }
+        // 探针预留至少 40 点白色边缘，避免 left=24 后指示器与彩色 cell 混色。
+        let sectionWidth: CGFloat = isCoordinateProbe ? 100 : 60
+        return CGSize(width: max(1, (available - sectionWidth - 16) / 3), height: 72)
     }
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        if isCoordinateProbe && usesFlowLayout && indexPath.section == 0 {
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "horizontal", for: indexPath) as! NativeIndicatorHorizontalCell
+            cell.applyDirection(collectionView.effectiveUserInterfaceLayoutDirection)
+            return cell
+        }
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath)
         let isList = configurationCase == "list-factory" || indexPath.section == 2
         // list 行延伸到边缘，使用浅色背景，便于截图明确区分原生灰色指示器。
@@ -429,5 +552,56 @@ private final class NativeIndicatorProbeCollection: UICollectionView {
     override func adjustedContentInsetDidChange() {
         super.adjustedContentInsetDidChange()
         record("adjustedContentInsetDidChange")
+    }
+}
+
+/// Flow 不支持正交 section；对照组用公开的嵌套 Collection 保留横向内容，
+/// 与 Compositional 首 section 同为 96 点高，后续网格及主轴 contentSize 一致。
+private final class NativeIndicatorHorizontalCell: UICollectionViewCell, UICollectionViewDataSource {
+    private let strip: UICollectionView
+
+    override init(frame: CGRect) {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.itemSize = CGSize(width: 100, height: 72)
+        layout.minimumLineSpacing = 8
+        layout.sectionInset = .init(top: 12, left: 20, bottom: 12, right: 40)
+        strip = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        super.init(frame: frame)
+        strip.accessibilityIdentifier = "direction-flow-horizontal"
+        strip.backgroundColor = .systemBackground
+        strip.contentInsetAdjustmentBehavior = .never
+        strip.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "cell")
+        strip.dataSource = self
+        strip.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(strip)
+        NSLayoutConstraint.activate([
+            strip.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            strip.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            strip.topAnchor.constraint(equalTo: contentView.topAnchor),
+            strip.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    func applyDirection(_ direction: UIUserInterfaceLayoutDirection) {
+        let semantic: UISemanticContentAttribute = direction == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
+        guard strip.semanticContentAttribute != semantic else { return }
+        // 这是 App 创建的横向 Collection；像主列表一样显式设置语义，
+        // 不依赖 UIKit 的内部 Cell 容器传播 semanticContentAttribute。
+        strip.semanticContentAttribute = semantic
+        strip.collectionViewLayout.invalidateLayout()
+        strip.layoutIfNeeded()
+        strip.setContentOffset(CGPoint(x: direction == .rightToLeft ? max(0, strip.contentSize.width - strip.bounds.width) : 0, y: 0), animated: false)
+    }
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { 20 }
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath)
+        cell.backgroundColor = .systemBlue
+        var content = UIListContentConfiguration.cell()
+        content.text = String(indexPath.item + 1)
+        content.textProperties.color = .white
+        cell.contentConfiguration = content
+        cell.accessibilityIdentifier = "direction-horizontal-\(indexPath.item)"
+        return cell
     }
 }

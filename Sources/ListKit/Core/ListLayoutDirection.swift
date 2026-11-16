@@ -44,6 +44,10 @@ final class ListLayoutDirectionOverride {
         guard scrollView is UITableView else { return }
         // UITableView 会缓存原生指示器所在侧；重设相同 insets 不能清除此缓存。
         // 通过公开的自动边距开关触发重算，并在本次调用内恢复业务设置。
+        recalculateScrollIndicatorInsets(in: scrollView)
+    }
+
+    func recalculateScrollIndicatorInsets(in scrollView: UIScrollView) {
         let automaticallyAdjusts = scrollView.automaticallyAdjustsScrollIndicatorInsets
         scrollView.automaticallyAdjustsScrollIndicatorInsets = !automaticallyAdjusts
         scrollView.layoutIfNeeded()

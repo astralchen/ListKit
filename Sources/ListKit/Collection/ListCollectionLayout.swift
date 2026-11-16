@@ -4,12 +4,15 @@ import UIKit
 final class ListCollectionLayout: UICollectionViewCompositionalLayout {
     private let listSectionProvider: UICollectionViewCompositionalLayoutSectionProvider
     var directionSource: ListLayoutDirectionSource?
+    let verticalIndicatorInsets: CollectionVerticalIndicatorInsets
     private var decorationClasses: [String: AnyClass] = [:]
     private var decorationNibs: [String: UINib] = [:]
 
     init(listSectionProvider: @escaping UICollectionViewCompositionalLayoutSectionProvider,
-         configuration: UICollectionViewCompositionalLayoutConfiguration) {
+         configuration: UICollectionViewCompositionalLayoutConfiguration,
+         verticalIndicatorInsets: CollectionVerticalIndicatorInsets) {
         self.listSectionProvider = listSectionProvider
+        self.verticalIndicatorInsets = verticalIndicatorInsets
         super.init(sectionProvider: listSectionProvider, configuration: configuration)
     }
 
@@ -30,7 +33,9 @@ final class ListCollectionLayout: UICollectionViewCompositionalLayout {
     /// UIKit 会缓存镜像坐标面，单纯 invalidate 不能保证 RTL → LTR 恢复。
     /// 保留 provider、当前 configuration 和 decoration 注册，仅重建布局对象。
     func rebuildingForLayoutDirection() -> ListCollectionLayout {
-        let result = ListCollectionLayout(listSectionProvider: listSectionProvider, configuration: configuration)
+        let result = ListCollectionLayout(
+            listSectionProvider: listSectionProvider, configuration: configuration,
+            verticalIndicatorInsets: verticalIndicatorInsets)
         result.directionSource = directionSource
         directionSource?.layout = result
         for entry in decorationClasses { result.register(entry.value, forDecorationViewOfKind: entry.key) }
@@ -96,6 +101,19 @@ final class ListCollectionLayout: UICollectionViewCompositionalLayout {
             if changed { invalidateLayout() }
         }
         super.prepare()
+        updateVerticalIndicatorInsets()
+    }
+
+    func updateVerticalIndicatorInsets() {
+        guard let collectionView, collectionView.collectionViewLayout === self else { return }
+        verticalIndicatorInsets.update(in: collectionView, direction: configuration.scrollDirection)
+    }
+
+    override func prepareForTransition(to newLayout: UICollectionViewLayout) {
+        if let collectionView, (newLayout as? ListCollectionLayout)?.verticalIndicatorInsets !== verticalIndicatorInsets {
+            verticalIndicatorInsets.restore(in: collectionView)
+        }
+        super.prepareForTransition(to: newLayout)
     }
 
     /// 容器尺寸变化时要求重新布局；其他边界变化沿用父类的失效判断。

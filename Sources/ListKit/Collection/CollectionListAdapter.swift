@@ -25,16 +25,20 @@ import UIKit
 public final class CollectionListAdapter<SectionID>: NSObject, UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout, UICollectionViewDataSourcePrefetching
 where SectionID: Hashable & Sendable {
-    /// 外部指定的布局方向。默认 `.unspecified` 不改变 UIKit 环境；取消覆盖时恢复原设置。
+    /// 外部指定的布局方向。默认 `.unspecified` 由 UIKit 管理方向和指示器；取消覆盖时恢复原设置。
     /// 修改后在下一次布局周期生效，无需重新创建列表或重新 apply。
     /// ListKit 创建的布局会重建以刷新镜像缓存；后续请通过 collection view 读取当前布局。
     /// 自定义布局仍须遵守 UIKit 的 RTL 布局约定；物理 left/right 边距不会被交换。
-    /// 保留自动边距设置、两轴 indicator insets 和显示开关；原生指示器由 UIKit 按容器和安全区处理。
+    /// 保留内容边距、自动边距设置及指示器显示开关。参见 `verticalScrollIndicatorInsets`。
     public var layoutDirection: UITraitEnvironmentLayoutDirection = .unspecified {
         didSet {
             guard oldValue != layoutDirection, let collectionView else { return }
+            verticalIndicatorInsets.isExplicitlyRightToLeft = layoutDirection == .rightToLeft
+            let previousDirection = collectionView.effectiveUserInterfaceLayoutDirection
             let contentOffset = collectionView.contentOffset
             let orthogonalOffsets = captureOrthogonalOffsets(in: orthogonalSectionIDs)
+            // 先撤销镜像边距，再切换坐标系，让 UIKit 按原始边距初始化新轨道。
+            let restoredInsets = verticalIndicatorInsets.restore(in: collectionView)
             directionOverride.apply(layoutDirection, to: collectionView)
             if let layout = collectionView.collectionViewLayout as? ListCollectionLayout {
                 collectionView.setCollectionViewLayout(layout.rebuildingForLayoutDirection(), animated: false)
@@ -52,9 +56,64 @@ where SectionID: Hashable & Sendable {
                 collectionView.collectionViewLayout.invalidateLayout()
             }
             directionOverride.refreshScrollIndicators(in: collectionView)
+            let needsAutomaticIndicatorRefresh: Bool
+            if #available(iOS 26, *) {
+                // 全屏自动轨道可能缓存 RTL 的侧边。还原边距后，请 UIKit 在 LTR 坐标系重算。
+                needsAutomaticIndicatorRefresh = layoutDirection != .unspecified && restoredInsets &&
+                    collectionView.effectiveUserInterfaceLayoutDirection == .leftToRight
+            } else if #available(iOS 18, *) {
+                // 交回 UIKit 时若方向确实改变，也要清除自动轨道保留的旧侧边。
+                let directionChanged = previousDirection != collectionView.effectiveUserInterfaceLayoutDirection
+                needsAutomaticIndicatorRefresh = (layoutDirection != .unspecified || directionChanged) &&
+                    collectionView.showsVerticalScrollIndicator &&
+                    (collectionView.collectionViewLayout as? ListCollectionLayout)?.configuration.scrollDirection == .vertical
+            } else {
+                needsAutomaticIndicatorRefresh = false
+            }
+            if needsAutomaticIndicatorRefresh, collectionView.automaticallyAdjustsScrollIndicatorInsets {
+                directionOverride.recalculateScrollIndicatorInsets(in: collectionView)
+            }
+            refreshVerticalIndicatorInsets(in: collectionView)
         }
     }
     private let directionOverride = ListLayoutDirectionOverride()
+    private let verticalIndicatorInsets: CollectionVerticalIndicatorInsets
+
+    /// 显式设置 `.rightToLeft` 时，是否补偿 iOS 26 及以后版本的镜像指示器轨道，默认开启。
+    /// 关闭会立即恢复原始业务边距。若直接替换为外部布局并立即显示指示器，
+    /// 请先关闭；否则适配器会在首次拖动前恢复边距。
+    public var correctsRTLVerticalScrollIndicatorPosition: Bool {
+        get { verticalIndicatorInsets.isEnabled }
+        set {
+            guard newValue != verticalIndicatorInsets.isEnabled else { return }
+            verticalIndicatorInsets.isEnabled = newValue
+            if let collectionView { refreshVerticalIndicatorInsets(in: collectionView) }
+        }
+    }
+
+    /// 调用方要求的物理竖向指示器边距。默认沿用 collection view 已设置的值。
+    /// 在 iOS 26 及以后版本，显式 RTL 的 ListKit 纵向布局可能补偿镜像轨道的水平边距；
+    /// 请通过此属性在运行时读写原始业务边距。其他布局直接使用 UIKit 属性。
+    public var verticalScrollIndicatorInsets: UIEdgeInsets {
+        get {
+            guard let collectionView else { return .zero }
+            return verticalIndicatorInsets.requested(in: collectionView)
+        }
+        set {
+            guard let collectionView else { return }
+            verticalIndicatorInsets.setRequested(newValue, in: collectionView)
+            refreshVerticalIndicatorInsets(in: collectionView)
+        }
+    }
+
+    private func refreshVerticalIndicatorInsets(in collection: UICollectionView) {
+        if let layout = collection.collectionViewLayout as? ListCollectionLayout,
+           layout.verticalIndicatorInsets === verticalIndicatorInsets {
+            layout.updateVerticalIndicatorInsets()
+        } else {
+            verticalIndicatorInsets.restore(in: collection)
+        }
+    }
 
     /// 滚动回调转发对象。
     ///
@@ -189,6 +248,7 @@ where SectionID: Hashable & Sendable {
     /// - Parameter collectionView: 由 adapter 管理 diffable data source、delegate 和预取回调的 collection view。
     public init(collectionView: UICollectionView) {
         self.collectionView = collectionView
+        verticalIndicatorInsets = CollectionVerticalIndicatorInsets(collectionView: collectionView)
         super.init()
 
         dataSource = CollectionDiffableDataSource<SectionID>(
@@ -2640,6 +2700,9 @@ where SectionID: Hashable & Sendable {
 
     /// 转发即将开始拖动通知；滚动代理与列表代理为同一对象时仅通知一次。
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        if let collectionView, scrollView === collectionView {
+            refreshVerticalIndicatorInsets(in: collectionView)
+        }
         scrollDelegate?.scrollViewWillBeginDragging?(scrollView)
         if !sameObject(scrollDelegate, collectionDelegate) {
             collectionDelegate?.scrollViewWillBeginDragging?(scrollView)
@@ -2991,7 +3054,8 @@ where SectionID: Hashable & Sendable {
                             environment: environment, itemSupplementaries: [],
                             scrollDirection: direction.current)
                 }
-            }, configuration: configuration.makeConfiguration())
+            }, configuration: configuration.makeConfiguration(),
+            verticalIndicatorInsets: verticalIndicatorInsets)
         direction.layout = layout
         layout.directionSource = direction
         registerDecorations(on: layout, sections: sections)

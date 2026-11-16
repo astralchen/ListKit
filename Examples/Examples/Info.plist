@@ -7,6 +7,8 @@
 	<array>
 		<string>en</string>
 		<string>ar</string>
+		<string>he</string>
+		<string>zh-Hans</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

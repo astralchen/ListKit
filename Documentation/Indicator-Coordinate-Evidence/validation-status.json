@@ -1,0 +1,100 @@
+{
+  "date": "2026-11-16",
+  "status": "ui-sampling-complete-and-swift-comparison-replayed",
+  "build": "Final source build-for-testing passed (Xcode 27.2, generic iOS Simulator destination)",
+  "requestedCoverage": {
+    "layouts": [
+      "native-flow-with-owned-horizontal-collection",
+      "native-compositional-with-orthogonal-section"
+    ],
+    "directions": [
+      "ltr",
+      "rtl"
+    ],
+    "geometries": [
+      "full",
+      "embedded"
+    ],
+    "automaticAdjustment": [
+      true,
+      false
+    ],
+    "verticalIndicatorInsets": [
+      "zero",
+      "left4",
+      "left24",
+      "right12",
+      "top8-left4-bottom8-right12"
+    ],
+    "samplesPerOS": 80
+  },
+  "excludedRuns": [
+    {
+      "path": "/tmp/ListKitIndicatorCoordinates-27.xcresult",
+      "reason": "Initial Flow control needed explicit owned-horizontal semantics and geometry invalidation; screenshot visibility failure."
+    },
+    {
+      "path": "/tmp/ListKitIndicatorCoordinates-27b.xcresult",
+      "reason": "Cancelled during diagnostic refinement; not a completed result."
+    },
+    {
+      "path": "/tmp/ListKitIndicatorCoordinates-26.xcresult",
+      "reason": "Cancelled during diagnostic refinement; not a completed result."
+    },
+    {
+      "path": "/tmp/ListKitIndicatorCoordinates-27final.xcresult",
+      "reason": "Step mismatch and foreground interference; initial positive-coordinate-basis assumption also invalid."
+    },
+    {
+      "path": "/tmp/ListKitIndicatorCoordinates-26final.xcresult",
+      "reason": "Screenshot did not match step; a separate RTLIndicatorProbe app had taken foreground."
+    },
+    {
+      "path": "/tmp/ListKitIndicatorCoordinates-26serial.xcresult",
+      "reason": "Different independent app ListIndicatorProbe observed running on the same device; sampling state/foreground mismatch."
+    },
+    {
+      "path": "/tmp/ListKitIndicatorCoordinates-26isolated.xcresult",
+      "reason": "Newly created isolated device disappeared before boot; no UI validation."
+    }
+  ],
+  "interference": {
+    "device": "F4873175-0F32-449C-8568-5406CDFDC1B7",
+    "otherApplications": [
+      "local.codex.RTLIndicatorProbe",
+      "local.codex.ListIndicatorProbe"
+    ],
+    "disappearedDevice": "C1DA7289-05FB-47B8-8390-081AA718ED6B"
+  },
+  "sourcePolicy": "Public UIKit/XCTest APIs only; no production ListKit change or inset compensation.",
+  "buildLog": "/tmp/ListKit-coordinate-fixed-build.log",
+  "comparisonReplay": "Ran the comparison block from NativeIndicatorCoordinateUITests.swift against the collected UI sample logs in Swift; all 40 pairs per runtime passed.",
+  "runs": [
+    {
+      "device": "iPhone 17 Pro",
+      "iOS": "26.5",
+      "capturedSamples": 80,
+      "matchedInputs": 40,
+      "identical": 21,
+      "reflected": 19,
+      "gestures": "Both layouts passed RTL visual order and horizontal drag without shifting the vertical grid.",
+      "xcresult": "/tmp/ListKit-coordinate-current-26.xcresult",
+      "log": "/tmp/ListKit-coordinate-current-26.log",
+      "measurements": "ios-26.5-measurements.json",
+      "xctestStatus": "Only failure after all 80 measurements: pixelRect stored as [CGFloat] and cast to [Double] in the end-of-test comparison. Fixed the storage type and replayed all comparisons; the full XCTest was not rerun after that correction."
+    },
+    {
+      "device": "iPhone 18 Pro",
+      "iOS": "27.2",
+      "capturedSamples": 80,
+      "matchedInputs": 40,
+      "identical": 21,
+      "reflected": 19,
+      "gestures": "Both layouts passed RTL visual order and horizontal drag without shifting the vertical grid.",
+      "xcresult": "/tmp/ListKit-coordinate-current-27.xcresult",
+      "log": "/tmp/ListKit-coordinate-current-27.log",
+      "measurements": "ios-27.2-measurements.json",
+      "xctestStatus": "Only failure after all 80 measurements: pixelRect stored as [CGFloat] and cast to [Double] in the end-of-test comparison. Fixed the storage type and replayed all comparisons; the full XCTest was not rerun after that correction."
+    }
+  ]
+}

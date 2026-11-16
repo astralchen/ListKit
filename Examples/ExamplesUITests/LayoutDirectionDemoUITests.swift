@@ -253,9 +253,183 @@ final class LayoutDirectionDemoUITests: XCTestCase {
         checkDirectionRoundTrip(customIndicatorInsets: true, overview: true)
     }
 
+    func testListKitArabicLaunchWithCustomIndicatorInsets() {
+        checkListKitArabicIndicator(["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"], custom: true)
+    }
+
+    func testListKitArabicLaunchWithAutomaticIndicatorInsets() {
+        checkListKitArabicIndicator(["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"], custom: false)
+    }
+
+    func testListKitSystemArabicLaunchWithCustomIndicatorInsets() throws {
+        try requireSystemArabic()
+        checkListKitArabicIndicator([], custom: true)
+    }
+
+    func testListKitSystemArabicLaunchWithAutomaticIndicatorInsets() throws {
+        try requireSystemArabic()
+        checkListKitArabicIndicator([], custom: false)
+    }
+
+    func testListKitSystemArabicLaunchInEmbeddedLayout() throws {
+        try requireSystemArabic()
+        checkListKitArabicIndicator([], custom: false, overview: true)
+    }
+
+    private func requireSystemArabic() throws {
+        guard ProcessInfo.processInfo.environment["LISTKIT_VERIFY_SYSTEM_RTL"] == "1" else {
+            throw XCTSkip("Run on a simulator whose system language is Arabic")
+        }
+    }
+
+    private func checkListKitArabicIndicator(_ arguments: [String], custom: Bool, overview: Bool = false) {
+        checkListKitLanguageIndicator("ar", arguments: arguments, custom: custom, overview: overview)
+    }
+
+    func testListKitSystemHebrewLaunchWithAutomaticIndicatorInsets() throws {
+        try requireSystemHebrew()
+        checkListKitLanguageIndicator("he", arguments: [], custom: false, checkReturnToSystem: true)
+    }
+
+    func testListKitSystemHebrewLaunchWithCustomIndicatorInsets() throws {
+        try requireSystemHebrew()
+        checkListKitLanguageIndicator("he", arguments: [], custom: true, checkReturnToSystem: true)
+    }
+
+    func testListKitSimplifiedChineseLaunchUsesSystemLTR() {
+        checkListKitLanguageIndicator("zh-Hans", arguments: ["-AppleLanguages", "(zh-Hans-CN)", "-AppleLocale", "zh_CN"],
+                                      custom: false, isRTL: false)
+    }
+
+    func testSystemChineseColdLaunchAndReturnFromRTL() throws {
+        guard ProcessInfo.processInfo.environment["LISTKIT_VERIFY_SYSTEM_CHINESE"] == "1" else {
+            throw XCTSkip("Run on a device whose system language is Simplified Chinese")
+        }
+        continueAfterFailure = false
+        let preferences = Locale.preferredLanguages
+        XCTAssertTrue(preferences.first?.hasPrefix("zh-Hans") == true, "Device languages: \(preferences)")
+        let app = XCUIApplication()
+        XCTAssertTrue(app.launchArguments.isEmpty)
+        let launchEvidence = XCTAttachment(string: "Device languages: \(preferences); launchArguments: \(app.launchArguments)")
+        launchEvidence.name = "system-chinese-cold-launch-environment"
+        launchEvidence.lifetime = .keepAlways
+        add(launchEvidence)
+        app.terminate()
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 10))
+        app.launch()
+
+        let openGrid = app.navigationBars.buttons["Grid"]
+        XCTAssertTrue(openGrid.waitForExistence(timeout: 15))
+        openGrid.tap()
+        let openDirection = app.navigationBars.buttons["布局方向"]
+        XCTAssertTrue(openDirection.waitForExistence(timeout: 10))
+        openDirection.tap()
+
+        let directions = app.segmentedControls["layout-direction-control"]
+        let grid = app.collectionViews["direction-grid"]
+        let first = grid.cells["direction-grid-0"]
+        let second = grid.cells["direction-grid-1"]
+        let system = directions.buttons["系统默认"]
+        XCTAssertTrue(system.waitForExistence(timeout: 10))
+        XCTAssertTrue(system.isSelected)
+        XCTAssertTrue(wait { first.exists && second.exists && first.frame.minX < second.frame.minX })
+        let flash = app.buttons["direction-flash-indicators"]
+        let frame = indicatorSearchFrame(grid: grid, app: app)
+        grid.swipeUp()
+        flash.tap()
+        capture("system-chinese-cold-right", app: app, indicatorIn: frame, onLeft: false)
+
+        grid.swipeDown()
+        XCTAssertTrue(wait { first.isHittable && second.isHittable })
+        directions.buttons["RTL"].tap()
+        XCTAssertTrue(wait { first.exists && second.exists && first.frame.minX > second.frame.minX })
+        flash.tap()
+        capture("system-chinese-explicit-rtl-left", app: app, indicatorIn: frame, onLeft: true)
+
+        system.tap()
+        XCTAssertTrue(system.isSelected)
+        XCTAssertTrue(wait { first.exists && second.exists && first.frame.minX < second.frame.minX })
+        flash.tap()
+        capture("system-chinese-restored-right", app: app, indicatorIn: frame, onLeft: false)
+    }
+
+    private func requireSystemHebrew() throws {
+        guard ProcessInfo.processInfo.environment["LISTKIT_VERIFY_SYSTEM_HEBREW"] == "1" else {
+            throw XCTSkip("Run on a device whose system language is Hebrew")
+        }
+    }
+
+    private func checkListKitLanguageIndicator(
+        _ language: String, arguments: [String], custom: Bool, overview: Bool = false, isRTL: Bool = true,
+        checkReturnToSystem: Bool = false
+    ) {
+        let app = XCUIApplication()
+        app.launchArguments = [overview ? "-LayoutDirectionOverview" : "-LayoutDirectionDemo",
+                               "-CheckIndicatorLanguageLaunch"] + arguments
+        if custom { app.launchArguments.append("-CustomIndicatorInsets") }
+        app.launch()
+        let grid = app.collectionViews["direction-grid"]
+        XCTAssertTrue(grid.waitForExistence(timeout: 10))
+        let expectedInsets = custom ? "8.0,4.0,8.0,12.0" : "0.0,0.0,0.0,0.0"
+        let expectedDirection = isRTL ? "rtl" : "ltr"
+        let expected = "\(language);\(expectedDirection);unspecified;languageArgument=\(!arguments.isEmpty)"
+            + ";vertical=\(expectedInsets);auto=\(!custom)"
+        let matches = wait { grid.label == expected }
+        let metrics = XCTAttachment(string: "\(grid.label);\(grid.value ?? "")")
+        metrics.name = "\(language)-launch-environment"
+        metrics.lifetime = .keepAlways
+        add(metrics)
+        guard matches else {
+            XCTFail("Unexpected launch environment: \(grid.label);\(grid.value ?? "")")
+            return
+        }
+        let first = grid.cells["direction-grid-0"].frame.minX
+        let second = grid.cells["direction-grid-1"].frame.minX
+        if isRTL {
+            XCTAssertGreaterThan(first, second)
+            checkHorizontalGesture(in: grid)
+        } else {
+            XCTAssertLessThan(first, second)
+        }
+        grid.swipeUp()
+        let frame = indicatorSearchFrame(grid: grid, app: app)
+        let verifySide = !isRTL || (language == "he" && ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 18)
+        app.buttons["direction-flash-indicators"].tap()
+        capture("listkit-\(language)-system-indicator", app: app, indicatorIn: frame, onLeft: isRTL,
+                recordIndicatorSideOnly: !verifySide)
+        if checkReturnToSystem {
+            let directions = app.segmentedControls["layout-direction-control"]
+            for (button, direction) in [("LTR", "ltr"), ("RTL", "rtl")] {
+                directions.buttons[button].tap()
+                XCTAssertTrue(wait { grid.label.hasPrefix("\(language);\(direction);explicit;") }, grid.label)
+                directions.buttons["系统默认"].tap()
+                XCTAssertTrue(wait { grid.label == expected }, "Unexpected restored environment: \(grid.label)")
+                app.buttons["direction-flash-indicators"].tap()
+                capture("listkit-\(language)-system-after-\(button)", app: app, indicatorIn: frame,
+                        onLeft: isRTL, recordIndicatorSideOnly: !verifySide)
+            }
+        }
+    }
+
+    private func checkHorizontalGesture(in grid: XCUIElement) {
+        let first = grid.cells["direction-mixed-0"]
+        let firstGridY = grid.cells["direction-grid-0"].frame.minY
+        XCTAssertGreaterThan(first.frame.minX, grid.cells["direction-mixed-1"].frame.minX)
+        let start = grid.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0))
+            .withOffset(CGVector(dx: 0, dy: first.frame.midY - grid.frame.minY))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: grid.frame.width * 0.55, dy: 0)))
+        XCTAssertTrue(grid.cells["direction-mixed-3"].isHittable)
+        XCTAssertEqual(grid.cells["direction-grid-0"].frame.minY, firstGridY, accuracy: 1)
+    }
+
+    private func indicatorSearchFrame(grid: XCUIElement, app: XCUIApplication) -> CGRect {
+        let top = max(grid.frame.minY, app.navigationBars.firstMatch.frame.maxY)
+        return CGRect(x: grid.frame.minX, y: top, width: grid.frame.width, height: grid.frame.maxY - top - 34)
+    }
+
     private func checkDirectionRoundTrip(customIndicatorInsets: Bool, overview: Bool = false) {
         let app = XCUIApplication()
-        app.launchArguments += [overview ? "-LayoutDirectionOverview" : "-LayoutDirectionDemo"]
+        app.launchArguments += [overview ? "-LayoutDirectionOverview" : "-LayoutDirectionDemo", "-AppleLanguages", "(en)"]
         if customIndicatorInsets { app.launchArguments += ["-CustomIndicatorInsets"] }
         app.launch()
         let directions = app.segmentedControls["layout-direction-control"]
@@ -272,11 +446,10 @@ final class LayoutDirectionDemoUITests: XCTestCase {
         directions.buttons["RTL"].tap()
         XCTAssertTrue(wait { first.frame.minX > second.frame.minX })
         XCTAssertTrue(wait { mixedFirst.frame.minX > mixedSecond.frame.minX })
-        let top = max(grid.frame.minY, app.navigationBars.firstMatch.frame.maxY)
-        let indicatorFrame = CGRect(x: grid.frame.minX, y: top, width: grid.frame.width, height: grid.frame.maxY - top - 34)
+        let indicatorFrame = indicatorSearchFrame(grid: grid, app: app)
         app.buttons["direction-flash-indicators"].tap()
         capture("direction-rtl", app: app, indicatorIn: indicatorFrame, onLeft: true,
-                knownCollectionLimitation: customIndicatorInsets || overview)
+                expectedLeftDistance: customIndicatorInsets ? 7 : 3)
         directions.buttons["LTR"].tap()
         XCTAssertTrue(wait { abs(first.frame.minX - original.minX) < 1 })
         XCTAssertTrue(wait { mixedFirst.frame.minX < mixedSecond.frame.minX })
@@ -301,8 +474,9 @@ final class LayoutDirectionDemoUITests: XCTestCase {
     }
 
     private func capture(_ name: String, app: XCUIApplication, indicatorIn frame: CGRect? = nil,
-                         onLeft: Bool = false, knownCollectionLimitation: Bool = false, recordIndicatorSideOnly: Bool = false) {
-        let screenshot = app.screenshot()
+                         onLeft: Bool = false, knownCollectionLimitation: Bool = false, recordIndicatorSideOnly: Bool = false,
+                         expectedLeftDistance: CGFloat? = nil) {
+        let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -326,21 +500,22 @@ final class LayoutDirectionDemoUITests: XCTestCase {
         }
         XCTAssertTrue(rendered)
         let scale = CGFloat(width) / app.frame.width
-        func grayPixels(left: Bool) -> Int {
+        func grayColumns(left: Bool) -> (x: Int, counts: [Int]) {
             let minX = Int((left ? frame.minX : frame.maxX - 20) * scale)
             let maxX = Int((left ? frame.minX + 20 : frame.maxX) * scale)
-            var count = 0
+            var counts = Array(repeating: 0, count: maxX - minX)
             for y in Int((frame.minY + 12) * scale)..<Int((frame.maxY - 12) * scale) {
                 for x in minX..<maxX {
                     let offset = (y * width + x) * 4
                     let rgb = pixels[offset..<(offset + 3)].map(Int.init)
-                    if rgb.min()! > 60, rgb.max()! < 235, rgb.max()! - rgb.min()! < 8 { count += 1 }
+                    if rgb.min()! > 60, rgb.max()! < 235, rgb.max()! - rgb.min()! < 8 { counts[x - minX] += 1 }
                 }
             }
-            return count
+            return (minX, counts)
         }
-        let left = grayPixels(left: true)
-        let right = grayPixels(left: false)
+        let leftColumns = grayColumns(left: true)
+        let left = leftColumns.counts.reduce(0, +)
+        let right = grayColumns(left: false).counts.reduce(0, +)
         // “滚动条已淡出”不属于已知方向缺陷，必须作为普通失败处理。
         XCTAssertGreaterThan(left + right, 30, "Expected a visible native indicator")
         if recordIndicatorSideOnly {
@@ -360,6 +535,12 @@ final class LayoutDirectionDemoUITests: XCTestCase {
             XCTExpectFailure("iOS 26.5：原生 Collection 在已记录的容器、边距、Scene 方向或 RTL 语言启动配置下，指示器位于错误侧边，详见 README 对照实验", failingBlock: assertSide)
         } else {
             assertSide()
+        }
+        if let expectedLeftDistance, let longestColumn = leftColumns.counts.max(), longestColumn > 0,
+           let offset = leftColumns.counts.firstIndex(where: { $0 > longestColumn / 2 }) {
+            let distance = CGFloat(leftColumns.x + offset) / scale - frame.minX
+            XCTAssertEqual(distance, expectedLeftDistance, accuracy: 1.0 / scale,
+                           "Expected the same physical left inset as Flow Layout")
         }
     }
 }

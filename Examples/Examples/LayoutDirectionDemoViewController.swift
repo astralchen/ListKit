@@ -13,6 +13,11 @@ final class LayoutDirectionOverviewViewController: UIViewController {
     private let directionControl = UISegmentedControl(items: ["系统默认", "LTR", "RTL"])
     private let status = UILabel()
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        markIndicatorLanguageLaunch(in: grid, direction: gridAdapter.layoutDirection)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "嵌入式方向对照"
@@ -281,12 +286,35 @@ final class LayoutDirectionDemoViewController: UICollectionViewController {
     @objc private func changeDirection() {
         adapter.layoutDirection = [.unspecified, .leftToRight, .rightToLeft][directionControl.selectedSegmentIndex]
         navigationItem.prompt = "布局方向 · \(["系统默认", "LTR", "RTL"][directionControl.selectedSegmentIndex])"
+        markIndicatorLanguageLaunch(in: collectionView, direction: adapter.layoutDirection)
         flashIndicators()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        markIndicatorLanguageLaunch(in: collectionView, direction: adapter.layoutDirection)
     }
     @objc private func flashIndicators() { collectionView.flashScrollIndicators() }
     @objc private func showTable() {
         navigationController?.pushViewController(DirectionTableDemoViewController(direction: adapter.layoutDirection), animated: true)
     }
+}
+
+@MainActor
+private func markIndicatorLanguageLaunch(
+    in list: UICollectionView, direction: UITraitEnvironmentLayoutDirection
+) {
+    guard ProcessInfo.processInfo.arguments.contains("-CheckIndicatorLanguageLaunch") else { return }
+    let language = Bundle.main.preferredLocalizations.first ?? "unknown"
+    let effectiveDirection = list.effectiveUserInterfaceLayoutDirection == .rightToLeft ? "rtl" : "ltr"
+    let override = direction == .unspecified ? "unspecified" : "explicit"
+    let languageArgument = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)["AppleLanguages"] != nil
+    let insets = list.verticalScrollIndicatorInsets
+    let insetValues = [insets.top, insets.left, insets.bottom, insets.right].map { String(Double($0)) }
+    list.accessibilityLabel = "\(language);\(effectiveDirection);\(override);languageArgument=\(languageArgument)"
+        + ";vertical=\(insetValues.joined(separator: ","));auto=\(list.automaticallyAdjustsScrollIndicatorInsets)"
+    list.accessibilityValue = "preferred=\(Locale.preferredLanguages);bundle=\(Bundle.main.localizations)"
+        + ";applicationDirection=\(UIApplication.shared.userInterfaceLayoutDirection.rawValue)"
 }
 
 @MainActor
